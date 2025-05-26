@@ -1,0 +1,1 @@
+# The file /pi-barcode-scanner/pi-barcode-scanner/src/iot/__init__.py is intentionally left blank.
