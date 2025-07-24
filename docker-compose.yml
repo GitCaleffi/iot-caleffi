@@ -1,0 +1,12 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/app
+    ports:
+      - "5000:5000"   # Change this if your application uses a different port
+    environment:
+      - APP_ENV=production  # Add environment variables as needed
+    command: uvicorn main:app --host 0.0.0.0 --port 5000
