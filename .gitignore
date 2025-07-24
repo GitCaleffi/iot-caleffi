@@ -111,4 +111,5 @@ ota_update.log
 src/iot_hub.log
 backup/
 update_temp/
-/config.json
+credentials.json
+config.json
