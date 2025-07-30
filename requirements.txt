@@ -1,0 +1,13 @@
+pyzbar
+pymongo
+azure-iot-device
+jsonschema
+opencv-python
+azure-iot-hub
+fastapi
+uvicorn
+python-multipart
+tabulate
+requests
+azure-iot-device
+gradio

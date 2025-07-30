@@ -1,0 +1,912 @@
+2025-05-05 13:43:42,368 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 13:43:42,369 - INFO - Successfully connected to IoT Hub
+2025-05-05 13:43:42,369 - INFO - Sending message: {'barcode': '123456', 'device_id': 'raspberrypi-iot', 'timestamp': '2025-05-05T13:43:42.369260'}
+2025-05-05 13:43:42,369 - INFO - Sending message to Hub...
+2025-05-05 13:43:42,370 - INFO - Connect using port 8883 (TCP)
+2025-05-05 13:43:43,516 - INFO - connected with result code: 0
+2025-05-05 13:43:43,517 - INFO - _on_mqtt_connected called
+2025-05-05 13:43:43,517 - INFO - publishing on devices/raspberrypi-iot/messages/events/%24.mid=raspberrypi-iot-1746432822.369305
+2025-05-05 13:43:43,518 - INFO - Connection State - Connected
+2025-05-05 13:43:43,874 - INFO - payload published for 1
+2025-05-05 13:43:43,875 - INFO - Successfully sent message to Hub
+2025-05-05 13:43:43,875 - INFO - Message sent successfully!
+2025-05-05 13:43:48,014 - INFO - Sending message: {'barcode': '202020', 'device_id': 'raspberrypi-iot', 'timestamp': '2025-05-05T13:43:48.014457'}
+2025-05-05 13:43:48,015 - INFO - Sending message to Hub...
+2025-05-05 13:43:48,015 - INFO - publishing on devices/raspberrypi-iot/messages/events/%24.mid=raspberrypi-iot-1746432828.014608
+2025-05-05 13:43:48,342 - INFO - payload published for 2
+2025-05-05 13:43:48,343 - INFO - Successfully sent message to Hub
+2025-05-05 13:43:48,343 - INFO - Message sent successfully!
+2025-05-05 13:43:53,390 - INFO - Sending message: {'barcode': '353535', 'device_id': 'raspberrypi-iot', 'timestamp': '2025-05-05T13:43:53.390279'}
+2025-05-05 13:43:53,390 - INFO - Sending message to Hub...
+2025-05-05 13:43:53,391 - INFO - publishing on devices/raspberrypi-iot/messages/events/%24.mid=raspberrypi-iot-1746432833.390409
+2025-05-05 13:43:53,721 - INFO - payload published for 3
+2025-05-05 13:43:53,722 - INFO - Successfully sent message to Hub
+2025-05-05 13:43:53,722 - INFO - Message sent successfully!
+2025-05-05 14:08:15,253 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 14:08:15,254 - INFO - Successfully connected to IoT Hub
+2025-05-05 14:08:20,259 - INFO - Disconnecting from Hub...
+2025-05-05 14:08:20,259 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 14:08:20,260 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 14:08:20,260 - INFO - Successfully disconnected from Hub
+2025-05-05 14:08:20,260 - INFO - Disconnected from IoT Hub
+2025-05-05 14:09:12,621 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 14:09:12,621 - INFO - Successfully connected to IoT Hub
+2025-05-05 14:09:17,626 - INFO - Disconnecting from Hub...
+2025-05-05 14:09:17,627 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 14:09:17,628 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 14:09:17,628 - INFO - Successfully disconnected from Hub
+2025-05-05 14:09:17,629 - INFO - Disconnected from IoT Hub
+2025-05-05 14:10:19,901 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 14:10:19,902 - INFO - Successfully connected to IoT Hub
+2025-05-05 14:10:24,579 - INFO - Sending message: {'barcode': '123456', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T14:10:24.579770'}
+2025-05-05 14:10:24,579 - INFO - Sending message to Hub...
+2025-05-05 14:10:24,580 - INFO - Connect using port 8883 (TCP)
+2025-05-05 14:10:25,693 - INFO - connected with result code: 5
+2025-05-05 14:10:25,694 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:10:25,694 - INFO - disconnected with result code: 5
+2025-05-05 14:10:25,694 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:10:25,694 - INFO - NoneType: None
+
+2025-05-05 14:10:25,694 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:10:25,695 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 14:10:25,695 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 14:10:25,695 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 14:10:25,695 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 14:10:25,695 - INFO - Connection State - Disconnected
+2025-05-05 14:10:25,695 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 14:10:25,695 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 14:10:25,696 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 14:10:39,219 - INFO - Sending message: {'barcode': '35356545', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T14:10:39.219927'}
+2025-05-05 14:10:39,220 - INFO - Sending message to Hub...
+2025-05-05 14:10:39,220 - INFO - Connect using port 8883 (TCP)
+2025-05-05 14:10:40,321 - INFO - connected with result code: 5
+2025-05-05 14:10:40,321 - INFO - disconnected with result code: 5
+2025-05-05 14:10:40,321 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:10:40,321 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 14:10:40,321 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:10:40,321 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 14:10:40,321 - INFO - NoneType: None
+
+2025-05-05 14:10:40,322 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 14:10:40,322 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:10:40,322 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 14:10:40,322 - INFO - Connection State - Disconnected
+2025-05-05 14:10:40,322 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 14:10:40,322 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 14:10:40,322 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 14:11:12,471 - INFO - Sending message: {'barcode': '1234', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T14:11:12.471196'}
+2025-05-05 14:11:12,471 - INFO - Sending message to Hub...
+2025-05-05 14:11:12,472 - INFO - Connect using port 8883 (TCP)
+2025-05-05 14:11:13,473 - INFO - connected with result code: 5
+2025-05-05 14:11:13,474 - INFO - disconnected with result code: 5
+2025-05-05 14:11:13,474 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:11:13,474 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:11:13,474 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 14:11:13,474 - INFO - NoneType: None
+
+2025-05-05 14:11:13,474 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 14:11:13,474 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 14:11:13,474 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 14:11:13,474 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 14:11:13,474 - INFO - Connection State - Disconnected
+2025-05-05 14:11:13,474 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 14:11:13,475 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 14:11:13,475 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 14:13:51,448 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 14:13:51,448 - INFO - Successfully connected to IoT Hub
+2025-05-05 17:49:30,201 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 17:49:30,201 - INFO - Successfully connected to IoT Hub
+2025-05-05 17:49:52,281 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 17:49:52,282 - INFO - Successfully connected to IoT Hub
+2025-05-05 17:49:57,287 - INFO - Disconnecting from Hub...
+2025-05-05 17:49:57,287 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 17:49:57,287 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 17:49:57,287 - INFO - Successfully disconnected from Hub
+2025-05-05 17:49:57,287 - INFO - Disconnected from IoT Hub
+2025-05-05 17:53:05,998 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 17:53:05,999 - INFO - Successfully connected to IoT Hub
+2025-05-05 17:53:11,004 - INFO - Disconnecting from Hub...
+2025-05-05 17:53:11,005 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 17:53:11,006 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 17:53:11,007 - INFO - Successfully disconnected from Hub
+2025-05-05 17:53:11,007 - INFO - Disconnected from IoT Hub
+2025-05-05 17:53:50,158 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 17:53:50,158 - INFO - Successfully connected to IoT Hub
+2025-05-05 17:53:55,163 - INFO - Disconnecting from Hub...
+2025-05-05 17:53:55,164 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 17:53:55,164 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 17:53:55,164 - INFO - Successfully disconnected from Hub
+2025-05-05 17:53:55,164 - INFO - Disconnected from IoT Hub
+2025-05-05 18:08:39,518 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:08:39,518 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:08:43,768 - INFO - Sending message: {'barcode': '123456', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T18:08:43.768064'}
+2025-05-05 18:08:43,768 - INFO - Sending message to Hub...
+2025-05-05 18:08:43,768 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:08:44,954 - INFO - connected with result code: 5
+2025-05-05 18:08:44,954 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:08:44,954 - INFO - disconnected with result code: 5
+2025-05-05 18:08:44,954 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:08:44,955 - INFO - NoneType: None
+
+2025-05-05 18:08:44,955 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:08:44,957 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:08:44,957 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:08:44,957 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:08:44,957 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:08:44,957 - INFO - Connection State - Disconnected
+2025-05-05 18:08:44,957 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:08:44,957 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:08:44,957 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:08:51,267 - INFO - Sending message: {'barcode': '123456', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T18:08:51.267494'}
+2025-05-05 18:08:51,267 - INFO - Sending message to Hub...
+2025-05-05 18:08:51,268 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:08:52,233 - INFO - connected with result code: 5
+2025-05-05 18:08:52,234 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:08:52,234 - INFO - disconnected with result code: 5
+2025-05-05 18:08:52,234 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:08:52,234 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:08:52,234 - INFO - NoneType: None
+
+2025-05-05 18:08:52,234 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:08:52,234 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:08:52,234 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:08:52,235 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:08:52,235 - INFO - Connection State - Disconnected
+2025-05-05 18:08:52,235 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:08:52,235 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:08:52,235 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:09:47,549 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:09:47,549 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:09:55,291 - INFO - Sending message: {'barcode': '852369874', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T18:09:55.291383'}
+2025-05-05 18:09:55,291 - INFO - Sending message to Hub...
+2025-05-05 18:09:55,291 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:09:56,416 - INFO - connected with result code: 5
+2025-05-05 18:09:56,417 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:09:56,417 - INFO - disconnected with result code: 5
+2025-05-05 18:09:56,417 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:09:56,418 - INFO - NoneType: None
+
+2025-05-05 18:09:56,419 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:09:56,421 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:09:56,421 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:09:56,421 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:09:56,421 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:09:56,421 - INFO - Connection State - Disconnected
+2025-05-05 18:09:56,421 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:09:56,421 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:09:56,421 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:10:48,717 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:10:48,717 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:11:57,656 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:11:57,657 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:11:57,657 - INFO - Enabling feature:twin...
+2025-05-05 18:11:57,657 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:11:58,804 - INFO - connected with result code: 5
+2025-05-05 18:11:58,804 - INFO - disconnected with result code: 5
+2025-05-05 18:11:58,804 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:11:58,805 - ERROR - Subscribe for twin failed.  Not enabling feature
+2025-05-05 18:11:58,805 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:11:58,805 - INFO - NoneType: None
+
+2025-05-05 18:11:58,805 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:11:58,806 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:11:58,806 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:11:58,806 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:11:58,806 - INFO - Connection State - Disconnected
+2025-05-05 18:11:58,806 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:11:58,806 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:11:58,806 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:13:01,204 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:13:01,205 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:13:01,205 - INFO - Enabling feature:twin...
+2025-05-05 18:13:01,205 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:13:02,248 - INFO - connected with result code: 5
+2025-05-05 18:13:02,248 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:13:02,249 - INFO - disconnected with result code: 5
+2025-05-05 18:13:02,249 - ERROR - Subscribe for twin failed.  Not enabling feature
+2025-05-05 18:13:02,250 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:13:02,250 - INFO - NoneType: None
+
+2025-05-05 18:13:02,255 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:13:02,255 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:13:02,256 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:13:02,257 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:13:02,257 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:13:02,258 - ERROR - ["TypeError: 'NoneType' object is not callable\n"]
+2025-05-05 18:13:02,258 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:13:02,258 - ERROR - ["TypeError: 'NoneType' object is not callable\n"]
+2025-05-05 18:14:33,762 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:14:33,762 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:14:33,762 - INFO - Enabling feature:twin...
+2025-05-05 18:14:33,763 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:14:35,009 - INFO - connected with result code: 5
+2025-05-05 18:14:35,010 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:14:35,011 - INFO - disconnected with result code: 5
+2025-05-05 18:14:35,011 - ERROR - Subscribe for twin failed.  Not enabling feature
+2025-05-05 18:14:35,012 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:14:35,012 - INFO - NoneType: None
+
+2025-05-05 18:14:35,013 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:14:35,013 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:14:35,014 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:14:35,014 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:14:35,014 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:14:35,014 - ERROR - ["TypeError: 'NoneType' object is not callable\n"]
+2025-05-05 18:14:35,014 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:14:35,014 - ERROR - ["TypeError: 'NoneType' object is not callable\n"]
+2025-05-05 18:18:04,040 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:18:04,040 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:18:04,040 - INFO - Enabling feature:twin...
+2025-05-05 18:18:04,041 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:18:05,172 - INFO - connected with result code: 0
+2025-05-05 18:18:05,172 - INFO - _on_mqtt_connected called
+2025-05-05 18:18:05,172 - INFO - Connection State - Connected
+2025-05-05 18:18:05,172 - INFO - subscribing to $iothub/twin/res/# with qos 1
+2025-05-05 18:18:05,437 - INFO - suback received for 1
+2025-05-05 18:18:05,437 - INFO - Successfully enabled feature:twin
+2025-05-05 18:18:05,437 - INFO - publishing on $iothub/twin/GET/?$rid=5ab24a74-0e83-4e00-9b32-1a2e8f953a78
+2025-05-05 18:18:05,673 - INFO - message received on $iothub/twin/res/200/?$rid=5ab24a74-0e83-4e00-9b32-1a2e8f953a78
+2025-05-05 18:18:05,673 - INFO - payload published for 2
+2025-05-05 18:18:05,673 - INFO - Successfully retrieved twin
+2025-05-05 18:18:05,674 - INFO - Successfully retrieved device twin for device raspberrypi-iot
+2025-05-05 18:19:08,712 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:19:08,712 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:19:08,713 - INFO - Sending message: {'deviceId': 'raspberrypi-iot', 'scannedBarcode': 'TEST123456', 'sku': {'name': 'Test Product', 'category': 'Test Category', 'price': 99.99}, 'timestamp': '2025-05-05T18:19:08.712997'}
+2025-05-05 18:19:08,713 - INFO - Sending message to Hub...
+2025-05-05 18:19:08,713 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:19:09,858 - INFO - connected with result code: 0
+2025-05-05 18:19:09,859 - INFO - _on_mqtt_connected called
+2025-05-05 18:19:09,860 - INFO - publishing on devices/raspberrypi-iot/messages/events/%24.mid=raspberrypi-iot-1746449348.7130225
+2025-05-05 18:19:09,860 - INFO - Connection State - Connected
+2025-05-05 18:19:10,220 - INFO - payload published for 1
+2025-05-05 18:19:10,220 - INFO - Successfully sent message to Hub
+2025-05-05 18:19:10,220 - INFO - Message sent successfully!
+2025-05-05 18:19:10,220 - INFO - Disconnecting from Hub...
+2025-05-05 18:19:10,220 - INFO - disconnecting MQTT client
+2025-05-05 18:19:10,221 - INFO - disconnected with result code: 0
+2025-05-05 18:19:10,221 - INFO - MQTTTransportStage: _on_mqtt_disconnect called
+2025-05-05 18:19:10,221 - INFO - Connection State - Disconnected
+2025-05-05 18:19:10,221 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:19:10,221 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:19:10,221 - INFO - Successfully disconnected from Hub
+2025-05-05 18:19:10,221 - INFO - Disconnected from IoT Hub
+2025-05-05 18:19:15,929 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:19:15,929 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:19:15,929 - INFO - Enabling feature:twin...
+2025-05-05 18:19:15,930 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:19:16,957 - INFO - connected with result code: 0
+2025-05-05 18:19:16,958 - INFO - _on_mqtt_connected called
+2025-05-05 18:19:16,958 - INFO - Connection State - Connected
+2025-05-05 18:19:16,958 - INFO - subscribing to $iothub/twin/res/# with qos 1
+2025-05-05 18:19:17,198 - INFO - suback received for 1
+2025-05-05 18:19:17,198 - INFO - Successfully enabled feature:twin
+2025-05-05 18:19:17,199 - INFO - publishing on $iothub/twin/GET/?$rid=63bcbfa4-26f7-4c23-9c6b-c2301b5bf9da
+2025-05-05 18:19:17,443 - INFO - message received on $iothub/twin/res/200/?$rid=63bcbfa4-26f7-4c23-9c6b-c2301b5bf9da
+2025-05-05 18:19:17,443 - INFO - Successfully retrieved twin
+2025-05-05 18:19:17,443 - INFO - Successfully retrieved device twin for device raspberrypi-iot
+2025-05-05 18:19:17,444 - INFO - payload published for 2
+2025-05-05 18:19:58,976 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:19:58,976 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:19:58,976 - INFO - Enabling feature:twin...
+2025-05-05 18:19:58,977 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:20:00,111 - INFO - connected with result code: 0
+2025-05-05 18:20:00,111 - INFO - _on_mqtt_connected called
+2025-05-05 18:20:00,112 - INFO - Connection State - Connected
+2025-05-05 18:20:00,112 - INFO - subscribing to $iothub/twin/res/# with qos 1
+2025-05-05 18:20:00,340 - INFO - suback received for 1
+2025-05-05 18:20:00,340 - INFO - Successfully enabled feature:twin
+2025-05-05 18:20:00,340 - INFO - publishing on $iothub/twin/GET/?$rid=a137cba6-d5cd-4ac7-bbe6-88dd275e0a5c
+2025-05-05 18:20:00,576 - INFO - message received on $iothub/twin/res/200/?$rid=a137cba6-d5cd-4ac7-bbe6-88dd275e0a5c
+2025-05-05 18:20:00,576 - INFO - payload published for 2
+2025-05-05 18:20:00,576 - INFO - Successfully retrieved twin
+2025-05-05 18:20:00,576 - INFO - Successfully retrieved device twin for device raspberrypi-iot
+2025-05-05 18:20:07,119 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:20:07,120 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:20:07,120 - INFO - Sending message: {'deviceId': 'raspberrypi-iot', 'scannedBarcode': 'TEST123456', 'sku': {'name': 'Test Product', 'category': 'Test Category', 'price': 99.99}, 'timestamp': '2025-05-05T18:20:07.120560'}
+2025-05-05 18:20:07,120 - INFO - Sending message to Hub...
+2025-05-05 18:20:07,120 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:20:08,148 - INFO - connected with result code: 0
+2025-05-05 18:20:08,148 - INFO - _on_mqtt_connected called
+2025-05-05 18:20:08,148 - INFO - publishing on devices/raspberrypi-iot/messages/events/%24.mid=raspberrypi-iot-1746449407.1205854
+2025-05-05 18:20:08,148 - INFO - Connection State - Connected
+2025-05-05 18:20:08,478 - INFO - payload published for 1
+2025-05-05 18:20:08,478 - INFO - Successfully sent message to Hub
+2025-05-05 18:20:08,478 - INFO - Message sent successfully!
+2025-05-05 18:20:08,478 - INFO - Disconnecting from Hub...
+2025-05-05 18:20:08,479 - INFO - disconnecting MQTT client
+2025-05-05 18:20:08,479 - INFO - disconnected with result code: 0
+2025-05-05 18:20:08,479 - INFO - MQTTTransportStage: _on_mqtt_disconnect called
+2025-05-05 18:20:08,479 - INFO - Connection State - Disconnected
+2025-05-05 18:20:08,479 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:20:08,479 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:20:08,480 - INFO - Successfully disconnected from Hub
+2025-05-05 18:20:08,480 - INFO - Disconnected from IoT Hub
+2025-05-05 18:20:10,744 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:20:10,744 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:20:10,744 - INFO - Enabling feature:twin...
+2025-05-05 18:20:10,745 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:20:11,781 - INFO - connected with result code: 0
+2025-05-05 18:20:11,781 - INFO - _on_mqtt_connected called
+2025-05-05 18:20:11,782 - INFO - Connection State - Connected
+2025-05-05 18:20:11,782 - INFO - subscribing to $iothub/twin/res/# with qos 1
+2025-05-05 18:20:12,011 - INFO - suback received for 1
+2025-05-05 18:20:12,012 - INFO - Successfully enabled feature:twin
+2025-05-05 18:20:12,012 - INFO - publishing on $iothub/twin/GET/?$rid=3d177e6c-7c55-40eb-93a0-924d584aa004
+2025-05-05 18:20:12,251 - INFO - message received on $iothub/twin/res/200/?$rid=3d177e6c-7c55-40eb-93a0-924d584aa004
+2025-05-05 18:20:12,252 - INFO - payload published for 2
+2025-05-05 18:20:12,253 - INFO - Successfully retrieved twin
+2025-05-05 18:20:12,253 - INFO - Successfully retrieved device twin for device raspberrypi-iot
+2025-05-05 18:21:13,064 - INFO - Initializing IoT Hub client...
+2025-05-05 18:21:13,064 - INFO - Device ID extracted: 694833b1b872
+2025-05-05 18:21:13,064 - INFO - No active connection, attempting to connect...
+2025-05-05 18:21:13,064 - INFO - Connecting to IoT Hub...
+2025-05-05 18:21:13,066 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:21:13,066 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:21:13,066 - INFO - Sending message: {
+  "deviceId": "694833b1b872",
+  "scannedBarcode": "TEST123456",
+  "sku": {
+    "name": "Test Product",
+    "category": "Test Category",
+    "price": 99.99
+  },
+  "timestamp": "2025-05-05T18:21:13.066686"
+}
+2025-05-05 18:21:13,066 - INFO - Message ID: 694833b1b872-1746449473.0667143
+2025-05-05 18:21:13,066 - INFO - Sending message to IoT Hub...
+2025-05-05 18:21:13,066 - INFO - Sending message to Hub...
+2025-05-05 18:21:13,067 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:21:14,209 - INFO - connected with result code: 5
+2025-05-05 18:21:14,210 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:21:14,210 - INFO - disconnected with result code: 5
+2025-05-05 18:21:14,211 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:21:14,212 - INFO - NoneType: None
+
+2025-05-05 18:21:14,212 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:21:14,212 - ERROR - Error type: CredentialError
+2025-05-05 18:21:14,212 - ERROR - Error details: No details available
+2025-05-05 18:21:14,212 - INFO - Disconnecting from IoT Hub...
+2025-05-05 18:21:14,212 - INFO - Disconnecting from Hub...
+2025-05-05 18:21:14,212 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:21:14,213 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:21:14,213 - INFO - Successfully disconnected from Hub
+2025-05-05 18:21:14,213 - INFO - Disconnected from IoT Hub
+2025-05-05 18:21:14,213 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:21:19,648 - INFO - Initializing IoT Hub client...
+2025-05-05 18:21:19,648 - INFO - Device ID extracted: 694833b1b872
+2025-05-05 18:21:19,648 - INFO - No active connection, attempting to connect...
+2025-05-05 18:21:19,648 - INFO - Connecting to IoT Hub...
+2025-05-05 18:21:19,650 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:21:19,650 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:21:19,650 - INFO - Testing connection by retrieving device twin...
+2025-05-05 18:21:19,650 - INFO - Enabling feature:twin...
+2025-05-05 18:21:19,651 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:21:20,636 - INFO - connected with result code: 5
+2025-05-05 18:21:20,636 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:21:20,636 - INFO - disconnected with result code: 5
+2025-05-05 18:21:20,637 - ERROR - Subscribe for twin failed.  Not enabling feature
+2025-05-05 18:21:20,637 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:21:20,637 - INFO - NoneType: None
+
+2025-05-05 18:21:20,637 - ERROR - IoT Hub connection error: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:21:20,638 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:21:20,638 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:21:20,638 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:21:20,638 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:21:20,638 - INFO - Connection State - Disconnected
+2025-05-05 18:21:20,638 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:21:20,639 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:21:20,639 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:22:01,111 - INFO - Initializing IoT Hub client...
+2025-05-05 18:22:01,111 - INFO - Device ID extracted: raspberrypi-iot
+2025-05-05 18:22:01,111 - ERROR - Device ID mismatch. Expected raspberrypi-iot, got 694833b1b872
+2025-05-05 18:22:05,539 - INFO - Initializing IoT Hub client...
+2025-05-05 18:22:05,539 - INFO - Device ID extracted: raspberrypi-iot
+2025-05-05 18:22:05,539 - INFO - No active connection, attempting to connect...
+2025-05-05 18:22:05,539 - INFO - Connecting to IoT Hub...
+2025-05-05 18:22:05,540 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:22:05,541 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:22:05,541 - INFO - Testing connection by retrieving device twin...
+2025-05-05 18:22:05,541 - INFO - Enabling feature:twin...
+2025-05-05 18:22:05,541 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:22:06,697 - INFO - connected with result code: 0
+2025-05-05 18:22:06,697 - INFO - _on_mqtt_connected called
+2025-05-05 18:22:06,699 - INFO - Connection State - Connected
+2025-05-05 18:22:06,699 - INFO - subscribing to $iothub/twin/res/# with qos 1
+2025-05-05 18:22:06,956 - INFO - suback received for 1
+2025-05-05 18:22:06,956 - INFO - Successfully enabled feature:twin
+2025-05-05 18:22:06,956 - INFO - publishing on $iothub/twin/GET/?$rid=7eba2b9d-0174-49fa-a77e-173ea8d9e555
+2025-05-05 18:22:07,219 - INFO - message received on $iothub/twin/res/200/?$rid=7eba2b9d-0174-49fa-a77e-173ea8d9e555
+2025-05-05 18:22:07,219 - INFO - payload published for 2
+2025-05-05 18:22:07,219 - INFO - Successfully retrieved twin
+2025-05-05 18:22:07,219 - INFO - Successfully retrieved device twin for device raspberrypi-iot
+2025-05-05 18:22:07,220 - INFO - Current status: {
+  "connected": true,
+  "device_id": "raspberrypi-iot",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:23:57,612 - INFO - Initializing IoT Hub client...
+2025-05-05 18:23:57,612 - INFO - Device ID extracted: raspberrypi-iot
+2025-05-05 18:23:57,612 - INFO - Current status: {
+  "connected": false,
+  "device_id": "raspberrypi-iot",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:23:57,612 - INFO - Connecting to IoT Hub...
+2025-05-05 18:23:57,614 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:23:57,614 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:23:57,614 - ERROR - Device ID mismatch. Expected raspberrypi-iot, got 694833b1b872
+2025-05-05 18:23:57,614 - INFO - Disconnecting from IoT Hub...
+2025-05-05 18:23:57,614 - INFO - Disconnecting from Hub...
+2025-05-05 18:23:57,614 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:23:57,615 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:23:57,615 - INFO - Successfully disconnected from Hub
+2025-05-05 18:23:57,615 - INFO - Disconnected from IoT Hub
+2025-05-05 18:24:18,393 - INFO - Initializing IoT Hub client...
+2025-05-05 18:24:18,393 - INFO - Device ID extracted: raspberrypi-iot
+2025-05-05 18:24:18,393 - INFO - Current status: {
+  "connected": false,
+  "device_id": "raspberrypi-iot",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:24:18,393 - INFO - Connecting to IoT Hub...
+2025-05-05 18:24:18,394 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:24:18,395 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:24:18,395 - ERROR - Device ID mismatch. Expected raspberrypi-iot, got 694833b1b872
+2025-05-05 18:24:18,395 - INFO - Disconnecting from IoT Hub...
+2025-05-05 18:24:18,395 - INFO - Disconnecting from Hub...
+2025-05-05 18:24:18,395 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:24:18,396 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:24:18,396 - INFO - Successfully disconnected from Hub
+2025-05-05 18:24:18,396 - INFO - Disconnected from IoT Hub
+2025-05-05 18:24:55,799 - INFO - Initializing IoT Hub client...
+2025-05-05 18:24:55,799 - INFO - Device ID extracted: 694833b1b872
+2025-05-05 18:24:55,799 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:24:55,799 - INFO - Connecting to IoT Hub...
+2025-05-05 18:24:55,800 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:24:55,801 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:24:55,801 - INFO - Sending message: {
+  "deviceId": "694833b1b872",
+  "scannedBarcode": "TEST123456",
+  "sku": {
+    "name": "Test Product",
+    "category": "Test Category",
+    "price": 99.99
+  },
+  "timestamp": "2025-05-05T18:24:55.801101"
+}
+2025-05-05 18:24:55,801 - INFO - Message ID: 694833b1b872-1746449695.8011353
+2025-05-05 18:24:55,801 - INFO - Sending message to IoT Hub...
+2025-05-05 18:24:55,801 - INFO - Sending message to Hub...
+2025-05-05 18:24:55,801 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:24:57,000 - INFO - connected with result code: 5
+2025-05-05 18:24:57,001 - INFO - disconnected with result code: 5
+2025-05-05 18:24:57,001 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:24:57,003 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:24:57,005 - INFO - NoneType: None
+
+2025-05-05 18:24:57,006 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:24:57,006 - ERROR - Error type: CredentialError
+2025-05-05 18:24:57,006 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:24:57,006 - ERROR - Error details: No details available
+2025-05-05 18:24:57,006 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:24:57,006 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:24:57,006 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:24:57,006 - INFO - Connection State - Disconnected
+2025-05-05 18:24:57,006 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:24:57,006 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:24:57,007 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:24:59,008 - INFO - Current status: {
+  "connected": true,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:24:59,008 - INFO - Disconnecting from IoT Hub...
+2025-05-05 18:24:59,009 - INFO - Disconnecting from Hub...
+2025-05-05 18:24:59,009 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:24:59,010 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:24:59,011 - INFO - Successfully disconnected from Hub
+2025-05-05 18:24:59,011 - INFO - Disconnected from IoT Hub
+2025-05-05 18:25:06,507 - INFO - Initializing IoT Hub client...
+2025-05-05 18:25:06,507 - INFO - Device ID extracted: 694833b1b872
+2025-05-05 18:25:06,507 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:25:06,507 - INFO - Connecting to IoT Hub...
+2025-05-05 18:25:06,509 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:25:06,509 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:25:06,509 - INFO - Sending message: {
+  "deviceId": "694833b1b872",
+  "scannedBarcode": "TEST123456",
+  "sku": {
+    "name": "Test Product",
+    "category": "Test Category",
+    "price": 99.99
+  },
+  "timestamp": "2025-05-05T18:25:06.509522"
+}
+2025-05-05 18:25:06,509 - INFO - Message ID: 694833b1b872-1746449706.5095453
+2025-05-05 18:25:06,509 - INFO - Sending message to IoT Hub...
+2025-05-05 18:25:06,509 - INFO - Sending message to Hub...
+2025-05-05 18:25:06,510 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:25:07,621 - INFO - connected with result code: 5
+2025-05-05 18:25:07,622 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:25:07,622 - INFO - disconnected with result code: 5
+2025-05-05 18:25:07,623 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:25:07,625 - INFO - NoneType: None
+
+2025-05-05 18:25:07,626 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:25:07,627 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:25:07,627 - ERROR - Error type: CredentialError
+2025-05-05 18:25:07,627 - ERROR - Error details: No details available
+2025-05-05 18:25:07,627 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:25:07,627 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:25:07,627 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:25:07,627 - INFO - Connection State - Disconnected
+2025-05-05 18:25:07,627 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:25:07,627 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:25:07,627 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:25:09,629 - INFO - Current status: {
+  "connected": true,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:25:09,629 - INFO - Disconnecting from IoT Hub...
+2025-05-05 18:25:09,629 - INFO - Disconnecting from Hub...
+2025-05-05 18:25:09,629 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:25:09,630 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:25:09,630 - INFO - Successfully disconnected from Hub
+2025-05-05 18:25:09,630 - INFO - Disconnected from IoT Hub
+2025-05-05 18:27:20,475 - INFO - Initializing IoT Hub client...
+2025-05-05 18:27:20,475 - INFO - Device ID extracted: 694833b1b872
+2025-05-05 18:27:20,475 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:27:20,475 - INFO - Connecting to IoT Hub...
+2025-05-05 18:27:20,477 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:27:20,477 - INFO - Enabling feature:twin...
+2025-05-05 18:27:20,477 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:27:21,521 - INFO - connected with result code: 5
+2025-05-05 18:27:21,521 - INFO - disconnected with result code: 5
+2025-05-05 18:27:21,521 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:27:21,522 - ERROR - Subscribe for twin failed.  Not enabling feature
+2025-05-05 18:27:21,522 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:27:21,522 - INFO - NoneType: None
+
+2025-05-05 18:27:21,522 - ERROR - Failed to connect to IoT Hub: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:27:21,522 - ERROR - Connection string used: HostName=CaleffiIoT.azure-devices.net;DeviceId=694833b1b872;SharedAccessKey=SDxMGzrOzAtRSdErS0yK/CNu8M7vLGh7HHV/xIBUAHg=
+2025-05-05 18:27:21,522 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:27:21,523 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:27:21,523 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:27:21,523 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:27:21,523 - INFO - Connection State - Disconnected
+2025-05-05 18:27:21,523 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:27:21,523 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:27:21,523 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:27:21,524 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 51, in connect
+    twin = self.client.get_twin()
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/patch_documentation.py", line 32, in get_twin
+    return super(IoTHubDeviceClient, self).get_twin()
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/iothub/sync_clients.py", line 455, in get_twin
+    self._enable_feature(pipeline_constant.TWIN)
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/iothub/sync_clients.py", line 122, in _enable_feature
+    callback.wait_for_completion()
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/common/evented_callback.py", line 70, in wait_for_completion
+    raise self.exception
+azure.iot.device.common.transport_exceptions.UnauthorizedError: UnauthorizedError('Connection Refused: not authorised.')
+
+2025-05-05 18:27:37,880 - INFO - Initializing IoT Hub client...
+2025-05-05 18:27:37,880 - INFO - Device ID extracted: 694833b1b872
+2025-05-05 18:27:37,880 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:27:37,880 - INFO - No active connection, attempting to connect...
+2025-05-05 18:27:37,880 - INFO - Connecting to IoT Hub...
+2025-05-05 18:27:37,881 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:27:37,882 - INFO - Enabling feature:twin...
+2025-05-05 18:27:37,882 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:27:38,993 - INFO - connected with result code: 5
+2025-05-05 18:27:38,993 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:27:38,993 - INFO - disconnected with result code: 5
+2025-05-05 18:27:38,994 - ERROR - Subscribe for twin failed.  Not enabling feature
+2025-05-05 18:27:38,994 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:27:38,994 - INFO - NoneType: None
+
+2025-05-05 18:27:38,994 - ERROR - Failed to connect to IoT Hub: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:27:38,994 - ERROR - Connection string used: HostName=CaleffiIoT.azure-devices.net;DeviceId=694833b1b872;SharedAccessKey=SDxMGzrOzAtRSdErS0yK/CNu8M7vLGh7HHV/xIBUAHg=
+2025-05-05 18:27:38,995 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:27:38,995 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:27:38,995 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:27:38,995 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:27:38,995 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 51, in connect
+    twin = self.client.get_twin()
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/patch_documentation.py", line 32, in get_twin
+    return super(IoTHubDeviceClient, self).get_twin()
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/iothub/sync_clients.py", line 455, in get_twin
+    self._enable_feature(pipeline_constant.TWIN)
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/iothub/sync_clients.py", line 122, in _enable_feature
+    callback.wait_for_completion()
+  File "/var/www/html/abhimanyu/rasberry_pi/myenv/lib/python3.10/site-packages/azure/iot/device/common/evented_callback.py", line 70, in wait_for_completion
+    raise self.exception
+azure.iot.device.common.transport_exceptions.UnauthorizedError: UnauthorizedError('Connection Refused: not authorised.')
+
+2025-05-05 18:27:38,995 - INFO - Connection State - Disconnected
+2025-05-05 18:27:38,995 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:27:38,996 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:27:38,996 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 72, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:27:38,996 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:27:38,996 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:28:59,510 - INFO - Initializing IoT Hub client...
+2025-05-05 18:28:59,510 - INFO - Connection string validated successfully for device raspberrypi-iot
+2025-05-05 18:28:59,510 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:28:59,510 - INFO - Current status: {
+  "connected": false,
+  "device_id": "raspberrypi-iot",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:28:59,510 - INFO - No active connection, attempting to connect...
+2025-05-05 18:28:59,510 - INFO - Connecting to IoT Hub...
+2025-05-05 18:28:59,512 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:28:59,512 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:28:59,512 - ERROR - Error type: TypeError
+2025-05-05 18:28:59,512 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 79, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:28:59,513 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:28:59,513 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 118, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:29:03,839 - INFO - Initializing IoT Hub client...
+2025-05-05 18:29:03,839 - INFO - Connection string validated successfully for device raspberrypi-iot
+2025-05-05 18:29:03,839 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:29:03,839 - INFO - No active connection, attempting to connect...
+2025-05-05 18:29:03,839 - INFO - Connecting to IoT Hub...
+2025-05-05 18:29:03,840 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:29:03,841 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:29:03,841 - ERROR - Error type: TypeError
+2025-05-05 18:29:03,841 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 79, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:29:03,841 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:29:03,841 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 118, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:29:23,164 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:29:23,164 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:29:49,170 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:29:49,170 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:33:41,350 - INFO - Initializing IoT Hub client...
+2025-05-05 18:33:41,351 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:33:41,351 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:33:41,351 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:33:41,351 - INFO - No active connection, attempting to connect...
+2025-05-05 18:33:41,351 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:33:41,352 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:33:41,353 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:33:41,353 - ERROR - Error type: TypeError
+2025-05-05 18:33:41,353 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 82, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:33:41,353 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:33:41,353 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 121, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:34:40,703 - INFO - Initializing IoT Hub client...
+2025-05-05 18:34:40,703 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:34:40,703 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:34:40,703 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:34:40,703 - INFO - No active connection, attempting to connect...
+2025-05-05 18:34:40,704 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:34:40,705 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:34:40,705 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:34:40,705 - ERROR - Error type: TypeError
+2025-05-05 18:34:40,705 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 82, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:34:40,706 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:34:40,706 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 121, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:34:58,540 - INFO - Initializing IoT Hub client...
+2025-05-05 18:34:58,540 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:34:58,540 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:34:58,540 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:34:58,540 - INFO - No active connection, attempting to connect...
+2025-05-05 18:34:58,540 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:34:58,541 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:34:58,542 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:34:58,542 - ERROR - Error type: TypeError
+2025-05-05 18:34:58,542 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 82, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:34:58,542 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:34:58,542 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 121, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:37:34,455 - INFO - Initializing IoT Hub client...
+2025-05-05 18:37:34,456 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:37:34,456 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:37:34,456 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:37:34,456 - INFO - No active connection, attempting to connect...
+2025-05-05 18:37:34,456 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:37:34,457 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:37:34,457 - INFO - Setting connection timeout and connecting...
+2025-05-05 18:37:34,458 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:37:34,458 - ERROR - Error type: TypeError
+2025-05-05 18:37:34,458 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 88, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:37:34,458 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:37:34,458 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 130, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:37:43,372 - INFO - Initializing IoT Hub client...
+2025-05-05 18:37:43,372 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:37:43,372 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:37:43,373 - INFO - No active connection, attempting to connect...
+2025-05-05 18:37:43,373 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:37:43,374 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:37:43,374 - INFO - Setting connection timeout and connecting...
+2025-05-05 18:37:43,375 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:37:43,375 - ERROR - Error type: TypeError
+2025-05-05 18:37:43,375 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 88, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:37:43,375 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:37:43,375 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 130, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:38:38,406 - INFO - Initializing IoT Hub client...
+2025-05-05 18:38:38,407 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:38:38,407 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:38:38,407 - INFO - No active connection, attempting to connect...
+2025-05-05 18:38:38,407 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:38:38,408 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:38:38,408 - INFO - Setting connection timeout and connecting...
+2025-05-05 18:38:38,409 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:38:38,409 - ERROR - Error type: TypeError
+2025-05-05 18:38:38,409 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 88, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:38:38,409 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:38:38,409 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 130, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:40:26,168 - INFO - Initializing IoT Hub client...
+2025-05-05 18:40:26,168 - INFO - Connection string validated successfully for device 694833b1b872
+2025-05-05 18:40:26,168 - INFO - IoT Hub hostname: CaleffiIoT.azure-devices.net
+2025-05-05 18:40:26,168 - INFO - Current status: {
+  "connected": false,
+  "device_id": "694833b1b872",
+  "messages_sent": 0,
+  "last_message_time": null
+}
+2025-05-05 18:40:26,168 - INFO - No active connection, attempting to connect...
+2025-05-05 18:40:26,168 - INFO - Connecting to IoT Hub for device 694833b1b872...
+2025-05-05 18:40:26,170 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:40:26,170 - INFO - Setting connection timeout and connecting...
+2025-05-05 18:40:26,170 - ERROR - Failed to connect to IoT Hub: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+2025-05-05 18:40:26,170 - ERROR - Error type: TypeError
+2025-05-05 18:40:26,170 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 88, in connect
+    self.client.connect(timeout=30)  # 30 second timeout
+TypeError: execute_patch_for_sync.<locals>.connect() got an unexpected keyword argument 'timeout'
+
+2025-05-05 18:40:26,170 - ERROR - IoT Hub connection error: Failed to establish connection
+2025-05-05 18:40:26,170 - ERROR - Stack trace: Traceback (most recent call last):
+  File "/var/www/html/abhimanyu/rasberry_pi/pi-barcode-scanner/src/iot/hub_client.py", line 130, in test_connection
+    raise Exception("Failed to establish connection")
+Exception: Failed to establish connection
+
+2025-05-05 18:41:37,802 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:41:37,802 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:41:37,803 - INFO - Disconnecting from Hub...
+2025-05-05 18:41:37,803 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:41:37,803 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:41:37,803 - INFO - Successfully disconnected from Hub
+2025-05-05 18:41:37,803 - INFO - Disconnected from IoT Hub
+2025-05-05 18:43:27,949 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:43:27,950 - INFO - Successfully connected to IoT Hub
+2025-05-05 18:43:27,950 - INFO - Sending message: {'barcode': 'TEST123456', 'device_id': '694833b1b872', 'timestamp': '2025-05-05T18:43:27.950524', 'sku': {'name': 'Test Product', 'category': 'Test Category', 'price': 99.99}}
+2025-05-05 18:43:27,950 - INFO - Sending message to Hub...
+2025-05-05 18:43:27,950 - INFO - Connect using port 8883 (TCP)
+2025-05-05 18:43:29,162 - INFO - connected with result code: 5
+2025-05-05 18:43:29,163 - INFO - disconnected with result code: 5
+2025-05-05 18:43:29,163 - INFO - MQTTTransportStage: _on_mqtt_connection_failure called: UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:43:29,163 - INFO - Callback completed with error UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:43:29,163 - INFO - NoneType: None
+
+2025-05-05 18:43:29,163 - ERROR - Failed to send message: CredentialError('Credentials invalid, could not connect') caused by UnauthorizedError('Connection Refused: not authorised.')
+2025-05-05 18:43:29,164 - INFO - Forcing paho disconnect to prevent it from automatically reconnecting
+2025-05-05 18:43:29,164 - INFO - MQTTTransportStage: _on_mqtt_disconnect called: ConnectionFailedError('The connection was refused.')
+2025-05-05 18:43:29,164 - WARNING - ReconnectStage: DisconnectEvent received while in unexpected state - DISCONNECTED, Connected: False
+2025-05-05 18:43:29,164 - INFO - MQTTTransportStage: Unexpected disconnect (no pending connection op)
+2025-05-05 18:43:29,164 - INFO - Connection State - Disconnected
+2025-05-05 18:43:29,164 - INFO - Cleared all pending method requests due to disconnect
+2025-05-05 18:43:29,164 - ERROR - Exception caught in background thread.  Unable to handle.
+2025-05-05 18:43:29,165 - ERROR - ["azure.iot.device.common.transport_exceptions.ConnectionDroppedError: ConnectionDroppedError('Unexpected disconnection') caused by ConnectionFailedError('The connection was refused.')\n"]
+2025-05-05 18:43:31,165 - INFO - Disconnecting from Hub...
+2025-05-05 18:43:31,165 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:43:31,165 - INFO - ConnectionLockStage(DisconnectOperation): Transport is already disconnected.  Completing.
+2025-05-05 18:43:31,166 - INFO - Successfully disconnected from Hub
+2025-05-05 18:43:31,166 - INFO - Disconnected from IoT Hub
+2025-05-05 18:43:52,463 - INFO - Creating client for connecting using MQTT over TCP
+2025-05-05 18:43:52,464 - INFO - Successfully connected to IoT Hub

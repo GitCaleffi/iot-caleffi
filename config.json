@@ -1,0 +1,89 @@
+{
+  "iot_hub": {
+    "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=raspberrypi-iot;SharedAccessKey=SDxMGzrOzAtRSdErS0yK/CNu8M7vLGh7HHV/xIBUAHg=",
+    "deviceId": "raspberrypi-iot",
+    "devices": {
+      "raspberrypi-iot": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=raspberrypi-iot;SharedAccessKey=SDxMGzrOzAtRSdErS0yK/CNu8M7vLGh7HHV/xIBUAHg=",
+        "deviceId": "raspberrypi-iot"
+      },
+      "c798aec00f22": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=c798aec00f22;SharedAccessKey=lhkL67iYPUFFu65u67xLgCsfn2V/0qVBm2NBp4Pzthw=",
+        "deviceId": "c798aec00f22"
+      },
+      "test_device_notification_001": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test_device_notification_001;SharedAccessKey=lb1QYesRvMW2UYYlhC2lW2ZF8txQoHvGN4FvzZGStyI=",
+        "deviceId": "test_device_notification_001"
+      },
+      "2365214521": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=2365214521;SharedAccessKey=EHL9nCzwEHau+egQ8mnj0t0HuTT/0zCtbBJ0A9W/54k=",
+        "deviceId": "2365214521"
+      },
+      "7356a1840b0e": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=7356a1840b0e;SharedAccessKey=jE2k4CN6K/mC+JZCDKZc9W8dWTtBAstbcGfol/QEit4=",
+        "deviceId": "7356a1840b0e"
+      },
+      "7356a1840b0f": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=7356a1840b0f;SharedAccessKey=wuA0EvtYZF1j1rDGM/0ByjqOANYBkc1oYXlxlHSHK+I=",
+        "deviceId": "7356a1840b0f"
+      },
+      "c798aec00f23": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=c798aec00f23;SharedAccessKey=Z4IoY4kClnWAhues2s62pmHEzqJ7hD4cBOMtovx10LU=",
+        "deviceId": "c798aec00f23"
+      },
+      "c798aec00f24": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=c798aec00f24;SharedAccessKey=UzEM0RLc/PXuPJ7AwMxNmsb/XWtJshts2IGhoKUcZsA=",
+        "deviceId": "c798aec00f24"
+      },
+      "c798aec00f27": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=c798aec00f27;SharedAccessKey=ztwCFFgJgiouMXKZocQv7k2rVRMGrFkJTfe+1Tfl7ng=",
+        "deviceId": "c798aec00f27"
+      },
+      "7356a1840b0k": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=7356a1840b0k;SharedAccessKey=Pn1m4P3d+HYIWcB1HTq8fsXD3y8rdsPi4LjmU6aoImg=",
+        "deviceId": "7356a1840b0k"
+      },
+      "test_led_device_001": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test_led_device_001;SharedAccessKey=Xoj9Q8912CiYxm3hRTSZzTCkMVMqFBZ2qFtyepM+dR8=",
+        "deviceId": "test_led_device_001"
+      },
+      "c797aec00f22": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=c797aec00f22;SharedAccessKey=VHqdBwTLulod4v30uqMvSdsvmCbwrpYuIE0EkB0z4Fc=",
+        "deviceId": "c797aec00f22"
+      },
+      "demo_device_12345": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=demo_device_12345;SharedAccessKey=MecyYS5nB2MAR1etegMqGLdXWKWGCgLI9kUM12IcMuk=",
+        "deviceId": "demo_device_12345"
+      }
+    },
+    "eventhub_connection_string": "Endpoint=sb://iothub-ns-caleffiiot-64312681-2ff1a61cb1.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ=;EntityPath=caleffiiot",
+    "eventhub_name": "caleffiiot",
+    "deviceIds": [
+      "c798aec00f22",
+      "test_device_notification_001",
+      "2365214521",
+      "7356a1840b0e",
+      "7356a1840b0f",
+      "c798aec00f23",
+      "c798aec00f24",
+      "c798aec00f27",
+      "7356a1840b0k",
+      "test_led_device_001",
+      "c797aec00f22",
+      "demo_device_12345"
+    ]
+  },
+  "barcode_scanner": {
+    "scanner_type": "Handreader",
+    "scan_timeout": 5000
+  },
+  "api": {
+    "base_url": "https://api2.caleffionline.it/api/v1",
+    "endpoint": "/raspberry/saveDeviceId",
+    "auth_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NiwiZW1haWwiOiJhcnBpNUB5b3BtYWlsLmNvbSIsImN1c3RvbWVySWQiOiI4MjAwNDciLCJpYXQiOjE3NDIxODYzODF9.cijDSnyQhpjMC89oOmSQ10oCBJHT6nHjqADzGwhrxpM"
+  },
+  "offline": {
+    "max_stored_messages": 1000,
+    "retry_interval_seconds": 300
+  }
+}
