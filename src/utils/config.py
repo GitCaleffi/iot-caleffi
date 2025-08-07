@@ -25,6 +25,36 @@ def validate_connection_string(connection_string):
         print(f"Error parsing connection string: {e}")
         return False
 
+def get_config_path():
+    """Get the path to the config.json file"""
+    current_dir = Path(__file__).resolve()
+    project_root = current_dir.parent.parent.parent
+    return project_root / 'config.json'
+
+def save_config(config):
+    """Save configuration to config.json file"""
+    try:
+        config_path = get_config_path()
+        
+        # Create backup of existing config
+        if config_path.exists():
+            backup_path = config_path.with_suffix('.json.bak')
+            try:
+                with open(config_path, 'r') as src, open(backup_path, 'w') as dst:
+                    dst.write(src.read())
+                print(f"Backup created at: {backup_path}")
+            except Exception as e:
+                print(f"Warning: Failed to create backup: {e}")
+        
+        # Write new config
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+        print(f"Configuration saved to: {config_path}")
+        return True
+    except Exception as e:
+        print(f"Error saving configuration: {e}")
+        return False
+
 def load_config():
     """Load configuration from config file first, then override with environment variables if present"""
     try:
@@ -40,10 +70,8 @@ def load_config():
             }
         }
 
-        # Get the project root directory (two levels up from this file)
-        current_dir = Path(__file__).resolve()
-        project_root = current_dir.parent.parent.parent
-        config_path = project_root / 'config.json'
+        # Get the config path
+        config_path = get_config_path()
 
         print(f"Looking for config file at: {config_path}")
         

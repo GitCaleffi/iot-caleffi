@@ -3,6 +3,17 @@ import sys
 from pathlib import Path
 from datetime import datetime, timezone
 import sqlite3
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Add project root to Python path
 project_root = Path(__file__).parent.parent.parent
@@ -157,7 +168,13 @@ class LocalStorage:
         return row[0] if row else None
 
     def save_device_id(self, device_id):
-        """Save the device ID to the database"""
+        """Save the device ID to the database if it doesn't already exist"""
+        # First check if this device ID already exists
+        existing_device_id = self.get_device_id()
+        if existing_device_id == device_id:
+            logger.info(f"Device ID {device_id} already registered, skipping save")
+            return False
+        
         conn = self._get_connection()
         cursor = conn.cursor()
         timestamp = datetime.now(timezone.utc)
@@ -168,6 +185,8 @@ class LocalStorage:
         )
         conn.commit()
         conn.close()
+        logger.info(f"Device ID {device_id} registered successfully")
+        return True
 
     def get_unsent_scans(self):
         """Get scans not yet sent to IoT Hub"""

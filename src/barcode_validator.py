@@ -30,30 +30,27 @@ def validate_ean(barcode):
     # Convert to string and strip whitespace
     barcode = str(barcode).strip()
     
-    # Remove any non-digit characters for validation
-    digits_only = re.sub(r'\D', '', barcode)
+    # Check if barcode contains only numeric characters
+    if not barcode.isdigit():
+        raise BarcodeValidationError("EAN must be numeric")
     
-    if not digits_only:
-        raise BarcodeValidationError("Barcode must contain at least one digit")
+    # Check length requirements
+    length = len(barcode)
     
-    # Check for common barcode lengths
-    valid_lengths = [8, 10, 12, 13, 14]  # EAN-8, UPC-A, EAN-13, etc.
+    # Valid lengths: EAN-8 (8), UPC-A (12), EAN-13/ISBN-13 (13), GTIN-14 (14)
+    valid_lengths = [8, 12, 13, 14]
     
-    if len(digits_only) not in valid_lengths:
-        # For this application, we'll be more lenient and accept any numeric barcode
-        # but log a warning for unusual lengths
-        if len(digits_only) < 6:
-            raise BarcodeValidationError(f"Barcode too short: {len(digits_only)} digits. Minimum 6 digits required.")
-        elif len(digits_only) > 20:
-            raise BarcodeValidationError(f"Barcode too long: {len(digits_only)} digits. Maximum 20 digits allowed.")
-        else:
-            logger.warning(f"Unusual barcode length: {len(digits_only)} digits")
+    if length not in valid_lengths:
+        raise BarcodeValidationError(
+            f"Invalid EAN format. Must be one of: EAN-8 (8), UPC-A (12), EAN-13/ISBN-13 (13), GTIN-14 (14 digits). Got {length} digits."
+        )
     
-    # For EAN-13 and EAN-8, we could validate the check digit
-    # but for this application, we'll accept any valid numeric barcode
+    # Maximum 13 digits check (but allow 14 for GTIN-14)
+    if length > 14:
+        raise BarcodeValidationError(f"EAN too long: {length} digits. Maximum 14 digits allowed.")
     
-    # Return the normalized barcode (digits only)
-    return digits_only
+    # Return the validated barcode
+    return barcode
 
 def validate_ean13(barcode):
     """

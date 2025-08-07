@@ -135,11 +135,10 @@ class HubClient:
                         wait_time = (attempt + 1) * 2  # Exponential backoff
                         logger.info(f"Connection attempt failed, retrying in {wait_time} seconds...")
                         time.sleep(wait_time)
-                    if attempt < max_retries - 1:
-                        logger.warning(f"Connection attempt failed: {e}. Retrying...")
-                        time.sleep(2 ** attempt)
                     else:
-                        raise
+                        logger.error(f"Connection attempt {attempt + 1}/{max_attempts} failed: {e}")
+                        if attempt == max_attempts - 1:
+                            raise
             
         except Exception as e:
             logger.error(f"Failed to connect to IoT Hub: {e}")
@@ -169,22 +168,18 @@ class HubClient:
             
     def send_message(self, barcode, device_id, sku=None):
         """Send barcode to IoT Hub with tracking"""
-        allowed_device_ids = ['694833b1b872', 'c798aec00f22', '423399a34af8']
-
-        if device_id not in allowed_device_ids:
-            logger.error(f"Device ID '{device_id}' is not allowed.")
-            return False
-
         logger.info(f"Sending message with device ID: {device_id}")
 
-        # Validate barcode format - must be an integer with length 10
+        # Validate barcode format - must be numeric with valid lengths (8, 12, 13, 14)
         try:
             int(barcode)
-            if len(barcode) != 10:
-                logger.error(f"Invalid barcode length: {len(barcode)}. Must be 10 digits.")
+            barcode_length = len(barcode)
+            valid_lengths = [8, 12, 13, 14]  # EAN-8, UPC-A, EAN-13, GTIN-14
+            if barcode_length not in valid_lengths:
+                logger.error(f"Invalid barcode length: {barcode_length}. Must be one of: {valid_lengths} digits.")
                 return False
         except ValueError:
-            logger.error(f"Invalid barcode format: {barcode}. Must be an integer.")
+            logger.error(f"Invalid barcode format: {barcode}. Must be numeric.")
             return False
 
         if not self.client or not self.connected:
