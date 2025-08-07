@@ -130,6 +130,18 @@ class LocalStorage:
         conn.close()
         return formatted_timestamp
 
+    def get_barcode_quantity(self, barcode):
+        """Get total quantity for a specific barcode"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT SUM(quantity) FROM scans WHERE barcode = ?',
+            (barcode,)
+        )
+        result = cursor.fetchone()
+        conn.close()
+        return result[0] if result[0] is not None else 0
+
     def get_recent_scans(self, limit=10):
         """Get recent barcode scans from the database"""
         conn = self._get_connection()
@@ -169,10 +181,10 @@ class LocalStorage:
 
     def save_device_id(self, device_id):
         """Save the device ID to the database if it doesn't already exist"""
-        # First check if this device ID already exists
+        # Check if device_id already exists
         existing_device_id = self.get_device_id()
-        if existing_device_id == device_id:
-            logger.info(f"Device ID {device_id} already registered, skipping save")
+        if existing_device_id:
+            logger.info(f"Device ID already exists: {existing_device_id}")
             return False
         
         conn = self._get_connection()
@@ -187,6 +199,34 @@ class LocalStorage:
         conn.close()
         logger.info(f"Device ID {device_id} registered successfully")
         return True
+    
+    def save_device_registration(self, device_id, timestamp):
+        """Save device registration with timestamp"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        formatted_timestamp = self.format_timestamp(timestamp)
+        cursor.execute(
+            'INSERT INTO device_info (device_id, timestamp) VALUES (?, ?)',
+            (device_id, formatted_timestamp)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"Device registration saved: {device_id} at {formatted_timestamp}")
+        return True
+    
+    def save_barcode_scan(self, device_id, barcode, timestamp):
+        """Save a barcode scan with timestamp"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        formatted_timestamp = self.format_timestamp(timestamp)
+        cursor.execute(
+            'INSERT INTO scans (device_id, barcode, timestamp, sent_to_hub, quantity) VALUES (?, ?, ?, 0, 1)',
+            (device_id, barcode, formatted_timestamp)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"Barcode scan saved: {barcode} from device {device_id}")
+        return formatted_timestamp
 
     def get_unsent_scans(self):
         """Get scans not yet sent to IoT Hub"""

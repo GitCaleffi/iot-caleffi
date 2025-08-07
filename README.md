@@ -3,6 +3,8 @@
 
 2. ssh Geektech@192.168.1.14
 
+ # bash: sqlite3 barcode_device_mapping.db "SELECT barcode, device_id FROM barcode_device_mapping;"
+
 
 # pi-barcode-scanner README.md
 

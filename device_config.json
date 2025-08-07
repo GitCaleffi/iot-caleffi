@@ -1,0 +1,59 @@
+{
+  "devices": {
+    "my_device_001": {
+      "device_id": "my_device_001",
+      "registered_at": "2025-08-07T14:19:07.613418+00:00",
+      "last_seen": "2025-08-07T14:22:15.940210+00:00",
+      "status": "active",
+      "registration_token": "146de4a6e791d97c",
+      "device_info": {}
+    },
+    "fd771228d8fd": {
+      "device_id": "fd771228d8fd",
+      "registered_at": "2025-08-07T14:25:44.511296+00:00",
+      "last_seen": "2025-08-07T15:15:47.955323+00:00",
+      "status": "active",
+      "registration_token": "548eaab6a38aa9f5",
+      "device_info": {}
+    }
+  },
+  "registration_tokens": {
+    "e90ad6b376ba75a2": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T12:33:17.383827+00:00",
+      "expires_at": 1754656397.383812,
+      "used": false
+    },
+    "96358fc78a4726f8": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T12:37:37.557966+00:00",
+      "expires_at": 1754656657.55796,
+      "used": false
+    },
+    "146de4a6e791d97c": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T14:19:00.673146+00:00",
+      "expires_at": 1754662740.67314,
+      "used": true
+    },
+    "548eaab6a38aa9f5": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T14:21:11.902155+00:00",
+      "expires_at": 1754662871.902143,
+      "used": true
+    },
+    "0ca8ebf704439756": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T14:22:05.871550+00:00",
+      "expires_at": 1754662925.871535,
+      "used": false
+    },
+    "454aa0215a992983": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T14:23:27.558683+00:00",
+      "expires_at": 1754663007.558677,
+      "used": false
+    }
+  },
+  "last_updated": "2025-08-07T15:15:47.955330+00:00"
+}

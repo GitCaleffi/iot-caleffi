@@ -3,24 +3,47 @@ from pathlib import Path
 import json
 
 def validate_connection_string(connection_string):
-    """Validate IoT Hub connection string format"""
+    """Validate IoT Hub connection string format - supports both device and owner connection strings"""
     if not connection_string:
         print("Connection string is empty")
         return False
 
-    required_parts = [
+    # Required parts for device connection string
+    device_required_parts = [
         'HostName',
         'DeviceId',
         'SharedAccessKey'
     ]
     
+    # Required parts for IoT Hub owner connection string (for commercial deployment)
+    owner_required_parts = [
+        'HostName',
+        'SharedAccessKeyName',
+        'SharedAccessKey'
+    ]
+    
     try:
         parts = dict(part.split('=', 1) for part in connection_string.split(';'))
-        valid = all(key in parts for key in required_parts)
-        if not valid:
-            print(f"Missing required parts in connection string. Required: {required_parts}")
+        
+        # Check if it's a device connection string
+        device_valid = all(key in parts for key in device_required_parts)
+        
+        # Check if it's an IoT Hub owner connection string
+        owner_valid = all(key in parts for key in owner_required_parts)
+        
+        if device_valid:
+            print("✓ Valid device connection string")
+            return True
+        elif owner_valid:
+            print("✓ Valid IoT Hub owner connection string (commercial deployment)")
+            return True
+        else:
+            print(f"Invalid connection string format.")
+            print(f"For device connection: Required parts: {device_required_parts}")
+            print(f"For owner connection: Required parts: {owner_required_parts}")
             print(f"Found parts: {list(parts.keys())}")
-        return valid
+            return False
+            
     except Exception as e:
         print(f"Error parsing connection string: {e}")
         return False
@@ -81,10 +104,12 @@ def load_config():
             try:
                 with open(config_path, 'r') as f:
                     file_config = json.load(f)
-                    if "iot_hub" in file_config:
-                        config["iot_hub"].update(file_config["iot_hub"])
-                    if "barcode_scanner" in file_config:
-                        config["barcode_scanner"].update(file_config["barcode_scanner"])
+                    # Merge all configuration sections
+                    for section, values in file_config.items():
+                        if section in config:
+                            config[section].update(values)
+                        else:
+                            config[section] = values
             except json.JSONDecodeError as e:
                 print(f"Error reading config file: {e}")
                 return None
@@ -109,9 +134,18 @@ def load_config():
             print("Invalid connection string format")
             return None
 
-        if not config["iot_hub"]["deviceId"]:
-            print("No device ID found in config file or environment variables")
+        # For commercial deployment, device ID is optional (generated from barcodes)
+        # Check if this is an IoT Hub owner connection string (has SharedAccessKeyName)
+        parts = dict(part.split('=', 1) for part in config["iot_hub"]["connection_string"].split(';'))
+        is_owner_connection = 'SharedAccessKeyName' in parts
+        
+        if not is_owner_connection and not config["iot_hub"]["deviceId"]:
+            print("No device ID found for device connection string")
             return None
+        elif is_owner_connection:
+            print("✓ Commercial deployment mode - device IDs will be generated from barcodes")
+            # Set a placeholder device ID for owner connections
+            config["iot_hub"]["deviceId"] = "auto-generated-from-barcode"
 
         return config
 

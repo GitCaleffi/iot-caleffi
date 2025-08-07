@@ -1,5 +1,12 @@
 {
   "devices": {},
-  "registration_tokens": {},
-  "last_updated": "2025-08-06T14:38:47.415773+00:00"
+  "registration_tokens": {
+    "375d5a4a3349ddeb": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-07T11:52:23.889743+00:00",
+      "expires_at": 1754653943.889738,
+      "used": false
+    }
+  },
+  "last_updated": "2025-08-07T11:52:23.889753+00:00"
 }

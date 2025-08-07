@@ -118,25 +118,38 @@ class DynamicDeviceManager:
             if not is_valid:
                 return False, message
             
-            # Check if device_id already exists
+            # Check if device ID is already registered
             if device_id in self.device_cache:
-                return False, f"Device ID {device_id} is already registered"
+                return False, f"Device {device_id} is already registered"
             
             # Mark token as used
             self.registration_tokens[token]['used'] = True
             
             # Register the device
             self.device_cache[device_id] = {
-                'registration_token': token,
+                'device_id': device_id,
                 'registered_at': datetime.now(timezone.utc).isoformat(),
-                'device_info': device_info or {},
+                'last_seen': datetime.now(timezone.utc).isoformat(),
                 'status': 'active',
-                'last_seen': datetime.now(timezone.utc).isoformat()
+                'registration_token': token,
+                'device_info': device_info or {}
             }
             
             self.save_device_config()
             logger.info(f"Device {device_id} registered successfully")
             return True, f"Device {device_id} registered successfully"
+    
+    def confirm_registration(self, token: str, device_id: str) -> bool:
+        """
+        Confirm device registration using token and device ID.
+        This is an alias for register_device for compatibility.
+        """
+        success, message = self.register_device(token, device_id)
+        if success:
+            logger.info(f"Device registration confirmed: {device_id}")
+        else:
+            logger.error(f"Device registration confirmation failed: {message}")
+        return success
     
     def is_device_registered(self, device_id: str) -> bool:
         """Check if a device is registered and active"""

@@ -1,17 +1,35 @@
 #!/usr/bin/env python3
+"""
+Commercial Scale Device Registration for Barcode Scanner System
+Supports plug-and-play registration using barcodes only
+Designed for 1000+ device deployment
+"""
+
 from azure.iot.hub import IoTHubRegistryManager
 from azure.iot.hub.models import DeviceCapabilities, AuthenticationMechanism, SymmetricKey, Device
 import json
+import argparse
+import sys
 from pathlib import Path
+from utils.dynamic_registration_service import DynamicRegistrationService
+from utils.barcode_device_mapper import barcode_mapper
 
 # IoT Hub owner connection string
 IOTHUB_CONNECTION_STRING = "HostName=CaleffiIoT.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ="
 
-# Device IDs to register
-DEVICE_IDS = [
+# Legacy device IDs (for backward compatibility)
+LEGACY_DEVICE_IDS = [
     "694833b1b872",
     "c798aec00f22",
     "423399a34af8"
+]
+
+# Sample barcodes for testing commercial deployment
+SAMPLE_BARCODES = [
+    "1234567890123",  # EAN-13
+    "123456789012",   # UPC-A
+    "12345678",       # EAN-8
+    "12345678901234"  # GTIN-14
 ]
 
 def register_single_device(registry_manager, device_id):
@@ -91,8 +109,56 @@ def update_config_file(devices_info):
     except Exception as e:
         print(f"Error updating config file: {e}")
 
-def main():
-    print("Registering devices with Azure IoT Hub...")
+def register_barcode_devices(barcodes: list) -> dict:
+    """Register devices using barcodes for commercial deployment"""
+    print(f"Registering {len(barcodes)} devices using barcode-based system...")
+    
+    try:
+        # Initialize dynamic registration service
+        registration_service = DynamicRegistrationService(IOTHUB_CONNECTION_STRING)
+        
+        results = {}
+        successful_registrations = 0
+        
+        for barcode in barcodes:
+            print(f"\nProcessing barcode: {barcode}")
+            
+            # Register device for barcode
+            result = registration_service.register_barcode_device(barcode)
+            results[barcode] = result
+            
+            if result["success"]:
+                successful_registrations += 1
+                print(f"✓ SUCCESS: {result['message']}")
+                print(f"  Device ID: {result['device_id']}")
+            else:
+                print(f"✗ FAILED: {result['message']}")
+        
+        # Print summary
+        print(f"\n{'='*50}")
+        print("COMMERCIAL REGISTRATION SUMMARY")
+        print(f"{'='*50}")
+        print(f"Total barcodes processed: {len(barcodes)}")
+        print(f"Successful registrations: {successful_registrations}")
+        print(f"Failed registrations: {len(barcodes) - successful_registrations}")
+        print(f"Success rate: {(successful_registrations/len(barcodes)*100):.1f}%")
+        
+        # Show mapping statistics
+        stats = barcode_mapper.get_mapping_stats()
+        print(f"\nSystem Statistics:")
+        print(f"Total device mappings: {stats.get('total_mappings', 0)}")
+        print(f"Azure registered devices: {stats.get('registered_devices', 0)}")
+        print(f"Pending registrations: {stats.get('pending_registrations', 0)}")
+        
+        return results
+        
+    except Exception as e:
+        print(f"Error in barcode device registration: {e}")
+        return {}
+
+def register_legacy_devices():
+    """Register legacy devices (backward compatibility)"""
+    print("Registering legacy devices with Azure IoT Hub...")
     try:
         # Create IoTHubRegistryManager
         registry_manager = IoTHubRegistryManager.from_connection_string(IOTHUB_CONNECTION_STRING)
@@ -100,9 +166,9 @@ def main():
         # Store device info
         devices_info = {}
 
-        # Register each device
-        for device_id in DEVICE_IDS:
-            print(f"\nProcessing device: {device_id}")
+        # Register each legacy device
+        for device_id in LEGACY_DEVICE_IDS:
+            print(f"\nProcessing legacy device: {device_id}")
             conn_string = register_single_device(registry_manager, device_id)
             devices_info[device_id] = conn_string
 
@@ -110,13 +176,156 @@ def main():
         update_config_file(devices_info)
 
         # Summary
-        print("\nRegistration Summary:")
+        print("\nLegacy Registration Summary:")
         for device_id, conn_string in devices_info.items():
             status = "SUCCESS" if conn_string else "FAILED"
             print(f"Device {device_id}: {status}")
 
     except Exception as ex:
-        print(f"Error in device registration: {ex}")
+        print(f"Error in legacy device registration: {ex}")
+
+def test_commercial_deployment():
+    """Test commercial deployment with sample barcodes"""
+    print("Testing commercial deployment with sample barcodes...")
+    print("This demonstrates plug-and-play functionality for 1000+ users")
+    
+    # Register sample barcodes
+    results = register_barcode_devices(SAMPLE_BARCODES)
+    
+    # Test connections
+    print(f"\n{'='*50}")
+    print("TESTING CONNECTIONS")
+    print(f"{'='*50}")
+    
+    from iot.barcode_hub_client import BarcodeHubClient
+    
+    try:
+        client = BarcodeHubClient(IOTHUB_CONNECTION_STRING)
+        
+        for barcode in SAMPLE_BARCODES:
+            if results.get(barcode, {}).get("success"):
+                print(f"\nTesting connection for barcode: {barcode}")
+                success = client.connect_with_barcode(barcode)
+                if success:
+                    print(f"✓ Connection successful for barcode {barcode}")
+                    
+                    # Test sending a message
+                    message_success = client.send_barcode_message(barcode, {"test": True})
+                    if message_success:
+                        print(f"✓ Test message sent successfully for barcode {barcode}")
+                    else:
+                        print(f"✗ Failed to send test message for barcode {barcode}")
+                else:
+                    print(f"✗ Connection failed for barcode {barcode}")
+        
+        client.disconnect()
+        
+    except Exception as e:
+        print(f"Error testing connections: {e}")
+
+def show_system_status():
+    """Show current system status and statistics"""
+    print(f"\n{'='*50}")
+    print("BARCODE SCANNER SYSTEM STATUS")
+    print(f"{'='*50}")
+    
+    try:
+        # Mapping statistics
+        stats = barcode_mapper.get_mapping_stats()
+        print(f"\nDevice Mapping Statistics:")
+        print(f"  Total mappings: {stats.get('total_mappings', 0)}")
+        print(f"  Registered devices: {stats.get('registered_devices', 0)}")
+        print(f"  Pending registrations: {stats.get('pending_registrations', 0)}")
+        print(f"  Recent activity (24h): {stats.get('recent_activity', 0)}")
+        
+        # List recent mappings
+        mappings = barcode_mapper.list_all_mappings(10)
+        if mappings:
+            print(f"\nRecent Device Mappings (last 10):")
+            for mapping in mappings:
+                status = "✓" if mapping['azure_registered'] else "⏳"
+                print(f"  {status} {mapping['barcode']} -> {mapping['device_id']} ({mapping['registration_status']})")
+        
+        # Test Azure connection
+        print(f"\nAzure IoT Hub Connection Test:")
+        try:
+            registry_manager = IoTHubRegistryManager.from_connection_string(IOTHUB_CONNECTION_STRING)
+            devices = registry_manager.get_devices(max_number_of_devices=1)
+            print(f"  ✓ Azure IoT Hub connection successful")
+        except Exception as e:
+            print(f"  ✗ Azure IoT Hub connection failed: {e}")
+            
+    except Exception as e:
+        print(f"Error getting system status: {e}")
+
+def main():
+    """Main function with command-line interface for commercial deployment"""
+    parser = argparse.ArgumentParser(
+        description="Commercial Scale Barcode Device Registration System",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python register_device.py --commercial-test    # Test with sample barcodes
+  python register_device.py --legacy            # Register legacy devices
+  python register_device.py --barcode 1234567890123  # Register single barcode
+  python register_device.py --status            # Show system status
+  python register_device.py --batch-file barcodes.txt  # Register from file
+        """
+    )
+    
+    parser.add_argument('--commercial-test', action='store_true',
+                       help='Test commercial deployment with sample barcodes')
+    parser.add_argument('--legacy', action='store_true',
+                       help='Register legacy devices (backward compatibility)')
+    parser.add_argument('--barcode', type=str,
+                       help='Register a single barcode')
+    parser.add_argument('--batch-file', type=str,
+                       help='Register barcodes from a text file (one per line)')
+    parser.add_argument('--status', action='store_true',
+                       help='Show system status and statistics')
+    
+    args = parser.parse_args()
+    
+    print("Commercial Scale Barcode Device Registration System")
+    print("Designed for 1000+ device plug-and-play deployment")
+    print(f"{'='*60}")
+    
+    try:
+        if args.commercial_test:
+            test_commercial_deployment()
+        elif args.legacy:
+            register_legacy_devices()
+        elif args.barcode:
+            print(f"Registering single barcode: {args.barcode}")
+            results = register_barcode_devices([args.barcode])
+            if results.get(args.barcode, {}).get("success"):
+                print(f"\n✓ Barcode {args.barcode} registered successfully!")
+                print("Device is now ready for plug-and-play operation.")
+            else:
+                print(f"\n✗ Failed to register barcode {args.barcode}")
+        elif args.batch_file:
+            try:
+                with open(args.batch_file, 'r') as f:
+                    barcodes = [line.strip() for line in f if line.strip()]
+                print(f"Registering {len(barcodes)} barcodes from file: {args.batch_file}")
+                register_barcode_devices(barcodes)
+            except FileNotFoundError:
+                print(f"Error: File {args.batch_file} not found")
+                sys.exit(1)
+        elif args.status:
+            show_system_status()
+        else:
+            # Default: show help and run commercial test
+            parser.print_help()
+            print("\nRunning commercial deployment test by default...")
+            test_commercial_deployment()
+            
+    except KeyboardInterrupt:
+        print("\n\nOperation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nError: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
