@@ -11,7 +11,7 @@
     "fd771228d8fd": {
       "device_id": "fd771228d8fd",
       "registered_at": "2025-08-07T14:25:44.511296+00:00",
-      "last_seen": "2025-08-07T15:15:47.955323+00:00",
+      "last_seen": "2025-08-08T14:17:16.760136+00:00",
       "status": "active",
       "registration_token": "548eaab6a38aa9f5",
       "device_info": {}
@@ -55,5 +55,5 @@
       "used": false
     }
   },
-  "last_updated": "2025-08-07T15:15:47.955330+00:00"
+  "last_updated": "2025-08-08T14:17:16.760148+00:00"
 }

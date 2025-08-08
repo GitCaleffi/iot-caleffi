@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Commercial Barcode Scanner Web Interface
-Production-ready web application for plug-and-play barcode scanning
-Designed for Ubuntu server deployment with 1000+ device support
-"""
 
 from flask import Flask, render_template, request, jsonify
 import json
@@ -580,10 +574,10 @@ def health_check():
             'timestamp': datetime.now().isoformat()
         }), 500
 
-@app.route('/dashboard')
-def dashboard():
-    """Admin dashboard page"""
-    return render_template('dashboard.html', stats=system_stats)
+# @app.route('/dashboard')
+# def dashboard():
+#     """Admin dashboard page"""
+#     return render_template('dashboard.html', stats=system_stats)
 
 # Initialize system on startup
 if initialize_system():
