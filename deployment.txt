@@ -120,7 +120,7 @@ sudo nano /etc/nginx/sites-available/barcode-scanner
 # Nginx configuration content:
 server {
     listen 80;
-    server_name your-domain.com;  # Replace with your domain/IP
+    server_name 192.168.1.8;
 
     location / {
         proxy_pass http://127.0.0.1:5000;
@@ -133,8 +133,8 @@ server {
         proxy_read_timeout 60s;
     }
 
-    location /static {
-        alias /opt/barcode-scanner/static;
+    location /static/ {
+        alias /var/www/html/iot-caleffi/static/;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
@@ -144,6 +144,8 @@ server {
         access_log off;
     }
 }
+
+
 
 # Enable nginx site
 sudo ln -s /etc/nginx/sites-available/barcode-scanner /etc/nginx/sites-enabled/
@@ -220,7 +222,12 @@ sudo systemctl status nginx
 # Monitor system resources
 htop
 df -h
+/var/www/html
 
+sudo systemctl daemon-reload
+sudo systemctl enable iot-caleffi
+sudo systemctl start iot-caleffi
+sudo systemctl status iot-caleffi
 ================================================================================
 PRODUCTION CHECKLIST
 ================================================================================

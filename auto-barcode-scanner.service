@@ -1,0 +1,22 @@
+[Unit]
+Description=Automated Barcode Scanner Service (Plug-and-Play)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=gt39112
+Group=gt39112
+WorkingDirectory=/var/www/html/abhimanyu/barcode_scanner_clean
+Environment=PYTHONPATH=/var/www/html/abhimanyu/barcode_scanner_clean/src
+ExecStart=/var/www/html/abhimanyu/barcode_scanner_clean/venv/bin/python /var/www/html/abhimanyu/barcode_scanner_clean/auto_barcode_service.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Allow service to read input devices
+SupplementaryGroups=input
+
+[Install]
+WantedBy=multi-user.target

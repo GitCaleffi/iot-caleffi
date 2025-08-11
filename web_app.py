@@ -200,10 +200,57 @@ def confirm_device_registration(registration_token, device_id):
             # Update system stats
             system_stats['devices_registered'] += 1
             
+            # Send confirmation message to IoT Hub (like barcode_scanner_app.py does)
+            try:
+                # Send registration confirmation to IoT Hub using device connection string
+                hub_success = False
+                if barcode_client and barcode_client.registration_service:
+                    try:
+                        # Get device connection string for this barcode (will auto-register if needed)
+                        device_connection = barcode_client.registration_service.get_device_connection_for_barcode(registration_token)
+                        
+                        if device_connection:
+                            from src.iot.hub_client import HubClient
+                            device_hub_client = HubClient(device_connection)
+                            
+                            # Send registration token as barcode to IoT Hub (HubClient expects just the barcode string)
+                            hub_success = device_hub_client.send_message(registration_token, device_id)
+                        else:
+                            logger.warning(f"No device connection string available for device {device_id}")
+                            
+                    except Exception as e:
+                        logger.error(f"Error sending registration confirmation to IoT Hub: {e}")
+                        hub_success = False
+                else:
+                    logger.warning("No IoT Hub registration service available for registration confirmation")
+                if hub_success:
+                    logger.info(f"Registration confirmation sent to IoT Hub for device {device_id}")
+                else:
+                    logger.warning(f"Failed to send registration confirmation to IoT Hub for device {device_id}")
+                    storage.save_unsent_message(device_id, json.dumps(confirmation_message), datetime.now())
+                if barcode_client and barcode_client.api_client:
+                    api_success = barcode_client.api_client.send_barcode_scan(device_id, f"REGISTRATION:{registration_token}", 1)
+                    if api_success:
+                        logger.info(f"Registration confirmation sent to API for device {device_id}")
+                    else:
+                        logger.warning(f"Failed to send registration confirmation to API for device {device_id}")
+                        
+            except Exception as hub_error:
+                logger.error(f"Error sending confirmation messages: {str(hub_error)}")
+                # Store message for retry later
+                confirmation_message = {
+                    "deviceId": device_id,
+                    "status": "registered",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "message": "Device registration confirmed via dynamic token",
+                    "registration_token": registration_token
+                }
+                storage.save_unsent_message(device_id, json.dumps(confirmation_message), datetime.now())
+            
             return {
                 'success': True,
                 'device_id': device_id,
-                'message': f'Device {device_id} registered successfully'
+                'message': f'Device {device_id} registered successfully and confirmation sent to IoT Hub'
             }
         else:
             return {
@@ -306,8 +353,54 @@ def api_scan_barcode():
         
         # Process barcode online
         try:
-            # Send barcode message
-            send_success = barcode_client.send_barcode_message(barcode, device_id)
+            # Create message payload with quantity information (like barcode_scanner_app.py)
+            message_payload = {
+                "scannedBarcode": barcode,
+                "deviceId": device_id,
+                "quantity": 1,  # Default quantity
+                "timestamp": timestamp.isoformat()
+            }
+            
+            # Send to API first using correct method name
+            api_success = False
+            if barcode_client and barcode_client.api_client:
+                try:
+                    api_result = barcode_client.api_client.send_barcode_scan(device_id, barcode, message_payload.get("quantity", 1))
+                    api_success = api_result.get("success", False) if isinstance(api_result, dict) else api_result
+                    if api_success:
+                        logger.info(f"Barcode {barcode} sent to API successfully from device {device_id}")
+                    else:
+                        logger.warning(f"Failed to send barcode {barcode} to API from device {device_id}")
+                except Exception as api_error:
+                    logger.error(f"API error: {api_error}")
+            
+            # Send to IoT Hub using device connection string
+            hub_success = False
+            try:
+                if barcode_client and barcode_client.registration_service:
+                    # Get device connection string for this barcode (will auto-register if needed)
+                    device_connection = barcode_client.registration_service.get_device_connection_for_barcode(barcode)
+                    
+                    if device_connection:
+                        from src.iot.hub_client import HubClient
+                        device_hub_client = HubClient(device_connection)
+                        
+                        # Send barcode message to IoT Hub (HubClient expects just the barcode string)
+                        hub_success = device_hub_client.send_message(barcode, device_id)
+                    else:
+                        logger.warning(f"No device connection string available for device {device_id}")
+                else:
+                    logger.warning("No IoT Hub registration service available for barcode scanning")
+                if hub_success:
+                    logger.info(f"[SUCCESS] Barcode {barcode} with quantity update sent to IoT Hub from device {device_id}")
+                else:
+                    logger.warning(f"Failed to send barcode {barcode} to IoT Hub from device {device_id}")
+                    # Store message for retry later
+                    storage.save_unsent_message(device_id, json.dumps(message_payload), timestamp)
+            except Exception as hub_error:
+                logger.error(f"IoT Hub error: {hub_error}")
+                # Store message for retry later
+                storage.save_unsent_message(device_id, json.dumps(message_payload), timestamp)
             
             # Check IoT Hub status for response
             iot_hub_status = 'offline'
@@ -316,24 +409,35 @@ def api_scan_barcode():
                     iot_hub_status = 'online'
                 elif hasattr(barcode_client, 'connection_string') and 'SharedAccessKeyName' in barcode_client.connection_string:
                     iot_hub_status = 'ready'
-            
-            # Send to IoT Hub if online
-            if barcode_client and barcode_client.is_online():
-                success = barcode_client.send_barcode_message(barcode, device_id)
-                if success:
-                    logger.info(f"[SUCCESS] Barcode {barcode} sent from device {device_id}")
-                    system_stats['successful_scans'] += 1
-                    return jsonify({
-                        'success': True,
-                        'message': f'Barcode {barcode} sent successfully from device {device_id}',
-                        'device_id': device_id,
-                        'timestamp': datetime.now().isoformat(),
-                        'azure_status': 'online',
-                        'azure_connection': 'online'
-                    })
-                else:
-                    logger.warning(f"[FAILED] Failed to send barcode {barcode} from device {device_id}")
-                    system_stats['failed_scans'] += 1
+
+            if api_success or hub_success:
+                system_stats['successful_scans'] += 1
+                return jsonify({
+                    'success': True,
+                    'message': f'Barcode {barcode} with quantity update sent successfully from device {device_id}',
+                    'barcode': barcode,
+                    'device_id': device_id,
+                    'quantity': 1,
+                    'timestamp': timestamp.isoformat(),
+                    'api_status': 'success' if api_success else 'failed',
+                    'azure_status': 'success' if hub_success else iot_hub_status,
+                    'azure_connection': iot_hub_status
+                })
+            else:
+                logger.warning(f"[FAILED] Failed to send barcode {barcode} from device {device_id} to both API and IoT Hub")
+                system_stats['failed_scans'] += 1
+                # Store locally for retry
+                storage.save_barcode_scan(device_id, barcode, timestamp)
+                return jsonify({
+                    'success': False,
+                    'message': f'Failed to send barcode {barcode} from device {device_id}. Stored locally for retry.',
+                    'barcode': barcode,
+                    'device_id': device_id,
+                    'timestamp': timestamp.isoformat(),
+                    'status': 'failed_stored',
+                    'azure_status': iot_hub_status,
+                    'azure_connection': iot_hub_status
+                }), 500
             
             # Store locally if offline or send failed
             storage.save_barcode_scan(device_id, barcode, timestamp)

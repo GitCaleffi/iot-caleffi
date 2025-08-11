@@ -1,0 +1,245 @@
+================================================================================
+BARCODE SCANNER DEPLOYMENT COMMANDS REFERENCE
+================================================================================
+
+================================================================================
+RASPBERRY PI CONNECTION COMMANDS
+================================================================================
+
+# 1. Find Raspberry Pi on network
+ping raspberrypi.local -4
+
+# 2. SSH into Raspberry Pi
+ssh Geektech@192.168.1.14
+
+# 3. Alternative SSH with key (if needed)
+ssh -i ~/path/to/key.pem pi@192.168.1.14
+
+================================================================================
+AZURE SERVER CONNECTION COMMANDS
+================================================================================
+
+# SSH into Azure server
+ssh -i ~/Downloads/ARSH.pem azureuser@50.85.252.172
+
+# Navigate to web directory
+cd /var/www/html
+
+================================================================================
+BARCODE SCANNER SERVICE MANAGEMENT COMMANDS
+================================================================================
+
+# Service Management (Primary - barcode-scanner)
+sudo systemctl daemon-reload
+sudo systemctl enable barcode-scanner
+sudo systemctl start barcode-scanner
+sudo systemctl status barcode-scanner
+sudo systemctl restart barcode-scanner
+sudo systemctl stop barcode-scanner
+
+# Alternative Service Management (iot-caleffi - if using different service name)
+sudo systemctl daemon-reload
+sudo systemctl enable iot-caleffi
+sudo systemctl start iot-caleffi
+sudo systemctl status iot-caleffi
+sudo systemctl restart iot-caleffi
+sudo systemctl stop iot-caleffi
+
+# View service logs
+sudo journalctl -u barcode-scanner -f
+sudo journalctl -u barcode-scanner --since "1 hour ago"
+sudo journalctl -u iot-caleffi -f
+
+================================================================================
+NGINX CONFIGURATION COMMANDS
+================================================================================
+
+# Edit systemd service file
+sudo nano /etc/systemd/system/barcode-scanner.service
+sudo nano /etc/systemd/system/iot-caleffi.service
+
+# Edit nginx site configuration
+sudo nano /etc/nginx/sites-available/barcode-scanner
+sudo nano /etc/nginx/sites-available/iot-caleffi
+
+# Test nginx configuration
+sudo nginx -t
+
+# Reload nginx after changes
+sudo systemctl reload nginx
+sudo systemctl restart nginx
+
+# Enable/disable nginx sites
+sudo ln -s /etc/nginx/sites-available/barcode-scanner /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/barcode-scanner
+
+# Check nginx status
+sudo systemctl status nginx
+
+================================================================================
+TESTING AND DEBUGGING COMMANDS
+================================================================================
+
+# Test web application directly (Flask app)
+curl http://127.0.0.1:5000/
+curl http://127.0.0.1:5000/health
+curl http://127.0.0.1:5000/api/stats
+
+# Test through nginx proxy
+curl http://localhost/
+curl http://localhost/health
+curl http://localhost/api/stats
+
+# Test from external network
+curl http://192.168.1.8/
+curl http://your-server-ip/
+
+# Check running processes
+ps aux | grep python
+ps aux | grep nginx
+
+# Check port usage
+sudo netstat -tlnp | grep :5000
+sudo netstat -tlnp | grep :80
+
+# Check system resources
+htop
+df -h
+free -h
+
+================================================================================
+COMPLETE DEPLOYMENT WORKFLOW
+================================================================================
+
+# 1. INITIAL SETUP
+cd /var/www/html/abhimanyu/barcode_scanner_clean
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 2. CONFIGURE SERVICE
+sudo cp barcode-scanner.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable barcode-scanner
+sudo systemctl start barcode-scanner
+
+# 3. CONFIGURE NGINX
+sudo cp /tmp/barcode-scanner-nginx.conf /etc/nginx/sites-available/barcode-scanner
+sudo ln -s /etc/nginx/sites-available/barcode-scanner /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
+
+# 4. VERIFY DEPLOYMENT
+sudo systemctl status barcode-scanner
+sudo systemctl status nginx
+curl http://localhost/health
+
+================================================================================
+TROUBLESHOOTING COMMANDS
+================================================================================
+
+# Check service logs for errors
+sudo journalctl -u barcode-scanner -n 50
+sudo journalctl -u nginx -n 50
+
+# Restart all services
+sudo systemctl restart barcode-scanner
+sudo systemctl restart nginx
+
+# Check configuration files
+sudo nginx -t
+python3 -m py_compile web_app.py
+
+# Check file permissions
+ls -la /var/www/html/abhimanyu/barcode_scanner_clean/
+sudo chown -R gt39112:gt39112 /var/www/html/abhimanyu/barcode_scanner_clean/
+
+# Check firewall (if enabled)
+sudo ufw status
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+================================================================================
+MAINTENANCE COMMANDS
+================================================================================
+
+# Update application
+cd /var/www/html/abhimanyu/barcode_scanner_clean
+git pull origin main
+source venv/bin/activate
+pip install -r requirements.txt
+sudo systemctl restart barcode-scanner
+
+# Backup database
+cp barcode_device_mapping.db barcode_device_mapping.db.backup.$(date +%Y%m%d_%H%M%S)
+cp barcode_scans.db barcode_scans.db.backup.$(date +%Y%m%d_%H%M%S)
+
+# View system statistics
+curl http://localhost/api/stats | python3 -m json.tool
+
+# Monitor real-time logs
+sudo journalctl -u barcode-scanner -f
+
+================================================================================
+QUICK REFERENCE - MOST USED COMMANDS
+================================================================================
+
+# Check if everything is running
+sudo systemctl status barcode-scanner nginx
+curl http://localhost/health
+
+# Restart everything after changes
+sudo systemctl restart barcode-scanner nginx
+
+# View logs
+sudo journalctl -u barcode-scanner -f
+
+# Test web interface
+curl http://localhost/
+
+================================================================================
+ACCESS URLS
+================================================================================
+
+# Local access
+http://localhost/
+http://127.0.0.1/
+http://127.0.0.1:5000/ (direct Flask app)
+
+# Network access
+http://192.168.1.8/
+http://your-server-ip/
+
+# Health check
+http://localhost/health
+
+# API endpoints
+http://localhost/api/stats
+http://localhost/api/devices
+
+================================================================================
+IMPORTANT FILE LOCATIONS
+================================================================================
+
+# Application files
+/var/www/html/abhimanyu/barcode_scanner_clean/
+
+# Service configuration
+/etc/systemd/system/barcode-scanner.service
+/etc/systemd/system/iot-caleffi.service
+
+# Nginx configuration
+/etc/nginx/sites-available/barcode-scanner
+/etc/nginx/sites-enabled/barcode-scanner
+
+# Log files
+/var/log/nginx/access.log
+/var/log/nginx/error.log
+sudo journalctl -u barcode-scanner
+
+# Database files
+/var/www/html/abhimanyu/barcode_scanner_clean/barcode_device_mapping.db
+/var/www/html/abhimanyu/barcode_scanner_clean/barcode_scans.db
+
+================================================================================
+END OF REFERENCE
+================================================================================

@@ -241,6 +241,30 @@ class LocalStorage:
             {'device_id': row[0], 'barcode': row[1], 'timestamp': self.format_timestamp(row[2]), 'quantity': row[3] if len(row) > 3 else 1}
             for row in rows
         ]
+    
+    def save_unsent_message(self, device_id, message, timestamp):
+        """Save an unsent message for retry later"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Create unsent_messages table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS unsent_messages (
+                device_id TEXT,
+                message TEXT,
+                timestamp DATETIME,
+                sent_to_hub BOOLEAN DEFAULT 0
+            )
+        ''')
+        
+        formatted_timestamp = self.format_timestamp(timestamp)
+        cursor.execute(
+            'INSERT INTO unsent_messages (device_id, message, timestamp, sent_to_hub) VALUES (?, ?, ?, 0)',
+            (device_id, message, formatted_timestamp)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"Unsent message saved for device {device_id}")
 
     def save_available_devices(self, device_ids):
         """Save available device IDs to the database"""
