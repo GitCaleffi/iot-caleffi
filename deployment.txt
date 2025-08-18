@@ -115,7 +115,8 @@ STEP 4: NGINX WEB SERVER SETUP
 sudo rm /etc/nginx/sites-enabled/default
 
 # Create nginx configuration
-sudo nano /etc/nginx/sites-available/barcode-scanner
+sudo nano /etc/nginx/sites-available/iot-caleffi 
+
 
 # Nginx configuration content:
 server {
@@ -148,7 +149,7 @@ server {
 
 
 # Enable nginx site
-sudo ln -s /etc/nginx/sites-available/barcode-scanner /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/iot-caleffi /etc/nginx/sites-enabled/
 
 # Test nginx configuration
 sudo nginx -t

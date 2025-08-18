@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify
 import json
 import logging
@@ -56,9 +55,10 @@ class CommercialBarcodeClient:
         # Send to API
         try:
             if self.api_client.is_online():
-                api_success = self.api_client.send_barcode(barcode, device_id)
+                api_result = self.api_client.send_barcode_scan(device_id, barcode, 1)
+                api_success = api_result.get("success", False)
                 if not api_success:
-                    logger.warning(f"API send failed for barcode {barcode}")
+                    logger.warning(f"API send failed for barcode {barcode}: {api_result.get('message', 'Unknown error')}")
                     success = False
         except Exception as e:
             logger.error(f"API error: {e}")
@@ -190,7 +190,7 @@ def confirm_device_registration(registration_token, device_id):
                 'message': 'Registration token and device ID are required'
             }
         
-        # Validate token and register device
+        # Register device with dynamic device manager
         success = device_manager.confirm_registration(registration_token, device_id)
         
         if success:
@@ -200,34 +200,124 @@ def confirm_device_registration(registration_token, device_id):
             # Update system stats
             system_stats['devices_registered'] += 1
             
-            # Send confirmation message to IoT Hub (like barcode_scanner_app.py does)
+            # Send device registration to external API (following barcode_scanner_app.py pattern)
             try:
-                # Send registration confirmation to IoT Hub using device connection string
-                hub_success = False
-                if barcode_client and barcode_client.registration_service:
-                    try:
-                        # Get device connection string for this barcode (will auto-register if needed)
-                        device_connection = barcode_client.registration_service.get_device_connection_for_barcode(registration_token)
-                        
-                        if device_connection:
-                            from src.iot.hub_client import HubClient
-                            device_hub_client = HubClient(device_connection)
-                            
-                            # Send registration token as barcode to IoT Hub (HubClient expects just the barcode string)
-                            hub_success = device_hub_client.send_message(registration_token, device_id)
-                        else:
-                            logger.warning(f"No device connection string available for device {device_id}")
-                            
-                    except Exception as e:
-                        logger.error(f"Error sending registration confirmation to IoT Hub: {e}")
-                        hub_success = False
+                if barcode_client and barcode_client.api_client:
+                    # Call saveDeviceId endpoint like barcode_scanner_app.py does
+                    api_url = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
+                    payload = {"scannedBarcode": registration_token}
+                    
+                    logger.info(f"Sending device registration to external API: {api_url}")
+                    api_result = barcode_client.api_client.send_registration_barcode(api_url, payload)
+                    
+                    if api_result.get("success", False):
+                        logger.info(f"Device registration sent to external API successfully for device {device_id}")
+                    else:
+                        logger.warning(f"Failed to send device registration to external API: {api_result.get('message', 'Unknown error')}")
                 else:
-                    logger.warning("No IoT Hub registration service available for registration confirmation")
+                    logger.warning("No API client available for external API registration")
+            except Exception as api_error:
+                logger.error(f"Error sending device registration to external API: {str(api_error)}")
+            
+            # Register device with IoT Hub to get device-specific connection string (following barcode_scanner_app.py)
+            try:
+                if barcode_client and barcode_client.registration_service:
+                    # Use the registration service's registry manager to register device
+                    registry_manager = barcode_client.registration_service.registry_manager
+                    if registry_manager:
+                        logger.info(f"Registering device {device_id} with Azure IoT Hub...")
+                        
+                        # Check if device exists, if not create it
+                        try:
+                            device = registry_manager.get_device(device_id)
+                            logger.info(f"Device {device_id} already exists in IoT Hub")
+                        except Exception:
+                            logger.info(f"Creating new device {device_id} in IoT Hub...")
+                            import base64
+                            import os
+                            # Generate secure keys
+                            primary_key = base64.b64encode(os.urandom(32)).decode('utf-8')
+                            secondary_key = base64.b64encode(os.urandom(32)).decode('utf-8')
+                            status = "enabled"
+                            
+                            # Create device with SAS authentication
+                            device = registry_manager.create_device_with_sas(device_id, primary_key, secondary_key, status)
+                            logger.info(f"Device {device_id} created successfully in IoT Hub")
+                        
+                        # Get device connection string
+                        if device and device.authentication and device.authentication.symmetric_key:
+                            primary_key = device.authentication.symmetric_key.primary_key
+                            if primary_key:
+                                # Extract hostname from owner connection string
+                                import re
+                                owner_conn_str = config.get("iot_hub", {}).get("connection_string", "")
+                                hostname_match = re.search(r'HostName=([^;]+)', owner_conn_str)
+                                if hostname_match:
+                                    hostname = hostname_match.group(1)
+                                    device_connection_string = f"HostName={hostname};DeviceId={device_id};SharedAccessKey={primary_key}"
+                                    
+                                    # Save device connection string to config
+                                    if "devices" not in config["iot_hub"]:
+                                        config["iot_hub"]["devices"] = {}
+                                    config["iot_hub"]["devices"][device_id] = {
+                                        "connection_string": device_connection_string,
+                                        "deviceId": device_id
+                                    }
+                                    
+                                    # Save updated config
+                                    from src.utils.config import save_config
+                                    save_config(config)
+                                    logger.info(f"Device {device_id} registered with IoT Hub and config updated")
+                                    
+                                    # Reload config to get the updated device connection string
+                                    config = load_config()
+                                else:
+                                    logger.error("Could not extract hostname from IoT Hub connection string")
+                            else:
+                                logger.error(f"No primary key generated for device {device_id}")
+                        else:
+                            logger.error(f"Device {device_id} creation failed or missing authentication")
+                    else:
+                        logger.warning("No IoT Hub registry manager available")
+                else:
+                    logger.warning("No IoT Hub registration service available")
+            except Exception as iot_error:
+                logger.error(f"Error during IoT Hub registration: {str(iot_error)}")
+                # Continue with local registration even if IoT Hub fails
+            
+            # Send confirmation message to IoT Hub (following exact barcode_scanner_app.py pattern)
+            try:
+                from src.iot.hub_client import HubClient
+                # Follow exact pattern from barcode_scanner_app.py lines 822-830
+                device_connection_string = config.get("iot_hub", {}).get("devices", {}).get(device_id, {}).get("connection_string", None)
+                
+                if not device_connection_string:
+                    # Fall back to owner connection string (same as barcode_scanner_app.py line 826)
+                    device_connection_string = config.get("iot_hub", {}).get("connection_string", None)
+                
+                if not device_connection_string:
+                    logger.error("No IoT Hub connection string available")
+                    raise Exception("No IoT Hub connection string available")
+                    
+                hub_client = HubClient(device_connection_string)
+                confirmation_message = {
+                    "deviceId": device_id,
+                    "status": "registered",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "message": "Device registration confirmed via dynamic token",
+                    "registration_token": registration_token
+                }
+                
+                # Try to send confirmation to IoT Hub (same as barcode_scanner_app.py)
+                hub_success = hub_client.send_message(json.dumps(confirmation_message), device_id)
                 if hub_success:
                     logger.info(f"Registration confirmation sent to IoT Hub for device {device_id}")
                 else:
                     logger.warning(f"Failed to send registration confirmation to IoT Hub for device {device_id}")
+                    # Store message for retry later
                     storage.save_unsent_message(device_id, json.dumps(confirmation_message), datetime.now())
+                    
+                # Send to API as well
                 if barcode_client and barcode_client.api_client:
                     api_success = barcode_client.api_client.send_barcode_scan(device_id, f"REGISTRATION:{registration_token}", 1)
                     if api_success:
@@ -236,8 +326,8 @@ def confirm_device_registration(registration_token, device_id):
                         logger.warning(f"Failed to send registration confirmation to API for device {device_id}")
                         
             except Exception as hub_error:
-                logger.error(f"Error sending confirmation messages: {str(hub_error)}")
-                # Store message for retry later
+                logger.error(f"Error sending confirmation to IoT Hub: {str(hub_error)}")
+                # Store message for retry later (same as barcode_scanner_app.py)
                 confirmation_message = {
                     "deviceId": device_id,
                     "status": "registered",
@@ -361,18 +451,23 @@ def api_scan_barcode():
                 "timestamp": timestamp.isoformat()
             }
             
-            # Send to API first using correct method name
+            # Send to external API using saveDeviceId endpoint (following barcode_scanner_app.py pattern)
             api_success = False
             if barcode_client and barcode_client.api_client:
                 try:
-                    api_result = barcode_client.api_client.send_barcode_scan(device_id, barcode, message_payload.get("quantity", 1))
+                    # Use saveDeviceId endpoint like barcode_scanner_app.py does for barcode scanning
+                    api_url = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
+                    payload = {"scannedBarcode": barcode}
+                    
+                    logger.info(f"Sending barcode to external API: {api_url}")
+                    api_result = barcode_client.api_client.send_registration_barcode(api_url, payload)
                     api_success = api_result.get("success", False) if isinstance(api_result, dict) else api_result
                     if api_success:
-                        logger.info(f"Barcode {barcode} sent to API successfully from device {device_id}")
+                        logger.info(f"Barcode {barcode} sent to external API successfully from device {device_id}")
                     else:
-                        logger.warning(f"Failed to send barcode {barcode} to API from device {device_id}")
+                        logger.warning(f"Failed to send barcode {barcode} to external API from device {device_id}: {api_result.get('message', 'Unknown error')}")
                 except Exception as api_error:
-                    logger.error(f"API error: {api_error}")
+                    logger.error(f"External API error: {api_error}")
             
             # Send to IoT Hub using device connection string
             hub_success = False
@@ -615,12 +710,47 @@ def api_get_stats():
 
 @app.route('/api/devices')
 def api_get_devices():
-    """API endpoint to get registered devices"""
+    """API endpoint to get all registered devices (both mapped and registered)"""
     try:
-        devices = barcode_mapper.list_all_mappings(50)
+        # Get devices mapped through barcode scanning
+        mapped_devices = barcode_mapper.list_all_mappings(50)
+        
+        # Get devices registered through the registration process
+        registered_devices = storage.get_registered_devices()
+        
+        # Combine both lists, avoiding duplicates
+        all_devices = []
+        device_ids_seen = set()
+        
+        # Add mapped devices first
+        for device in mapped_devices:
+            device_id = device.get('device_id')
+            if device_id and device_id not in device_ids_seen:
+                device['source'] = 'barcode_mapping'
+                all_devices.append(device)
+                device_ids_seen.add(device_id)
+        
+        # Add registered devices that aren't already in mapped devices
+        for reg_device in registered_devices:
+            device_id = reg_device.get('device_id')
+            if device_id and device_id not in device_ids_seen:
+                # Format registered device to match the expected structure
+                device_info = {
+                    'device_id': device_id,
+                    'registration_date': reg_device.get('registration_date'),
+                    'status': 'registered',
+                    'source': 'registration',
+                    'last_seen': reg_device.get('registration_date'),
+                    'barcode_count': 0  # No barcodes scanned yet
+                }
+                all_devices.append(device_info)
+                device_ids_seen.add(device_id)
+        
         return jsonify({
-            'devices': devices,
-            'total_count': len(devices)
+            'devices': all_devices,
+            'total_count': len(all_devices),
+            'mapped_count': len(mapped_devices),
+            'registered_count': len(registered_devices)
         })
         
     except Exception as e:

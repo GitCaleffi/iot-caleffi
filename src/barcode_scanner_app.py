@@ -797,6 +797,34 @@ def register_device_id(barcode):
         # Accept any barcode for dynamic testing (removed hardcoded restriction)
         logger.info(f"Using barcode '{barcode}' for device registration testing")
         
+        # Generate dynamic device ID for this system
+        device_id = generate_dynamic_device_id()
+        logger.info(f"Generated device ID: {device_id}")
+        
+        # Check if device is already registered before making API calls
+        registered_devices = local_db.get_registered_devices()
+        device_already_registered = any(device['device_id'] == device_id for device in registered_devices)
+        
+        if device_already_registered:
+            logger.info(f"Device ID {device_id} already registered, skipping registration")
+            blink_led("red")  # RED light for already registered device
+            
+            # Find the registration details for this device
+            device_info = next((device for device in registered_devices if device['device_id'] == device_id), None)
+            registration_date = device_info['registration_date'] if device_info else 'Unknown'
+            
+            return f"""🔴 Device Already Registered
+
+**Device Details:**
+• Device ID: {device_id}
+• Test Barcode: {barcode}
+• Status: Already in database
+• Registered: {registration_date}
+
+**LED Status:** 🔴 Red light indicates device is already registered.
+
+**Action:** No further registration needed. Device is ready for barcode scanning."""
+        
         is_online = api_client.is_online()
         if not is_online:
             blink_led("red")
