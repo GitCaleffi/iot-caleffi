@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import sqlite3
 import logging
 
@@ -366,3 +366,36 @@ class LocalStorage:
     def close(self):
         """Close database connection - no longer needed with per-operation connections"""
         pass
+    
+    def get_recent_scans(self, device_id, barcode, minutes=5):
+        """Get recent scans for a specific device and barcode within the specified time window"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Calculate the time threshold (current time - specified minutes)
+        time_threshold = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+        time_threshold_str = time_threshold.isoformat()
+        
+        try:
+            cursor.execute(
+                'SELECT device_id, barcode, timestamp FROM scans WHERE device_id = ? AND barcode = ? AND timestamp > ? ORDER BY timestamp DESC',
+                (device_id, barcode, time_threshold_str)
+            )
+            results = cursor.fetchall()
+            
+            # Convert results to list of dictionaries
+            recent_scans = []
+            for row in results:
+                recent_scans.append({
+                    'device_id': row[0],
+                    'barcode': row[1],
+                    'timestamp': row[2]
+                })
+            
+            return recent_scans
+            
+        except Exception as e:
+            logger.error(f"Error getting recent scans: {e}")
+            return []
+        finally:
+            conn.close()
