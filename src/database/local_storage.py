@@ -214,6 +214,24 @@ class LocalStorage:
         logger.info(f"Device registration saved: {device_id} at {formatted_timestamp}")
         return True
     
+    def get_registered_devices(self):
+        """Get all devices that were registered through the registration process"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT device_id, timestamp FROM device_info ORDER BY timestamp DESC'
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                'device_id': row[0], 
+                'registration_date': self.format_timestamp(row[1]),
+                'timestamp': self.format_timestamp(row[1])
+            }
+            for row in rows
+        ]
+    
     def save_barcode_scan(self, device_id, barcode, timestamp):
         """Save a barcode scan with timestamp"""
         conn = self._get_connection()

@@ -170,17 +170,22 @@ class HubClient:
         """Send barcode to IoT Hub with tracking"""
         logger.info(f"Sending message with device ID: {device_id}")
 
-        # Validate barcode format - must be numeric with valid lengths (8, 12, 13, 14)
-        try:
-            int(barcode)
-            barcode_length = len(barcode)
-            valid_lengths = [8, 12, 13, 14]  # EAN-8, UPC-A, EAN-13, GTIN-14
-            if barcode_length not in valid_lengths:
-                logger.error(f"Invalid barcode length: {barcode_length}. Must be one of: {valid_lengths} digits.")
-                return False
-        except ValueError:
-            logger.error(f"Invalid barcode format: {barcode}. Must be numeric.")
+        # Validate barcode format - allow alphanumeric with reasonable lengths
+        if not barcode or not barcode.strip():
+            logger.error("Invalid barcode: empty or None")
             return False
+        
+        barcode = barcode.strip()
+        barcode_length = len(barcode)
+        
+        # Allow reasonable barcode lengths (most common formats: 6-20 characters)
+        if barcode_length < 6 or barcode_length > 20:
+            logger.error(f"Invalid barcode length: {barcode_length}. Must be between 6-20 characters.")
+            return False
+        
+        # Allow alphanumeric characters (letters, numbers, some symbols)
+        if not barcode.replace('-', '').replace('_', '').isalnum():
+            logger.warning(f"Barcode contains special characters: {barcode}. Proceeding anyway.")
 
         if not self.client or not self.connected:
             logger.info("No active connection, attempting to connect...")

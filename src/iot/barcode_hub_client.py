@@ -178,17 +178,17 @@ class BarcodeHubClient:
             bool: True if message sent successfully, False otherwise
         """
         try:
-            logger.info(f"Registering new device and sending barcode: {barcode} -> {device_id}")
-            
             # Connect with barcode (this handles registration automatically)
             if not self.connect_with_barcode(barcode):
                 logger.error(f"Failed to connect/register device for barcode: {barcode}")
                 return False
             
+            logger.info(f"Registering new device and sending barcode: {barcode} -> {self.current_device_id}")
+            
             # Send initial barcode message with registration flag
             message_data = {
                 'barcode': barcode,
-                'device_id': device_id,
+                'device_id': self.current_device_id,
                 'timestamp': datetime.now(timezone.utc).isoformat(),
                 'message_type': 'device_registration',
                 'action': 'new_product_registered',
@@ -309,12 +309,6 @@ class BarcodeHubClient:
             # Try to reconnect on error
             self.connected = False
             self._schedule_reconnect()
-            
-            return False
-                        if not self.connect_with_barcode(barcode):
-                            logger.error("Failed to reconnect")
-                    else:
-                        logger.error("All retry attempts failed")
             
             return False
             

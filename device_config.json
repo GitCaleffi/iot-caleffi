@@ -159,6 +159,18 @@
         "auto_registered": true,
         "timestamp": "2025-08-11T10:29:32.456274+00:00"
       }
+    },
+    "scanner-91204e0b": {
+      "device_id": "scanner-91204e0b",
+      "registered_at": "2025-08-11T10:52:18.586094+00:00",
+      "last_seen": "2025-08-11T10:52:18.586096+00:00",
+      "status": "active",
+      "registration_token": "e64084ec1cbde75a",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "auto_registered": true,
+        "timestamp": "2025-08-11T10:52:18.586085+00:00"
+      }
     }
   },
   "registration_tokens": {
@@ -239,7 +251,13 @@
       "created_at": "2025-08-11T10:29:32.455880+00:00",
       "expires_at": 1754994572.455872,
       "used": true
+    },
+    "e64084ec1cbde75a": {
+      "device_identifier": "unknown",
+      "created_at": "2025-08-11T10:52:18.585684+00:00",
+      "expires_at": 1754995938.585677,
+      "used": true
     }
   },
-  "last_updated": "2025-08-11T10:29:32.456292+00:00"
+  "last_updated": "2025-08-11T10:52:18.586098+00:00"
 }

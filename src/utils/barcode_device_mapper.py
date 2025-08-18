@@ -6,12 +6,15 @@ Supports plug-and-play functionality without manual device ID input
 
 import hashlib
 import json
-import logging
-from pathlib import Path
-from datetime import datetime, timezone
-import threading
-from typing import Optional, Dict, Tuple
 import sqlite3
+import hashlib
+import logging
+import subprocess
+import threading
+import uuid
+from datetime import datetime, timezone
+from typing import Optional, List, Dict, Any
+from pathlib import Path
 import os
 
 logger = logging.getLogger(__name__)
@@ -56,22 +59,38 @@ class BarcodeDeviceMapper:
         conn.close()
         logger.info(f"Barcode device mapping database initialized at: {self.db_path}")
     
-    def generate_device_id_from_barcode(self, barcode: str) -> str:
+    def generate_dynamic_device_id(self) -> str:
         """
-        Generate a unique, deterministic device ID from barcode.
-        Uses SHA-256 hash to ensure uniqueness and consistency.
+        Generate a unique device ID based on system hardware instead of barcode.
+        This ensures each physical device has a consistent ID regardless of barcodes scanned.
         """
-        # Validate barcode format
-        if not barcode or not barcode.isdigit():
-            raise ValueError(f"Invalid barcode format: {barcode}")
+        try:
+            # Try to get system serial number
+            with open('/proc/cpuinfo', 'r') as f:
+                for line in f:
+                    if line.startswith('Serial'):
+                        serial = line.split(':')[1].strip()
+                        if serial and serial != '0000000000000000':
+                            device_id = f"scanner-{serial[-8:]}"
+                            logger.info(f"Generated device ID '{device_id}' from CPU serial")
+                            return device_id
+            
+            # Fallback to MAC address
+            result = subprocess.run(['cat', '/sys/class/net/eth0/address'], 
+                                  capture_output=True, text=True)
+            if result.returncode == 0:
+                mac = result.stdout.strip().replace(':', '')
+                device_id = f"scanner-{mac[-8:]}"
+                logger.info(f"Generated device ID '{device_id}' from MAC address")
+                return device_id
+            
+        except Exception as e:
+            logger.warning(f"Could not get system ID: {e}")
         
-        # Create deterministic device ID using hash
-        # Use first 12 characters of SHA-256 hash for device ID
-        hash_input = f"barcode_{barcode}_device"
-        device_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:12]
-        device_id = f"bc_{device_hash}"
-        
-        logger.info(f"Generated device ID '{device_id}' for barcode '{barcode}'")
+        # Final fallback to random ID (but consistent per session)
+        random_id = str(uuid.uuid4())[:8]
+        device_id = f"scanner-{random_id}"
+        logger.info(f"Generated fallback device ID '{device_id}'")
         return device_id
     
     def get_device_id_for_barcode(self, barcode: str) -> Optional[str]:
@@ -102,8 +121,8 @@ class BarcodeDeviceMapper:
                     logger.info(f"Found existing device ID '{device_id}' for barcode '{barcode}'")
                     return device_id
                 
-                # Create new mapping
-                device_id = self.generate_device_id_from_barcode(barcode)
+                # Create new mapping using dynamic device ID based on system hardware
+                device_id = self.generate_dynamic_device_id()
                 timestamp = datetime.now(timezone.utc).isoformat()
                 
                 cursor.execute('''
