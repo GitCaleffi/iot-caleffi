@@ -43,10 +43,8 @@ class DynamicRegistrationService:
         """Initialize Azure IoT Hub Registry Manager with retry logic for Flask context"""
         import time
         
-        # Try multiple initialization approaches to handle Flask/threading context issues
         for attempt in range(3):
             try:
-                # Method 1: Standard initialization
                 self.registry_manager = IoTHubRegistryManager.from_connection_string(
                     self.iot_hub_connection_string
                 )
@@ -84,12 +82,10 @@ class DynamicRegistrationService:
         """
         with self.lock:
             try:
-                # Check if device already exists
                 try:
                     existing_device = self.registry_manager.get_device(device_id)
                     logger.info(f"Device {device_id} already exists in Azure IoT Hub")
                     
-                    # Get the primary key for connection string
                     if existing_device.authentication and existing_device.authentication.symmetric_key:
                         primary_key = existing_device.authentication.symmetric_key.primary_key
                         connection_string = f"HostName={self.iot_hub_hostname};DeviceId={device_id};SharedAccessKey={primary_key}"
@@ -97,15 +93,11 @@ class DynamicRegistrationService:
                     else:
                         logger.error(f"Device {device_id} exists but has no authentication keys")
                         return None
-                        
                 except Exception:
-                    # Device doesn't exist, create it
                     logger.info(f"Creating new device {device_id} in Azure IoT Hub...")
                 
-                # Generate secure keys
                 primary_key, secondary_key = self._generate_device_keys()
                 
-                # Create device with SAS authentication
                 device = self.registry_manager.create_device_with_sas(
                     device_id=device_id,
                     primary_key=primary_key,
@@ -115,7 +107,6 @@ class DynamicRegistrationService:
                 
                 logger.info(f"Device {device_id} created successfully in Azure IoT Hub")
                 
-                # Create connection string
                 connection_string = f"HostName={self.iot_hub_hostname};DeviceId={device_id};SharedAccessKey={primary_key}"
                 return connection_string
                 

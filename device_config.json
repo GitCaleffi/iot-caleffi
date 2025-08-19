@@ -1,178 +1,25 @@
 {
   "devices": {
-    "my_device_001": {
-      "device_id": "my_device_001",
-      "registered_at": "2025-08-07T14:19:07.613418+00:00",
-      "last_seen": "2025-08-07T14:22:15.940210+00:00",
+    "5356a1840b0e": {
+      "device_id": "5356a1840b0e",
+      "registered_at": "2025-08-19T07:41:40.546493+00:00",
+      "last_seen": "2025-08-19T07:53:22.405183+00:00",
       "status": "active",
-      "registration_token": "146de4a6e791d97c",
-      "device_info": {}
-    },
-    "fd771228d8fd": {
-      "device_id": "fd771228d8fd",
-      "registered_at": "2025-08-07T14:25:44.511296+00:00",
-      "last_seen": "2025-08-11T07:38:38.027394+00:00",
-      "status": "active",
-      "registration_token": "548eaab6a38aa9f5",
-      "device_info": {}
-    },
-    "test-device-001": {
-      "device_id": "test-device-001",
-      "registered_at": "2025-08-11T08:07:35.238306+00:00",
-      "last_seen": "2025-08-11T08:07:35.238312+00:00",
-      "status": "active",
-      "registration_token": "3d765a3a5db321c7",
-      "device_info": {}
-    },
-    "test-device-002": {
-      "device_id": "test-device-002",
-      "registered_at": "2025-08-11T08:10:15.757415+00:00",
-      "last_seen": "2025-08-11T08:10:22.928118+00:00",
-      "status": "active",
-      "registration_token": "46ee134be7f1dd05",
-      "device_info": {}
-    },
- 
-    "scanner-3c30eee2": {
-      "device_id": "scanner-3c30eee2",
-      "registered_at": "2025-08-11T08:36:35.581785+00:00",
-      "last_seen": "2025-08-11T08:36:35.581786+00:00",
-      "status": "active",
-      "registration_token": "0ca1b90a9fa656a8",
+      "registration_token": "f57b0c1dd3eaaca8",
       "device_info": {
-        "registration_method": "auto_plug_and_play",
+        "registration_method": "test_registration",
         "auto_registered": true,
-        "timestamp": "2025-08-11T08:36:35.581776+00:00"
-      }
-    },
-    "scanner-38808930": {
-      "device_id": "scanner-38808930",
-      "registered_at": "2025-08-11T08:38:48.461823+00:00",
-      "last_seen": "2025-08-11T08:38:48.461826+00:00",
-      "status": "active",
-      "registration_token": "a8ef8f7f2c8a397d",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T08:38:48.461808+00:00"
-      }
-    },
-    "scanner-508b04ab": {
-      "device_id": "scanner-508b04ab",
-      "registered_at": "2025-08-11T08:39:19.992804+00:00",
-      "last_seen": "2025-08-11T08:39:19.992806+00:00",
-      "status": "active",
-      "registration_token": "c30b3da71fecbdb4",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T08:39:19.992795+00:00"
-      }
-    },
-    "scanner-c9b3318d": {
-      "device_id": "scanner-c9b3318d",
-      "registered_at": "2025-08-11T08:39:43.068586+00:00",
-      "last_seen": "2025-08-11T08:39:43.068588+00:00",
-      "status": "active",
-      "registration_token": "201e9b9aba6e7c43",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T08:39:43.068577+00:00"
-      }
-    },
-    "scanner-7d15f5b3": {
-      "device_id": "scanner-7d15f5b3",
-      "registered_at": "2025-08-11T08:45:01.810888+00:00",
-      "last_seen": "2025-08-11T08:45:01.810889+00:00",
-      "status": "active",
-      "registration_token": "7edec5f58312a804",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T08:45:01.810879+00:00"
-      }
-    },
-    "scanner-b2ffbdfe": {
-      "device_id": "scanner-b2ffbdfe",
-      "registered_at": "2025-08-11T09:32:46.480481+00:00",
-      "last_seen": "2025-08-11T09:32:46.480483+00:00",
-      "status": "active",
-      "registration_token": "e4c55eb3f7320cd5",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T09:32:46.480470+00:00"
-      }
-    },
-    "scanner-bfd98c7d": {
-      "device_id": "scanner-bfd98c7d",
-      "registered_at": "2025-08-11T09:54:40.324194+00:00",
-      "last_seen": "2025-08-11T09:54:40.324196+00:00",
-      "status": "active",
-      "registration_token": "fcad753220ca8e96",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T09:54:40.324186+00:00"
-      }
-    },
-    "scanner-8fc1021e": {
-      "device_id": "scanner-8fc1021e",
-      "registered_at": "2025-08-11T10:20:29.702884+00:00",
-      "last_seen": "2025-08-11T10:20:29.702886+00:00",
-      "status": "active",
-      "registration_token": "89b2abdc12ca49df",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T10:20:29.702872+00:00"
-      }
-    },
-    "scanner-bd749047": {
-      "device_id": "scanner-bd749047",
-      "registered_at": "2025-08-11T10:28:33.263146+00:00",
-      "last_seen": "2025-08-11T10:28:33.263147+00:00",
-      "status": "active",
-      "registration_token": "4e125a30560afead",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T10:28:33.263137+00:00"
-      }
-    },
-    "scanner-418ecd86": {
-      "device_id": "scanner-418ecd86",
-      "registered_at": "2025-08-11T10:29:32.456285+00:00",
-      "last_seen": "2025-08-11T10:29:32.456288+00:00",
-      "status": "active",
-      "registration_token": "d021f2d4cf26d741",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T10:29:32.456274+00:00"
-      }
-    },
-    "scanner-91204e0b": {
-      "device_id": "scanner-91204e0b",
-      "registered_at": "2025-08-11T10:52:18.586094+00:00",
-      "last_seen": "2025-08-11T10:52:18.586096+00:00",
-      "status": "active",
-      "registration_token": "e64084ec1cbde75a",
-      "device_info": {
-        "registration_method": "auto_plug_and_play",
-        "auto_registered": true,
-        "timestamp": "2025-08-11T10:52:18.586085+00:00"
+        "registration_time": "2025-08-19T07:41:40.546484+00:00"
       }
     }
   },
   "registration_tokens": {
-    "71a5b887d711ac05": {
-      "device_identifier": "unknown",
-      "created_at": "2025-08-14T11:35:17.517184+00:00",
-      "expires_at": 1755257717.517179,
-      "used": false
+    "f57b0c1dd3eaaca8": {
+      "device_identifier": "5356a1840b0e",
+      "created_at": "2025-08-19T07:41:40.546204+00:00",
+      "expires_at": 1755675700.546199,
+      "used": true
     }
   },
-  "last_updated": "2025-08-18T07:20:24.877610+00:00"
+  "last_updated": "2025-08-19T07:53:22.405193+00:00"
 }

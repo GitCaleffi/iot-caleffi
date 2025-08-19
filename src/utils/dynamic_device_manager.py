@@ -257,6 +257,48 @@ class DynamicDeviceManager:
             # For example: rate limiting, time-based restrictions, etc.
             
             return True, "Device authorized to send barcodes"
+    
+    def get_device_connection_string(self, device_id: str) -> Optional[str]:
+        """
+        Generate a device-specific connection string for IoT Hub.
+        This uses the owner connection string from config and adds the DeviceId parameter.
+        """
+        try:
+            from utils.config import load_config
+            
+            # Check if device is registered
+            if not self.is_device_registered(device_id):
+                logger.error(f"Cannot get connection string: Device {device_id} is not registered")
+                return None
+            
+            # Load the IoT Hub owner connection string from config
+            config = load_config()
+            if not config or 'iot_hub' not in config or 'connection_string' not in config['iot_hub']:
+                logger.error("IoT Hub connection string not found in config")
+                return None
+                
+            owner_connection_string = config['iot_hub']['connection_string']
+            if not owner_connection_string or owner_connection_string == "REPLACE_WITH_YOUR_IOT_HUB_CONNECTION_STRING":
+                logger.error("Invalid IoT Hub connection string in config")
+                return None
+            
+            # Parse the owner connection string
+            parts = dict(part.split('=', 1) for part in owner_connection_string.split(';'))
+            
+            # Check if it has the required parts
+            if 'HostName' not in parts or 'SharedAccessKey' not in parts:
+                logger.error("Invalid IoT Hub connection string format")
+                return None
+            
+            # Create a device-specific connection string
+            device_connection_string = f"HostName={parts['HostName']};DeviceId={device_id};SharedAccessKey={parts['SharedAccessKey']}"
+            logger.info(f"Generated device-specific connection string for {device_id}")
+            
+            return device_connection_string
+            
+        except Exception as e:
+            logger.error(f"Error generating device connection string: {e}")
+            return None
 
 # Global instance for the application
 device_manager = DynamicDeviceManager()

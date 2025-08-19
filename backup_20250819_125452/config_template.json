@@ -1,0 +1,27 @@
+{
+  "iot_hub": {
+    "connection_string": "HostName=CaleffiIoT.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ=",
+    "deviceId": "auto-generated-from-barcode"
+  },
+  "barcode_scanner": {
+    "scanner_type": "Handreader",
+    "scan_timeout": 5000,
+    "valid_barcode_lengths": [8, 12, 13, 14]
+  },
+  "commercial_deployment": {
+    "auto_registration": true,
+    "plug_and_play": true,
+    "max_devices": 10000,
+    "batch_processing": true
+  },
+  "database": {
+    "local_storage": "barcode_scans.db",
+    "device_mapping": "barcode_device_mapping.db",
+    "retry_failed_sends": true
+  },
+  "logging": {
+    "level": "INFO",
+    "enable_azure_logs": true,
+    "enable_device_stats": true
+  }
+}

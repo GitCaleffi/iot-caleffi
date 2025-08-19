@@ -70,14 +70,9 @@ class AutoBarcodeService:
         self.last_scan_time = 0
         
         # Initialize IoT Hub client
-        if self.config and 'iot_hub' in self.config:
-            connection_string = self.config['iot_hub']['connection_string']
-            if connection_string and connection_string != "REPLACE_WITH_YOUR_IOT_HUB_CONNECTION_STRING":
-                try:
-                    self.hub_client = HubClient(connection_string)
-                    logger.info("IoT Hub client initialized")
-                except Exception as e:
-                    logger.error(f"Failed to initialize IoT Hub client: {e}")
+        # Note: We don't initialize the IoT Hub client here with the owner connection string
+        # Instead, we'll initialize it after device registration with a device-specific connection string
+        self.hub_client = None
         
         # Auto-register this device
         self._auto_register_device()
@@ -113,6 +108,23 @@ class AutoBarcodeService:
     def _auto_register_device(self):
         """Automatically register this device without user interaction"""
         try:
+            # Check if device is already registered
+            registered_devices = self.storage.get_registered_devices()
+            device_already_registered = any(device.get('device_id') == self.device_id for device in registered_devices)
+            
+            if device_already_registered:
+                logger.info(f"✅ Device {self.device_id} is already registered")
+                # Get device connection string from dynamic registration service
+                try:
+                    device_connection_string = device_manager.get_device_connection_string(self.device_id)
+                    if device_connection_string:
+                        # Initialize IoT Hub client with device-specific connection string
+                        self.hub_client = HubClient(device_connection_string)
+                        logger.info("IoT Hub client initialized with device-specific connection string")
+                except Exception as e:
+                    logger.error(f"Failed to get device connection string: {e}")
+                return
+            
             logger.info(f"🔄 Auto-registering device: {self.device_id}")
             
             # Generate registration token automatically
@@ -130,9 +142,15 @@ class AutoBarcodeService:
             if success:
                 logger.info(f"✅ Device {self.device_id} auto-registered successfully")
                 
-                # Send registration confirmation to IoT Hub
-                if self.hub_client:
-                    try:
+                # Get device connection string from dynamic registration service
+                try:
+                    device_connection_string = device_manager.get_device_connection_string(self.device_id)
+                    if device_connection_string:
+                        # Initialize IoT Hub client with device-specific connection string
+                        self.hub_client = HubClient(device_connection_string)
+                        logger.info("IoT Hub client initialized with device-specific connection string")
+                        
+                        # Send registration confirmation to IoT Hub
                         confirmation_msg = {
                             "deviceId": self.device_id,
                             "status": "auto_registered",
@@ -141,8 +159,8 @@ class AutoBarcodeService:
                         }
                         self.hub_client.send_message(json.dumps(confirmation_msg), self.device_id)
                         logger.info("📡 Registration confirmation sent to IoT Hub")
-                    except Exception as e:
-                        logger.error(f"Failed to send registration to IoT Hub: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to initialize IoT Hub client: {e}")
                 
                 # Save device locally
                 self.storage.save_device_id(self.device_id)

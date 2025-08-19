@@ -166,26 +166,15 @@ class HubClient:
             logger.error(f"Stack trace: {traceback.format_exc()}")
             raise Exception(f"IoT Hub connection error: {e}")
             
-    def send_message(self, barcode, device_id, sku=None):
-        """Send barcode to IoT Hub with tracking"""
+    def send_message(self, message_or_barcode, device_id, sku=None):
+        """Send message to IoT Hub with tracking
+        
+        Args:
+            message_or_barcode: Either a barcode string or a complete message dictionary
+            device_id: Device ID for the message
+            sku: Optional SKU parameter
+        """
         logger.info(f"Sending message with device ID: {device_id}")
-
-        # Validate barcode format - allow alphanumeric with reasonable lengths
-        if not barcode or not barcode.strip():
-            logger.error("Invalid barcode: empty or None")
-            return False
-        
-        barcode = barcode.strip()
-        barcode_length = len(barcode)
-        
-        # Allow reasonable barcode lengths (most common formats: 6-20 characters)
-        if barcode_length < 6 or barcode_length > 20:
-            logger.error(f"Invalid barcode length: {barcode_length}. Must be between 6-20 characters.")
-            return False
-        
-        # Allow alphanumeric characters (letters, numbers, some symbols)
-        if not barcode.replace('-', '').replace('_', '').isalnum():
-            logger.warning(f"Barcode contains special characters: {barcode}. Proceeding anyway.")
 
         if not self.client or not self.connected:
             logger.info("No active connection, attempting to connect...")
@@ -193,12 +182,38 @@ class HubClient:
                 logger.error("Failed to establish connection")
                 return False
 
-        # Create message payload
-        message_data = {
-            "scannedBarcode": barcode,
-            "deviceId": device_id,
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
-        }
+        # Handle both barcode strings and message dictionaries
+        if isinstance(message_or_barcode, dict):
+            # Complete message dictionary provided
+            message_data = message_or_barcode
+            logger.info("Using provided message dictionary")
+        else:
+            # Barcode string provided - validate and create message
+            barcode = message_or_barcode
+            
+            # Validate barcode format - allow alphanumeric with reasonable lengths
+            if not barcode or not barcode.strip():
+                logger.error("Invalid barcode: empty or None")
+                return False
+            
+            barcode = barcode.strip()
+            barcode_length = len(barcode)
+            
+            # Allow reasonable barcode lengths (most common formats: 6-20 characters)
+            if barcode_length < 6 or barcode_length > 20:
+                logger.error(f"Invalid barcode length: {barcode_length}. Must be between 6-20 characters.")
+                return False
+            
+            # Allow alphanumeric characters (letters, numbers, some symbols)
+            if not barcode.replace('-', '').replace('_', '').isalnum():
+                logger.warning(f"Barcode contains special characters: {barcode}. Proceeding anyway.")
+
+            # Create message payload for barcode
+            message_data = {
+                "scannedBarcode": barcode,
+                "deviceId": device_id,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
+            }
 
         # Create message with ID
         message = Message(json.dumps(message_data))
