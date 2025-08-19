@@ -59,9 +59,6 @@ class BarcodeHubClient:
         
         # Threading and retry logic
         self.connection_lock = threading.Lock()
-        self.reconnect_timer = None
-        self.reconnect_interval = 5
-        self.max_reconnect_interval = 300
         self.retry_count = 0
         self.max_retries = 3
         
@@ -162,7 +159,6 @@ class BarcodeHubClient:
                 # Check connection status
                 if hasattr(self.client, 'connected') and self.client.connected:
                     self.connected = True
-                    self.reconnect_interval = 5  # Reset reconnect interval
                     logger.info(f"✓ Successfully connected to Azure IoT Hub with barcode {self.current_barcode}")
                     return True
                 else:
@@ -173,7 +169,6 @@ class BarcodeHubClient:
             except Exception as e:
                 logger.error(f"Failed to connect to Azure IoT Hub: {e}")
                 self.connected = False
-                self._schedule_reconnect()
                 return False
     
     def send_barcode_message(self, barcode: str, additional_data: dict = None) -> bool:
@@ -319,7 +314,6 @@ class BarcodeHubClient:
             
             # Try to reconnect on error
             self.connected = False
-            self._schedule_reconnect()
             
             return False
             
@@ -339,15 +333,12 @@ class BarcodeHubClient:
             if status:
                 logger.info("Connected to Azure IoT Hub")
                 self.connected = True
-                self.reconnect_interval = 5
             else:
                 logger.warning("Disconnected from Azure IoT Hub")
                 self.connected = False
-                self._schedule_reconnect()
         except Exception as e:
             logger.error(f"Error in connection state change handler: {e}")
             self.connected = False
-            self._schedule_reconnect()
     
     def _on_message_sent(self, message_id):
         """Handle message sent confirmation"""
@@ -355,19 +346,17 @@ class BarcodeHubClient:
     
     def _schedule_reconnect(self):
         """Schedule a reconnection attempt with exponential backoff"""
-        if not self.reconnect_timer and self.current_barcode:
-            logger.info(f"Scheduling reconnection in {self.reconnect_interval} seconds")
-            self.reconnect_timer = threading.Timer(self.reconnect_interval, self._reconnect)
-            self.reconnect_timer.daemon = True
-            self.reconnect_timer.start()
-            self.reconnect_interval = min(self.reconnect_interval * 2, self.max_reconnect_interval)
+        # Reconnection disabled to prevent connection loops and timeout errors
+        logger.info("Reconnection disabled to prevent connection conflicts")
+        return
+
     
     def _reconnect(self):
         """Attempt to reconnect to Azure IoT Hub"""
-        self.reconnect_timer = None
-        if self.current_barcode:
-            logger.info("Attempting to reconnect to Azure IoT Hub...")
-            self.connect_with_barcode(self.current_barcode)
+        # Reconnection disabled to prevent connection loops and timeout errors
+        logger.info("Reconnection disabled to prevent connection conflicts")
+        return
+
     
     def get_status(self) -> dict:
         """Get current client status"""

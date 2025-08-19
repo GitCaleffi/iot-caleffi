@@ -26,9 +26,6 @@ class HubClient:
         self.messages_sent = 0
         self.last_message_time = None
         self.connected = False
-        self.reconnect_timer = None
-        self.reconnect_interval = 5  # Start with 5 seconds
-        self.max_reconnect_interval = 300  # Maximum 5 minutes
         self.connection_lock = threading.Lock()
         self.keep_alive = 60  # MQTT keep-alive in seconds
         self.retry_count = 0
@@ -59,15 +56,12 @@ class HubClient:
             if status:
                 logger.info("Connected to IoT Hub")
                 self.connected = True
-                self.reconnect_interval = 5  # Reset reconnect interval on successful connection
             else:
                 logger.warning("Disconnected from IoT Hub")
                 self.connected = False
-                self._schedule_reconnect()
         except Exception as e:
             logger.error(f"Error in connection state change handler: {e}")
             self.connected = False
-            self._schedule_reconnect()
 
     def _on_message_sent(self, message_id):
         """Handle message sent confirmation"""
@@ -77,34 +71,20 @@ class HubClient:
         """Handle connection failures"""
         logger.error(f"Connection failure: {error}")
         self.connected = False
-        self._schedule_reconnect()
 
     def _schedule_reconnect(self):
         """Schedule a reconnection attempt with exponential backoff"""
-        if not self.reconnect_timer:
-            logger.info(f"Scheduling reconnection in {self.reconnect_interval} seconds")
-            self.reconnect_timer = threading.Timer(self.reconnect_interval, self._reconnect)
-            self.reconnect_timer.daemon = True
-            self.reconnect_timer.start()
-            # Increase reconnect interval with exponential backoff
-            self.reconnect_interval = min(self.reconnect_interval * 2, self.max_reconnect_interval)
+        # Reconnection disabled to prevent connection loops and timeout errors
+        logger.info("Reconnection disabled to prevent connection conflicts")
+        return
+
 
     def _reconnect(self):
         """Attempt to reconnect to IoT Hub"""
-        self.reconnect_timer = None
-        logger.info("Attempting to reconnect to IoT Hub...")
-        try:
-            with self.connection_lock:
-                if self.client:
-                    try:
-                        self.client.disconnect()
-                    except:
-                        pass
-                    self.client = None
-                self.connect()
-        except Exception as e:
-            logger.error(f"Reconnection failed: {e}")
-            self._schedule_reconnect()
+        # Reconnection disabled to prevent connection loops and timeout errors
+        logger.info("Reconnection disabled to prevent connection conflicts")
+        return
+
         
     def connect(self):
         """Connect to IoT Hub and return connection status"""
