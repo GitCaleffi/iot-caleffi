@@ -187,37 +187,44 @@ class HubClient:
             # Complete message dictionary provided
             message_data = message_or_barcode
             logger.info("Using provided message dictionary")
+            
+            # Create message object from dictionary
+            message = Message(json.dumps(message_data))
+            message.message_id = f"{device_id}-{int(time.time())}"
         else:
             # Barcode string provided - validate and create message
             barcode = message_or_barcode
             
-            # Validate barcode format - allow alphanumeric with reasonable lengths
+            # Basic validation
             if not barcode or not barcode.strip():
                 logger.error("Invalid barcode: empty or None")
                 return False
             
             barcode = barcode.strip()
-            barcode_length = len(barcode)
             
-            # Allow reasonable barcode lengths (most common formats: 6-20 characters)
-            if barcode_length < 6 or barcode_length > 20:
-                logger.error(f"Invalid barcode length: {barcode_length}. Must be between 6-20 characters.")
+            # Strict EAN validation
+            try:
+                from barcode_validator import validate_ean, BarcodeValidationError
+                validate_ean(barcode)
+                logger.info(f"Barcode {barcode} passed EAN validation")
+                
+                # Create message payload for barcode
+                message_data = {
+                    "scannedBarcode": barcode,
+                    "deviceId": device_id,
+                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
+                }
+                
+                # Create message with ID
+                message = Message(json.dumps(message_data))
+                message.message_id = f"{device_id}-{int(time.time())}"
+                
+            except BarcodeValidationError as e:
+                logger.error(f"Invalid EAN barcode format: {e}")
                 return False
-            
-            # Allow alphanumeric characters (letters, numbers, some symbols)
-            if not barcode.replace('-', '').replace('_', '').isalnum():
-                logger.warning(f"Barcode contains special characters: {barcode}. Proceeding anyway.")
-
-            # Create message payload for barcode
-            message_data = {
-                "scannedBarcode": barcode,
-                "deviceId": device_id,
-                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
-            }
-
-        # Create message with ID
-        message = Message(json.dumps(message_data))
-        message.message_id = f"{device_id}-{int(time.time())}"
+            except ImportError:
+                logger.error("barcode_validator module not found, cannot validate barcode")
+                return False
 
         logger.info(f"Message to send: {json.dumps(message_data, indent=2)}")
         logger.info(f"Message ID: {message.message_id}")

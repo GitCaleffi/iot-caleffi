@@ -50,16 +50,16 @@ def simulate_offline_mode():
     """Simulate being offline by overriding the is_online method"""
     global simulated_offline_mode
     simulated_offline_mode = True
-    logger.info("⚠️ Simulated OFFLINE mode activated")
-    return "⚠️ OFFLINE mode simulated. Barcodes will be stored locally and sent when 'online'."
+    logger.info("[WARNING] Simulated OFFLINE mode activated")
+    return "[WARNING] OFFLINE mode simulated. Barcodes will be stored locally and sent when 'online'."
 
 def simulate_online_mode():
     """Restore normal online mode checking"""
     global simulated_offline_mode
     simulated_offline_mode = False
-    logger.info("✅ Simulated OFFLINE mode deactivated - normal operation restored")
+    logger.info("[OK] Simulated OFFLINE mode deactivated - normal operation restored")
     result = process_unsent_messages(auto_retry=False)
-    return "✅ Online mode restored. Any pending messages will now be sent.\n\n" + (result or "")
+    return "[OK] Online mode restored. Any pending messages will now be sent.\n\n" + (result or "")
 
 # Store reference to original is_online method before patching
 from api.api_client import ApiClient as OriginalApiClient
@@ -99,7 +99,7 @@ def generate_registration_token():
         # Clean up any expired tokens
         device_manager.cleanup_expired_tokens()
         
-        response_msg = f"""✅ Registration token generated successfully!
+        response_msg = f"""[OK] Registration token generated successfully!
 
 **Registration Token:** `{token}`
 
@@ -116,7 +116,7 @@ def generate_registration_token():
     except Exception as e:
         logger.error(f"Error generating registration token: {str(e)}")
         blink_led("red")
-        return f"❌ Error: {str(e)}", ""
+        return f"[ERROR] Error: {str(e)}", ""
 
 def confirm_registration(registration_token, device_id):
     """Step 2: Confirm device registration using token and device ID"""
@@ -125,11 +125,11 @@ def confirm_registration(registration_token, device_id):
         
         if not registration_token or registration_token.strip() == "":
             blink_led("red")
-            return "❌ Please enter a registration token."
+            return "[ERROR] Please enter a registration token."
         
         if not device_id or device_id.strip() == "":
             blink_led("red")
-            return "❌ Please enter a device ID."
+            return "[ERROR] Please enter a device ID."
         
         registration_token = registration_token.strip()
         device_id = device_id.strip()
@@ -138,18 +138,18 @@ def confirm_registration(registration_token, device_id):
         is_valid, message = device_manager.validate_registration_token(registration_token)
         if not is_valid:
             blink_led("red")
-            return f"❌ {message}"
+            return f"[ERROR] {message}"
         
         # Check if device is already registered in our system
         if device_manager.is_device_registered(device_id):
             blink_led("red")
-            return f"❌ Device ID '{device_id}' is already registered. Please use a different Device ID."
+            return f"[ERROR] Device ID '{device_id}' is already registered. Please use a different Device ID."
         
         # Check if device is already registered in local DB (legacy check)
         existing_device = local_db.get_device_id()
         if existing_device and existing_device == device_id:
             blink_led("red")
-            return f"❌ Device already registered with ID: {existing_device}. Please use a different device or clear existing registration."
+            return f"[ERROR] Device already registered with ID: {existing_device}. Please use a different device or clear existing registration."
         
         is_online = api_client.is_online()
         
@@ -164,14 +164,14 @@ def confirm_registration(registration_token, device_id):
         success, reg_message = device_manager.register_device(registration_token, device_id, device_info)
         if not success:
             blink_led("red")
-            return f"❌ Registration failed: {reg_message}"
+            return f"[ERROR] Registration failed: {reg_message}"
         
         # Save device ID locally for backward compatibility
         local_db.save_device_id(device_id)
         
         if not is_online:
             blink_led("orange")
-            return f"⚠️ Device is offline. Device ID '{device_id}' registered locally. Will sync with IoT Hub when online."
+            return f"[WARNING] Device is offline. Device ID '{device_id}' registered locally. Will sync with IoT Hub when online."
         
         # Register device with IoT Hub if available and online
         if IOT_HUB_REGISTRY_AVAILABLE:
@@ -234,7 +234,7 @@ def confirm_registration(registration_token, device_id):
             local_db.save_unsent_message(device_id, json.dumps(confirmation_message), datetime.now())
         
         blink_led("green")
-        return f"""✅ Device registration completed successfully!
+        return f"""[OK] Device registration completed successfully!
 
 **Device ID:** {device_id}
 **Status:** Registered and ready to scan barcodes
@@ -246,14 +246,14 @@ def confirm_registration(registration_token, device_id):
     except Exception as e:
         logger.error(f"Error in confirm_registration: {str(e)}")
         blink_led("red")
-        return f"❌ Error: {str(e)}"
+        return f"[ERROR] Error: {str(e)}"
 
 def process_barcode_scan(barcode, device_id):
     """Unified function to handle barcode scanning with dynamic device validation"""
     try:
         if not barcode or barcode.strip() == "":
             blink_led("red")
-            return "❌ Please enter a barcode."
+            return "[ERROR] Please enter a barcode."
         
         barcode = barcode.strip()
         
@@ -444,40 +444,40 @@ def process_barcode_scan(barcode, device_id):
                 
                 # Return success message for new device registration
                 blink_led("green")
-                return f"""🟢 New Device Registered Successfully
+                return f"""[GREEN] New Device Registered Successfully
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {barcode}
-• Status: Newly registered
-• Registered: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
-• Quantity: 1
+- Device ID: {device_id}
+- Barcode: {barcode}
+- Status: Newly registered
+- Registered: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Quantity: 1
 
 **Actions Completed:**
-• ✅ Device registered in system
-• ✅ Device registered with API
-• ✅ New device registration message sent to IoT Hub
-• ✅ Barcode scan will be processed next
+- [OK] Device registered in system
+- [OK] Device registered with API
+- [OK] New device registration message sent to IoT Hub
+- [OK] Barcode scan will be processed next
 
-**LED Status:** 🟢 Green light indicates successful new device registration.
+**LED Status:** [GREEN] Green light indicates successful new device registration.
 
 **Status:** New device registered successfully and ready for barcode scanning."""
             else:
                 logger.error(f"Auto-registration failed for device {device_id}: {reg_message}")
                 blink_led("red")
-                return f"""❌ Device Registration Failed
+                return f"""[ERROR] Device Registration Failed
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {barcode}
-• Status: Registration failed
-• Error: {reg_message}
+- Device ID: {device_id}
+- Barcode: {barcode}
+- Status: Registration failed
+- Error: {reg_message}
 
 **Actions Completed:**
-• ❌ Device registration failed
-• ❌ Cannot process barcode scan
+- [ERROR] Device registration failed
+- [ERROR] Cannot process barcode scan
 
-**LED Status:** 🔴 Red light indicates registration failure.
+**LED Status:** [RED] Red light indicates registration failure.
 
 **Status:** Please try again or contact support."""
         
@@ -582,14 +582,14 @@ def process_barcode_scan(barcode, device_id):
                         if not can_send:
                             logger.warning(f"Device still not authorized after emergency registration: {send_message}")
                             blink_led("red")
-                            return f"❌ {send_message}"
+                            return f"[ERROR] {send_message}"
                 except Exception as emergency_reg_error:
                     logger.error(f"Emergency registration failed: {emergency_reg_error}")
                     blink_led("red")
-                    return f"❌ Emergency registration failed: {str(emergency_reg_error)}"
+                    return f"[ERROR] Emergency registration failed: {str(emergency_reg_error)}"
             else:
                 blink_led("red")
-                return f"❌ {send_message}"
+                return f"[ERROR] {send_message}"
         
         # Validate the barcode with dynamic device manager
         is_valid, validation_message = device_manager.validate_barcode_for_device(barcode, device_id)
@@ -632,14 +632,14 @@ def process_barcode_scan(barcode, device_id):
                     else:
                         logger.warning(f"Barcode validation still failed after on-the-fly registration: {validation_message}")
                         blink_led("red")
-                        return f"❌ {validation_message}"
+                        return f"[ERROR] {validation_message}"
                 else:
                     logger.error(f"On-the-fly registration failed: {reg_message}")
                     blink_led("red")
-                    return f"❌ Registration failed: {reg_message}"
+                    return f"[ERROR] Registration failed: {reg_message}"
             else:
                 blink_led("red")
-                return f"❌ {validation_message}"
+                return f"[ERROR] {validation_message}"
         
         # Validate the barcode format (optional - can be disabled for more flexibility)
         try:
@@ -657,17 +657,17 @@ def process_barcode_scan(barcode, device_id):
             logger.info(f"Duplicate barcode scan detected for device {device_id}, barcode {barcode}")
             blink_led("yellow")  # Yellow LED for duplicate scan
             last_scan_time = recent_scans[0]['timestamp'] if recent_scans else 'Unknown'
-            return f"""⚠️ Duplicate Barcode Scan Detected
+            return f"""[WARNING] Duplicate Barcode Scan Detected
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {device_id}
-• Last Scanned: {last_scan_time}
+- Barcode: {barcode}
+- Device ID: {device_id}
+- Last Scanned: {last_scan_time}
 
 **Status:** This barcode was already scanned recently by this device.
 **Action:** Duplicate scan prevented to avoid repeated API hits.
 
-**LED Status:** 🟡 Yellow light indicates duplicate scan prevention."""
+**LED Status:** [YELLOW] Yellow light indicates duplicate scan prevention."""
         
         # Check if we're online
         is_online = api_client.is_online()
@@ -677,7 +677,7 @@ def process_barcode_scan(barcode, device_id):
             timestamp = datetime.now()
             local_db.save_barcode_scan(device_id, barcode, timestamp)
             blink_led("orange")
-            return f"⚠️ Device is offline. Barcode '{barcode}' saved locally for device '{device_id}'. Will be sent when online."
+            return f"[WARNING] Device is offline. Barcode '{barcode}' saved locally for device '{device_id}'. Will be sent when online."
         
         # Process barcode online
         try:
@@ -850,17 +850,17 @@ def process_barcode_scan(barcode, device_id):
             # Determine overall success and provide detailed feedback
             if api_success and hub_success:
                 blink_led("green")
-                return f"""✅ Barcode Scan Processed
+                return f"""[OK] Barcode Scan Processed
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {device_id}
-• Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: {barcode}
+- Device ID: {device_id}
+- Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Barcode saved locally
-• ✅ Sent to API successfully
-• ✅ Sent to IoT Hub
+- [OK] Barcode saved locally
+- [OK] Sent to API successfully
+- [OK] Sent to IoT Hub
 
 **Status:** Barcode processed successfully!"""
             
@@ -905,33 +905,33 @@ def process_barcode_scan(barcode, device_id):
                 except Exception as save_error:
                     logger.error(f"Error saving unsent IoT Hub message: {str(save_error)}")
                 blink_led("orange")
-                return f"""⚠️ Barcode Partially Processed
+                return f"""[WARNING] Barcode Partially Processed
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {device_id}
-• Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: {barcode}
+- Device ID: {device_id}
+- Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Barcode saved locally
-• ✅ Sent to API successfully
-• ⚠️ Failed to send to IoT Hub (stored for retry)
+- [OK] Barcode saved locally
+- [OK] Sent to API successfully
+- [WARNING] Failed to send to IoT Hub (stored for retry)
 
 **Status:** Barcode sent to API, IoT Hub retry queued."""
             
             elif not api_success and hub_success:
                 blink_led("orange")
-                return f"""⚠️ Barcode Partially Processed
+                return f"""[WARNING] Barcode Partially Processed
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {device_id}
-• Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: {barcode}
+- Device ID: {device_id}
+- Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Barcode saved locally
-• ⚠️ API call failed: {api_result.get('message', 'Unknown error')}
-• ✅ Sent to IoT Hub
+- [OK] Barcode saved locally
+- [WARNING] API call failed: {api_result.get('message', 'Unknown error')}
+- [OK] Sent to IoT Hub
 
 **Status:** Barcode sent to IoT Hub, API call failed."""
             
@@ -949,17 +949,17 @@ def process_barcode_scan(barcode, device_id):
                 except Exception as save_error:
                     logger.error(f"Error saving unsent message: {str(save_error)}")
                 blink_led("red")
-                return f"""❌ Barcode Processing Failed
+                return f"""[ERROR] Barcode Processing Failed
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {device_id}
-• Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: {barcode}
+- Device ID: {device_id}
+- Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Barcode saved locally
-• ❌ API call failed: {api_result.get('message', 'Unknown error')}
-• ❌ IoT Hub send failed
+- [OK] Barcode saved locally
+- [ERROR] API call failed: {api_result.get('message', 'Unknown error')}
+- [ERROR] IoT Hub send failed
 
 **Status:** Both API and IoT Hub failed. Stored for retry when connection is restored."""
                 
@@ -970,17 +970,17 @@ def process_barcode_scan(barcode, device_id):
             local_db.save_barcode_scan(device_id, barcode, timestamp)
             blink_led("red")
             
-            return f"""❌ Barcode Scan Error
+            return f"""[ERROR] Barcode Scan Error
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {device_id}
-• Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: {barcode}
+- Device ID: {device_id}
+- Scanned At: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ❌ Failed to send to API: {str(e)}
-• ❌ Failed to send to IoT Hub
-• ✅ Scan saved to local database for retry
+- [ERROR] Failed to send to API: {str(e)}
+- [ERROR] Failed to send to IoT Hub
+- [OK] Scan saved to local database for retry
 
 **Status:** Error occurred but scan is stored locally for retry when connection is restored."""
         
@@ -989,12 +989,12 @@ def process_barcode_scan(barcode, device_id):
         blink_led("red")
         timestamp = datetime.now()
         
-        return f"""❌ System Error
+        return f"""[ERROR] System Error
 
 **Error Details:**
-• Barcode: `{barcode if 'barcode' in locals() else 'Unknown'}`
-• Device ID: {device_id if 'device_id' in locals() else 'Unknown'}
-• Error Time: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: `{barcode if 'barcode' in locals() else 'Unknown'}`
+- Device ID: {device_id if 'device_id' in locals() else 'Unknown'}
+- Error Time: {timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Error Message:** {str(e)}
 
@@ -1006,9 +1006,9 @@ def get_recent_scans_display():
         recent_scans = local_db.get_recent_scans(10)  # Get last 10 scans
         
         if not recent_scans:
-            return "📋 **RECENT SCANNED BARCODES**\n\n❌ No barcode scans found."
+            return "[LIST] **RECENT SCANNED BARCODES**\n\n[ERROR] No barcode scans found."
         
-        display_text = "📋 **RECENT SCANNED BARCODES**\n\n"
+        display_text = "[LIST] **RECENT SCANNED BARCODES**\n\n"
         
         for i, scan in enumerate(recent_scans, 1):
             device_id = scan['device_id']
@@ -1017,15 +1017,15 @@ def get_recent_scans_display():
             quantity = scan.get('quantity', 1)
             
             display_text += f"**{i}.** `{barcode}`\n"
-            display_text += f"   • Device: {device_id}\n"
-            display_text += f"   • Time: {timestamp}\n"
-            display_text += f"   • Quantity: {quantity}\n\n"
+            display_text += f"   - Device: {device_id}\n"
+            display_text += f"   - Time: {timestamp}\n"
+            display_text += f"   - Quantity: {quantity}\n\n"
         
         return display_text
         
     except Exception as e:
         logger.error(f"Error getting recent scans: {str(e)}")
-        return f"❌ Error getting recent scans: {str(e)}"
+        return f"[ERROR] Error getting recent scans: {str(e)}"
 
 def get_registration_status():
     """Get the current device registration status"""
@@ -1038,34 +1038,38 @@ def get_registration_status():
         device_id = local_db.get_device_id()
         device_registered = device_id is not None
         
-        status_text = "📋 **DEVICE REGISTRATION STATUS**\n\n"
+        status_text = "[LIST] **DEVICE REGISTRATION STATUS**\n\n"
         
         # Test barcode status
         if test_barcode_scanned:
-            status_text += f"✅ **Test Barcode:** Scanned ({test_scan['barcode']}) at {test_scan['timestamp']}\n"
+            status_text += f"[OK] **Test Barcode:** Scanned ({test_scan['barcode']}) at {test_scan['timestamp']}\n"
         else:
-            status_text += "❌ **Test Barcode:** Not scanned - Please scan: 817994ccfe14\n"
+            status_text += "[ERROR] **Test Barcode:** Not scanned - Please scan: 817994ccfe14\n"
         
         # Device registration status
         if device_registered:
-            status_text += f"✅ **Device ID:** Registered ({device_id})\n"
+            status_text += f"[OK] **Device ID:** Registered ({device_id})\n"
         else:
-            status_text += "❌ **Device ID:** Not registered - Please confirm registration\n"
+            status_text += "[ERROR] **Device ID:** Not registered - Please confirm registration\n"
         
         # Overall status
         if test_barcode_scanned and device_registered:
-            status_text += "\n🎉 **DEVICE READY:** Can send messages to IoT Hub"
+            status_text += "\n[CELEBRATION] **DEVICE READY:** Can send messages to IoT Hub"
         else:
-            status_text += "\n⚠️ **DEVICE NOT READY:** Complete registration steps above"
+            status_text += "\n[WARNING] **DEVICE NOT READY:** Complete registration steps above"
         
         return status_text
         
     except Exception as e:
         logger.error(f"Error getting registration status: {str(e)}")
-        return f"❌ Error getting registration status: {str(e)}"
+        return f"[ERROR] Error getting registration status: {str(e)}"
 
 def process_unsent_messages(auto_retry=False):
     """Process any unsent messages in the local database and try to send them to IoT Hub
+    
+    Args:
+        auto_retry (bool): If True, runs in background mode without returning status messages
+    """
     
     Args:
         auto_retry (bool): If True, runs in background mode without returning status messages
@@ -1092,22 +1096,13 @@ def process_unsent_messages(auto_retry=False):
         if not config:
             return "Error: Failed to load configuration"
             
-        # Get dynamic registration service for generating device connection strings
-        # Get IoT Hub connection string for dynamic registration
-
-        iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
-
-        if not iot_hub_connection_string:
-
-            return "Error: No IoT Hub connection string found in configuration"
-
-        
-
-        registration_service = get_dynamic_registration_service(iot_hub_connection_string)
-
-        if not registration_service:
-
-            return "Error: Failed to initialize dynamic registration service"
+        # Get default connection string
+        default_connection_string = config.get("iot_hub", {}).get("connection_string", None)
+        if not default_connection_string:
+            return "Error: No default connection string provided."
+            
+        # Create IoT Hub client
+        hub_client = HubClient(default_connection_string)
         
         # Process each unsent message
         success_count = 0
@@ -1126,19 +1121,15 @@ def process_unsent_messages(auto_retry=False):
                 success_count += 1
                 continue
             
-            # Generate device-specific connection string using dynamic registration
-            try:
-                device_connection_string = registration_service.register_device_with_azure(device_id)
-                if not device_connection_string:
-                    logger.error(f"Failed to get connection string for device {device_id}")
-                    fail_count += 1
-                    continue
-            except Exception as reg_error:
-                logger.error(f"Registration error for device {device_id}: {reg_error}")
-                fail_count += 1
-                continue
+            # Determine connection string for the device
+            devices_config = config.get("iot_hub", {}).get("devices", {})
+            if device_id in devices_config:
+                connection_string = devices_config[device_id]["connection_string"]
+            else:
+                connection_string = default_connection_string
                 
-            message_client = HubClient(device_connection_string)
+
+            message_client = HubClient(connection_string)
             
             message_payload = {
                 "scannedBarcode": barcode,
@@ -1262,16 +1253,16 @@ def simulate_offline_mode():
     """Simulate being offline by overriding the is_online method"""
     global simulated_offline_mode
     simulated_offline_mode = True
-    logger.info("⚠️ Simulated OFFLINE mode activated")
-    return "⚠️ OFFLINE mode simulated. Barcodes will be stored locally and sent when 'online'."  
+    logger.info("[WARNING] Simulated OFFLINE mode activated")
+    return "[WARNING] OFFLINE mode simulated. Barcodes will be stored locally and sent when 'online'."  
 
 def simulate_online_mode():
     """Restore normal online mode checking"""
     global simulated_offline_mode
     simulated_offline_mode = False
-    logger.info("✅ Simulated OFFLINE mode deactivated - normal operation restored")
+    logger.info("[OK] Simulated OFFLINE mode deactivated - normal operation restored")
     result = process_unsent_messages(auto_retry=False)
-    return "✅ Online mode restored. Any pending messages will now be sent.\n\n" + (result or "")
+    return "[OK] Online mode restored. Any pending messages will now be sent.\n\n" + (result or "")
 
 def register_device_with_iot_hub(device_id):
     """Register a device with Azure IoT Hub and update the config file
@@ -1401,7 +1392,7 @@ def register_device_id(barcode):
         is_online = api_client.is_online()
         if not is_online:
             blink_led("red")
-            return "❌ Device is offline. Cannot register device."
+            return "[ERROR] Device is offline. Cannot register device."
         
         api_url_1 = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
         payload_1 = {"scannedBarcode": barcode}
@@ -1411,24 +1402,28 @@ def register_device_id(barcode):
         
         if not api_result_1.get("success", False):
             blink_led("red")
-            return f"❌ First API call failed: {api_result_1.get('message', 'Unknown error')}"
+            error_msg = api_result_1.get('message', 'Unknown error')
+            return f"[ERROR] First API call failed: {error_msg}"
         
         logger.info(f"Making second API call to {api_url_1}")
         api_result_2 = api_client.send_registration_barcode(api_url_1, payload_1)
         
         if not api_result_2.get("success", False):
             blink_led("red")
-            return f"❌ Second API call failed: {api_result_2.get('message', 'Unknown error')}"
+            error_msg = api_result_2.get('message', 'Unknown error')
+            return f"[ERROR] Second API call failed: {error_msg}"
         
         # Do not save test barcode scan locally - only save when API returns device ID and barcode
         # This keeps the database clean by only storing confirmed registrations
         
         # Send response to frontend
+        first_call_msg = api_result_1.get('message', 'Success')
+        second_call_msg = api_result_2.get('message', 'Success')
         response_msg = f"""Test barcode {barcode} processed successfully!
 
 **API Calls Completed:**
-• First call: {api_result_1.get('message', 'Success')}
-• Second call: {api_result_2.get('message', 'Success')}
+- First call: {first_call_msg}
+- Second call: {second_call_msg}
 
 **Next Step:** Click 'Confirm Registration' to complete the process."""
         
@@ -1437,7 +1432,7 @@ def register_device_id(barcode):
     except Exception as e:
         logger.error(f"Error in register_device_id: {str(e)}")
         blink_led("red")
-        return f"❌ Error: {str(e)}"
+        return f"[ERROR] Error: {str(e)}"
 
 def confirm_registration(barcode, device_id):
     """Step 2: Frontend confirms registration, send confirmation message, save device in DB, send to IoT"""
@@ -1469,10 +1464,10 @@ def confirm_registration(barcode, device_id):
             api_result = api_client.send_barcode_scan(device_id, barcode, quantity)
             
             if api_result.get("success", False):
-                api_status = "✅ Quantity update sent to API"
+                api_status = "[OK] Quantity update sent to API"
                 logger.info(f"API quantity update successful for device {device_id}")
             else:
-                api_status = "⚠️ Failed to send quantity update to API"
+                api_status = "[WARNING] Failed to send quantity update to API"
                 logger.error(f"API quantity update failed for device {device_id}: {api_result.get('message', 'Unknown error')}")
             
             # Send quantity update message to IoT Hub
@@ -1483,7 +1478,7 @@ def confirm_registration(barcode, device_id):
                     iot_hub_owner_connection = config.get("iot_hub", {}).get("connection_string", None)
                     if not iot_hub_owner_connection:
                         logger.error("IoT Hub owner connection string not found in config")
-                        iot_status = "⚠️ IoT Hub connection failed: Missing connection string in config"
+                        iot_status = "[WARNING] IoT Hub connection failed: Missing connection string in config"
                     else:
                         # Initialize dynamic registration service with the IoT Hub owner connection string
                         registration_service = get_dynamic_registration_service(iot_hub_owner_connection)
@@ -1505,37 +1500,37 @@ def confirm_registration(barcode, device_id):
                             # Send message with the quantity update payload
                             success = hub_client.send_message(quantity_message, device_id)
                             if success:
-                                iot_status = "✅ Quantity update sent to IoT Hub"
+                                iot_status = "[OK] Quantity update sent to IoT Hub"
                                 blink_led("green")  # GREEN light for successful update
                             else:
-                                iot_status = "⚠️ Failed to send quantity update to IoT Hub"
+                                iot_status = "[WARNING] Failed to send quantity update to IoT Hub"
                                 blink_led("yellow")  # YELLOW light for IoT Hub failure
                         else:
-                            iot_status = "⚠️ Failed to get device connection string for IoT Hub"
+                            iot_status = "[WARNING] Failed to get device connection string for IoT Hub"
                             blink_led("yellow")  # YELLOW light for connection failure
                 else:
-                    iot_status = "⚠️ No IoT Hub configuration found"
+                    iot_status = "[WARNING] No IoT Hub configuration found"
                     blink_led("yellow")  # YELLOW light for missing config
             except Exception as e:
                 logger.error(f"Error sending quantity update to IoT Hub: {str(e)}")
-                iot_status = "⚠️ Error sending quantity update to IoT Hub"
+                iot_status = "[WARNING] Error sending quantity update to IoT Hub"
                 blink_led("yellow")  # YELLOW light for error
             
-            return f"""🟢 Quantity Update Processed
+            return f"""Quantity Update Processed
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {barcode}
-• Status: Already registered
-• Registered: {registration_date}
-• Quantity: {quantity}
+- Device ID: {device_id}
+- Barcode: {barcode}
+- Status: Already registered
+- Registered: {registration_date}
+- Quantity: {quantity}
 
 **Actions Completed:**
-• ✅ Device found in database
-• {api_status}
-• {iot_status}
+- [OK] Device found in database
+- {api_status}
+- {iot_status}
 
-**LED Status:** 🟢 Green light indicates successful quantity update.
+**LED Status:** [GREEN] Green light indicates successful quantity update.
 
 **Status:** Quantity update processed successfully for existing device."""
         
@@ -1543,7 +1538,7 @@ def confirm_registration(barcode, device_id):
         is_online = api_client.is_online()
         if not is_online:
             blink_led("yellow")
-            return "⚠️ Device is offline. Please check your internet connection and try again."
+            return "[WARNING] Device is offline. Please check your internet connection and try again."
         
         # Use dynamic device ID from the scanned barcode (no static EAN)
         if not device_id or not device_id.strip():
@@ -1565,20 +1560,20 @@ def confirm_registration(barcode, device_id):
             device_info = next((device for device in registered_devices if device['device_id'] == device_id), None)
             registration_date = device_info['registration_date'] if device_info else 'Unknown'
             
-            return f"""🔴 Device Already Registered
+            return f"""[RED] Device Already Registered
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {test_scan['barcode']}
-• Status: Already in database
-• Registered: {registration_date}
+- Device ID: {device_id}
+- Barcode: {test_scan['barcode']}
+- Status: Already in database
+- Registered: {registration_date}
 
 **Actions Completed:**
-• ✅ Device found in database
-• ✅ Already registered message sent to IoT Hub
-• ⚠️ No duplicate registration performed
+- [OK] Device found in database
+- [OK] Already registered message sent to IoT Hub
+- [WARNING] No duplicate registration performed
 
-**LED Status:** 🔴 Red light indicates device already registered.
+**LED Status:** [RED] Red light indicates device already registered.
 
 **Status:** Device is ready for barcode scanning operations!"""
                     
@@ -1625,32 +1620,32 @@ def confirm_registration(barcode, device_id):
                         hub_client = HubClient(device_connection_string)
                         # Send test registration message with correct parameters: barcode, device_id
                         hub_client.send_message(barcode, device_id)
-                        iot_status = "✅ Test registration sent to IoT Hub"
+                        iot_status = "[OK] Test registration sent to IoT Hub"
                         blink_led("green")  # GREEN light for successful test
                     else:
-                        iot_status = "⚠️ Failed to send test registration to IoT Hub"
+                        iot_status = "[WARNING] Failed to send test registration to IoT Hub"
                         blink_led("yellow")  # YELLOW light for IoT Hub failure
                 else:
-                    iot_status = "⚠️ No IoT Hub configuration found"
+                    iot_status = "[WARNING] No IoT Hub configuration found"
                     blink_led("yellow")  # YELLOW light for missing config
             except Exception as e:
                 logger.error(f"Error sending test registration to IoT Hub: {str(e)}")
-                iot_status = "⚠️ Error sending test registration to IoT Hub"
+                iot_status = "[WARNING] Error sending test registration to IoT Hub"
                 blink_led("yellow")  # YELLOW light for error
                 
-            return f"""✅ Test Barcode Processed
+            return f"""[OK] Test Barcode Processed
 
 **Device Details:**
-• Device ID: {device_id}
-• Test Barcode: {barcode}
-• Processed At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Device ID: {device_id}
+- Test Barcode: {barcode}
+- Processed At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Test barcode identified
-• {iot_status}
-• ⚠️ Not saved to database (test barcode)
+- [OK] Test barcode identified
+- {iot_status}
+- [WARNING] Not saved to database (test barcode)
 
-**LED Status:** 🟢 Green light indicates successful test.
+**LED Status:** [GREEN] Green light indicates successful test.
 
 **Status:** Test registration completed successfully. IoT Hub connection verified."""
         
@@ -1692,38 +1687,38 @@ def confirm_registration(barcode, device_id):
                             # Blink green LED for success
                             blink_led("green")
                             
-                            return f"""🟢 Device Registration Successful!
+                            return f"""[GREEN] Device Registration Successful!
 
 **Device Details:**
-• Device ID: {registered_device_id}
-• Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Device ID: {registered_device_id}
+- Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Device ID registered with API
-• ✅ Device saved in local database
-• ✅ IoT Hub registration initiated
+- [OK] Device ID registered with API
+- [OK] Device saved in local database
+- [OK] IoT Hub registration initiated
 
-**LED Status:** 🟢 Green light indicates successful registration.
+**LED Status:** [GREEN] Green light indicates successful registration.
 
 **Status:** Device is now ready for barcode scanning operations!"""
                     except json.JSONDecodeError:
                         pass
                 
                 blink_led("yellow") 
-                return f"""🟡 Registration Failed
+                return f"""[YELLOW] Registration Failed
 
 **Error:** Device ID '{device_id}' was not found in the system.
 
-**LED Status:** 🟡 Yellow light indicates failed registration.
+**LED Status:** [YELLOW] Yellow light indicates failed registration.
 
 **Action:** Please use a valid device ID and try again."""
             
             blink_led("yellow")  # YELLOW light for failed registration
-            return f"""🟡 Registration Failed
+            return f"""[YELLOW] Registration Failed
 
 **Error:** {error_msg}
 
-**LED Status:** 🟡 Yellow light indicates failed registration.
+**LED Status:** [YELLOW] Yellow light indicates failed registration.
 
 **Action:** Please check your device ID and try again."""
         
@@ -1733,11 +1728,11 @@ def confirm_registration(barcode, device_id):
                 response_data = json.loads(api_result["response"])
                 if response_data.get("responseCode") == 400:
                     blink_led("yellow")  # YELLOW light for failed registration
-                    return f"""🟡 Registration Failed
+                    return f"""[YELLOW] Registration Failed
 
 **Error:** {response_data.get('responseMessage', 'Unknown error')}
 
-**LED Status:** 🟡 Yellow light indicates failed registration.
+**LED Status:** [YELLOW] Yellow light indicates failed registration.
 
 **Action:** Please check your device ID and try again."""
                 elif response_data.get("responseCode") == 200 and response_data.get("deviceId"):
@@ -1769,7 +1764,7 @@ def confirm_registration(barcode, device_id):
                                 
                                 if registration_service is None:
                                     logger.error(f"Failed to initialize dynamic registration service for device {device_id}")
-                                    return f"⚠️ Device ID '{device_id}' was found, but IoT Hub connection failed. API update succeeded."
+                                    return f"[WARNING] Device ID '{device_id}' was found, but IoT Hub connection failed. API update succeeded."
                                 
                                 # Get device connection string
                                 device_connection_string = registration_service.register_device_with_azure(device_id)
@@ -1796,20 +1791,20 @@ def confirm_registration(barcode, device_id):
                         # Blink red LED for already registered device
                         blink_led("red")
                         
-                        return f"""🔴 Device Already Registered
+                        return f"""[RED] Device Already Registered
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {returned_barcode}
-• Status: Already in database
-• Registered: {registration_date}
+- Device ID: {device_id}
+- Barcode: {returned_barcode}
+- Status: Already in database
+- Registered: {registration_date}
 
 **Actions Completed:**
-• ✅ Device found in database
-• ✅ Already registered message sent to IoT Hub
-• ⚠️ No duplicate registration performed
+- [OK] Device found in database
+- [OK] Already registered message sent to IoT Hub
+- [WARNING] No duplicate registration performed
 
-**LED Status:** 🔴 Red light indicates device already registered.
+**LED Status:** [RED] Red light indicates device already registered.
 
 **Status:** Device is ready for barcode scanning operations!"""
                     
@@ -1828,11 +1823,11 @@ def confirm_registration(barcode, device_id):
                         device_registration_result = api_client.register_device(device_id)
                         
                         if device_registration_result.get("success", False):
-                            logger.info(f"✅ Device {device_id} successfully registered with external API")
-                            api_registration_status = "✅ Registered with external API"
+                            logger.info(f"[OK] Device {device_id} successfully registered with external API")
+                            api_registration_status = "[OK] Registered with external API"
                         else:
-                            logger.warning(f"⚠️ Failed to register device {device_id} with external API: {device_registration_result.get('message', 'Unknown error')}")
-                            api_registration_status = "⚠️ Failed to register with external API"
+                            logger.warning(f"[WARNING] Failed to register device {device_id} with external API: {device_registration_result.get('message', 'Unknown error')}")
+                            api_registration_status = "[WARNING] Failed to register with external API"
                         
                         # Send successful registration message to IoT Hub with device ID, barcode, and quantity
                         try:
@@ -1859,38 +1854,38 @@ def confirm_registration(barcode, device_id):
                                             
                                             # Send to IoT Hub
                                             iot_success = hub_client.send_message(returned_barcode, device_id, success_message)
-                                            iot_status = "✅ Success message sent to IoT Hub" if iot_success else "⚠️ Failed to send to IoT Hub"
+                                            iot_status = "[OK] Success message sent to IoT Hub" if iot_success else "[WARNING] Failed to send to IoT Hub"
                                             logger.info(f"Success registration message sent to IoT Hub: {iot_success}")
                                         else:
-                                            iot_status = "⚠️ Failed to generate IoT Hub connection"
+                                            iot_status = "[WARNING] Failed to generate IoT Hub connection"
                                     else:
-                                        iot_status = "⚠️ Failed to initialize IoT Hub service"
+                                        iot_status = "[WARNING] Failed to initialize IoT Hub service"
                                 else:
-                                    iot_status = "⚠️ No IoT Hub configuration found"
+                                    iot_status = "[WARNING] No IoT Hub configuration found"
                             else:
-                                iot_status = "⚠️ Configuration not loaded"
+                                iot_status = "[WARNING] Configuration not loaded"
                         except Exception as e:
                             logger.error(f"Error sending success message to IoT Hub: {e}")
-                            iot_status = f"⚠️ IoT Hub error: {str(e)}"
+                            iot_status = f"[WARNING] IoT Hub error: {str(e)}"
                         
                         # Blink green LED for successful new registration
                         blink_led("green")
                         
-                        return f"""🟢 New Device Registration Successful!
+                        return f"""[GREEN] New Device Registration Successful!
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {returned_barcode}
-• Quantity: 1
-• Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Device ID: {device_id}
+- Barcode: {returned_barcode}
+- Quantity: 1
+- Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Device ID confirmed by API
-• ✅ Device saved in local database
-• {api_registration_status}
-• {iot_status}
+- [OK] Device ID confirmed by API
+- [OK] Device saved in local database
+- {api_registration_status}
+- {iot_status}
 
-**LED Status:** 🟢 Green light indicates successful registration.
+**LED Status:** [GREEN] Green light indicates successful registration.
 
 **Status:** Device is now ready for barcode scanning operations!"""
                     
@@ -1919,7 +1914,7 @@ def confirm_registration(barcode, device_id):
                     if registration_service:
                         device_connection_string = registration_service.register_device_with_azure(dynamic_device_id)
                         if device_connection_string:
-                            logger.info(f"✓ Generated device connection string for {dynamic_device_id}")
+                            logger.info(f"[CHECK] Generated device connection string for {dynamic_device_id}")
                             
                             # Create IoT Hub client with device-specific connection string
                             hub_client = HubClient(device_connection_string)
@@ -1935,22 +1930,22 @@ def confirm_registration(barcode, device_id):
                             
                             # Send to IoT Hub using send_message method
                             iot_success = hub_client.send_message(test_scan['barcode'], dynamic_device_id, registration_message)
-                            iot_status = "✅ Test registration sent to IoT Hub" if iot_success else "⚠️ Failed to send to IoT Hub"
+                            iot_status = "[OK] Test registration sent to IoT Hub" if iot_success else "[WARNING] Failed to send to IoT Hub"
                             logger.info(f"IoT Hub test registration result: {iot_success}")
                         else:
                             logger.error(f"Failed to generate device connection string for {dynamic_device_id}")
-                            iot_status = "⚠️ Failed to generate IoT Hub connection"
+                            iot_status = "[WARNING] Failed to generate IoT Hub connection"
                     else:
                         logger.error("Failed to initialize dynamic registration service")
-                        iot_status = "⚠️ Failed to initialize IoT Hub service"
+                        iot_status = "[WARNING] Failed to initialize IoT Hub service"
                 else:
                     logger.error("No IoT Hub owner connection string found in config")
-                    iot_status = "⚠️ No IoT Hub configuration found"
+                    iot_status = "[WARNING] No IoT Hub configuration found"
             else:
-                iot_status = "⚠️ Configuration not loaded"
+                iot_status = "[WARNING] Configuration not loaded"
         except Exception as iot_error:
             logger.error(f"IoT Hub error: {iot_error}")
-            iot_status = f"⚠️ IoT Hub error: {str(iot_error)}"
+            iot_status = f"[WARNING] IoT Hub error: {str(iot_error)}"
         
         # Blink LED based on IoT Hub success (yellow for partial success, red for failure)
         if iot_success:
@@ -1960,17 +1955,17 @@ def confirm_registration(barcode, device_id):
             blink_led("green")  # GREEN light for successful registration
             
         # Send confirmation message to frontend
-        confirmation_msg = f"""✅ Registration Processed
+        confirmation_msg = f"""[OK] Registration Processed
 
 **Device Details:**
-• Device ID: {device_id}
-• Barcode: {test_scan['barcode']}
-• Processed At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Device ID: {device_id}
+- Barcode: {test_scan['barcode']}
+- Processed At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ API confirmation sent
-• ✅ Device saved to database
-• {iot_status}
+- [OK] API confirmation sent
+- [OK] Device saved to database
+- {iot_status}
 
 **Status:** Registration completed successfully. Device is now ready for barcode scanning operations."""
         
@@ -1979,11 +1974,10 @@ def confirm_registration(barcode, device_id):
     except Exception as e:
         logger.error(f"Error in confirm_registration: {str(e)}")
         blink_led("red")
-        return f"❌ Error: {str(e)}"
+        return f"[ERROR] Error: {str(e)}"
 
 def process_barcode_scan(barcode, device_id=None):
-    """Process a barcode scan and determine if it's a valid product or device ID"""
-    try:
+    """Process a barcode scan and determine if it is a valid product or device ID"""
         # Use dynamic device ID generation for consistent device identification
         from utils.dynamic_device_id import generate_dynamic_device_id
         
@@ -2006,7 +2000,7 @@ def process_barcode_scan(barcode, device_id=None):
             # Check if we're in offline mode
             if simulated_offline_mode:
                 logger.info("Offline mode: Message saved locally, will be sent when online")
-                iot_status = "⏸️ Offline mode: Message saved locally"
+                iot_status = "[PAUSE] Offline mode: Message saved locally"
                 success = True
             else:
                 # Try to send to IoT Hub if online
@@ -2025,7 +2019,7 @@ def process_barcode_scan(barcode, device_id=None):
                                 if registration_service:
                                     device_connection_string = registration_service.register_device_with_azure(current_device_id)
                                     if device_connection_string:
-                                        logger.info(f"✓ Generated device connection string for {current_device_id}")
+                                        logger.info(f"[CHECK] Generated device connection string for {current_device_id}")
                                     else:
                                         logger.error(f"Failed to generate device connection string for {current_device_id}")
                                 else:
@@ -2036,40 +2030,40 @@ def process_barcode_scan(barcode, device_id=None):
                         if device_connection_string:
                             hub_client = HubClient(device_connection_string)
                             success = hub_client.send_message(barcode, current_device_id)
-                            iot_status = "✅ Sent to IoT Hub" if success else "⚠️ Failed to send to IoT Hub"
+                            iot_status = "[OK] Sent to IoT Hub" if success else "[WARNING] Failed to send to IoT Hub"
                             
                             # If send failed, save for later retry
                             if not success:
-                                local_db.save_unsent_message(current_device_id, barcode, datetime.now())
+                                local_db.save_unsent_message(current_device_id, barcode)
                                 logger.info("Message saved for retry when back online")
                         else:
-                            iot_status = "⚠️ No IoT Hub connection string configured"
-                            local_db.save_unsent_message(current_device_id, barcode, datetime.now())
+                            iot_status = "[WARNING] No IoT Hub connection string configured"
+                            local_db.save_unsent_message(current_device_id, barcode)
                             logger.info("Message saved for retry when connection is available")
                     else:
-                        iot_status = "⚠️ Configuration not loaded"
-                        local_db.save_unsent_message(current_device_id, barcode, datetime.now())
+                        iot_status = "[WARNING] Configuration not loaded"
+                        local_db.save_unsent_message(current_device_id, barcode)
                         logger.info("Message saved for retry when configuration is available")
                 except Exception as iot_error:
                     logger.error(f"IoT Hub error: {iot_error}")
-                    iot_status = f"⚠️ IoT Hub error: {str(iot_error)}"
-                    local_db.save_unsent_message(current_device_id, barcode, datetime.now())
+                    iot_status = f"[WARNING] IoT Hub error: {str(iot_error)}"
+                    local_db.save_unsent_message(current_device_id, barcode)
                     logger.info("Message saved for retry after error")
             
             # Initialize success variable to avoid reference error
             success = False
             
             # Return formatted response matching registration format
-            return f"""📦 **Barcode Scan Processed**
+            return f"""[PACKAGE] **Barcode Scan Processed**
 
 **Barcode Details:**
-• Barcode: {barcode}
-• Device ID: {current_device_id}
-• Scanned At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Barcode: {barcode}
+- Device ID: {current_device_id}
+- Scanned At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Barcode saved locally
-• {iot_status}
+- [OK] Barcode saved locally
+- {iot_status}
 
 **Status:** {'Barcode processed successfully!' if success else 'Barcode saved locally for retry when IoT Hub is available.'}"""
         
@@ -2077,7 +2071,7 @@ def process_barcode_scan(barcode, device_id=None):
         if not current_device_id:
             is_online = api_client.is_online()
             if not is_online:
-                return "❌ Device appears to be offline. Cannot validate device ID."
+                return "[ERROR] Device appears to be offline. Cannot validate device ID."
             
             api_url = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
             payload = {"scannedBarcode": barcode}
@@ -2096,10 +2090,10 @@ def process_barcode_scan(barcode, device_id=None):
                         logger.info(f"Device ID {device_id} already registered, skipping registration")
                         blink_led("yellow")  # Use yellow to indicate already registered
                         
-                        return f"""⚠️ Device Already Registered
+                        return f"""[WARNING] Device Already Registered
 
         **Device Details:**
-        • Device ID: {device_id}
+        - Device ID: {device_id}
 
         **Status:** This device is already registered and ready for barcode scanning operations.
         No need to register again."""
@@ -2144,29 +2138,29 @@ def process_barcode_scan(barcode, device_id=None):
                                 }
                                 
                                 iot_success = hub_client.send_message(barcode, device_id)
-                                iot_status = "✅ Sent to IoT Hub" if iot_success else "⚠️ Failed to send to IoT Hub"
+                                iot_status = "[OK] Sent to IoT Hub" if iot_success else "[WARNING] Failed to send to IoT Hub"
                             else:
-                                iot_status = "⚠️ No IoT Hub connection string available"
+                                iot_status = "[WARNING] No IoT Hub connection string available"
                         else:
-                            iot_status = "⚠️ Failed to load configuration"
+                            iot_status = "[WARNING] Failed to load configuration"
                     except Exception as e:
                         logger.error(f"Error sending to IoT Hub: {str(e)}")
-                        iot_status = f"⚠️ Error: {str(e)}"
+                        iot_status = f"[WARNING] Error: {str(e)}"
                     
                     # Blink green LED for success
                     blink_led("green")
                     
                     # Return success message
-                    return f"""🎉 Device Registration Successful!
+                    return f"""[CELEBRATION] Device Registration Successful!
 
 **Device Details:**
-• Device ID: {device_id}
-• Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
+- Device ID: {device_id}
+- Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
 
 **Actions Completed:**
-• ✅ Device ID registered with API
-• ✅ Device saved in local database
-• {iot_status}
+- [OK] Device ID registered with API
+- [OK] Device saved in local database
+- {iot_status}
 
 **Status:** Device is now ready for barcode scanning operations!"""
                 
@@ -2178,7 +2172,7 @@ def process_barcode_scan(barcode, device_id=None):
                     # Blink blue LED for test barcode
                     blink_led("blue")
                     
-                    return f"""ℹ️ This is a test barcode.
+                    return f"""[INFO] This is a test barcode.
 
 Test barcode {barcode} has been saved.
 Please proceed with device registration confirmation."""
@@ -2188,7 +2182,7 @@ Please proceed with device registration confirmation."""
                     # Blink red LED for error
                     blink_led("red")
                     
-                    return f"❌ Invalid barcode. Please scan a valid device ID or test barcode."
+                    return f"[ERROR] Invalid barcode. Please scan a valid device ID or test barcode."
         
         # If we have a device ID and barcode, process the barcode scan
         if device_id and barcode:
@@ -2196,12 +2190,12 @@ Please proceed with device registration confirmation."""
             try:
                 validated_barcode = validate_ean(barcode)
             except BarcodeValidationError as e:
-                return f"❌ Barcode validation error: {str(e)}"
+                return f"[ERROR] Barcode validation error: {str(e)}"
             
             # Load configuration
             config = load_config()
             if not config:
-                return "❌ Error: Failed to load configuration"
+                return "[ERROR] Error: Failed to load configuration"
             
             # Save scan to local database
             timestamp = local_db.save_scan(device_id, validated_barcode, 1)
@@ -2210,7 +2204,7 @@ Please proceed with device registration confirmation."""
             # Check if we're online
             is_online = api_client.is_online()
             if not is_online:
-                return f"📥 Device appears to be offline. Message saved locally.\n\n**Details:**\n- Device ID: {device_id}\n- Barcode: {validated_barcode}\n- Timestamp: {timestamp}\n- Status: Will be sent when online"
+                return f"[INBOX] Device appears to be offline. Message saved locally.\n\n**Details:**\n- Device ID: {device_id}\n- Barcode: {validated_barcode}\n- Timestamp: {timestamp}\n- Status: Will be sent when online"
             
             # Determine connection string for the device
             devices_config = config.get("iot_hub", {}).get("devices", {})
@@ -2229,50 +2223,15 @@ Please proceed with device registration confirmation."""
                         connection_string = devices_config[device_id]["connection_string"]
                         logger.info(f"Successfully registered device {device_id} with IoT Hub and updated config")
                     else:
-                        # Use dynamic registration service to get device-specific connection string
-
-                        # Get IoT Hub connection string for dynamic registration
-
-
-                        iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
-
-
-                        if not iot_hub_connection_string:
-
-
-                            return f"❌ Error: No IoT Hub connection string found in configuration"
-
-
-                        
-
-
-                        registration_service = get_dynamic_registration_service(iot_hub_connection_string)
-
-
-                        if not registration_service:
-
-
-                            return f"❌ Error: Failed to initialize dynamic registration service"
-
-                        
-
-                        try:
-
-                            device_connection_string = registration_service.register_device_with_azure(device_id)
-
-                            if not device_connection_string:
-
-                                return f"❌ Error: Failed to get connection string for device {device_id}"
-
-                        except Exception as reg_error:
-
-                            return f"❌ Error: Registration failed for device {device_id}: {reg_error}"
-
-                        
-
-                        # Create IoT Hub client with device-specific connection string
-
-                        hub_client = HubClient(device_connection_string)
+                        connection_string = config.get("iot_hub", {}).get("connection_string", None)
+                else:
+                    connection_string = config.get("iot_hub", {}).get("connection_string", None)
+                
+                if not connection_string:
+                    return f"[ERROR] Error: Device ID '{device_id}' not found in configuration and no default connection string provided."
+            
+            # Create IoT Hub client
+            hub_client = HubClient(connection_string)
             
             # Send message (connection is handled internally)
             # Pass quantity as a simple integer for the sku parameter
@@ -2281,13 +2240,13 @@ Please proceed with device registration confirmation."""
             if success:
                 # Mark as sent in local database
                 local_db.mark_sent_to_hub(device_id, validated_barcode, timestamp)
-                return f"✅ Barcode {validated_barcode} scanned and sent to IoT Hub successfully!"
+                return f"[OK] Barcode {validated_barcode} scanned and sent to IoT Hub successfully!"
             else:
-                return f"⚠️ Barcode {validated_barcode} scanned and saved locally, but failed to send to IoT Hub."
+                return f"[WARNING] Barcode {validated_barcode} scanned and saved locally, but failed to send to IoT Hub."
     
     except Exception as e:
         logger.error(f"Error in process_barcode_scan: {str(e)}")
-        return f"❌ Error processing barcode: {str(e)}"
+        return f"[ERROR] Error processing barcode: {str(e)}"
 
 def get_registration_status():
     """Get the current device registration status"""
@@ -2300,65 +2259,55 @@ def get_registration_status():
         device_id = local_db.get_device_id()
         device_registered = device_id is not None
         
-        status_text = "📋 **DEVICE REGISTRATION STATUS**\n\n"
+        status_text = "[LIST] **DEVICE REGISTRATION STATUS**\n\n"
         
         # Test barcode status
         if test_barcode_scanned:
-            status_text += f"✅ **Test Barcode:** Scanned ({test_scan['barcode']}) at {test_scan['timestamp']}\n"
+            status_text += f"[OK] **Test Barcode:** Scanned ({test_scan['barcode']}) at {test_scan['timestamp']}\n"
         else:
-            status_text += "❌ **Test Barcode:** Not scanned - Please scan: 817994ccfe14\n"
+            status_text += "[ERROR] **Test Barcode:** Not scanned - Please scan: 817994ccfe14\n"
         
         # Device registration status
         if device_registered:
-            status_text += f"✅ **Device ID:** Registered ({device_id})\n"
+            status_text += f"[OK] **Device ID:** Registered ({device_id})\n"
         else:
-            status_text += "❌ **Device ID:** Not registered - Please confirm registration\n"
+            status_text += "[ERROR] **Device ID:** Not registered - Please confirm registration\n"
         
         # Overall status
         if test_barcode_scanned and device_registered:
-            status_text += "\n🎉 **DEVICE READY:** Can send messages to IoT Hub"
+            status_text += "\n[CELEBRATION] **DEVICE READY:** Can send messages to IoT Hub"
         else:
-            status_text += "\n⚠️ **DEVICE NOT READY:** Complete registration steps above"
+            status_text += "\n[WARNING] **DEVICE NOT READY:** Complete registration steps above"
         
         return status_text
         
     except Exception as e:
         logger.error(f"Error getting registration status: {str(e)}")
-        return f"❌ Error getting registration status: {str(e)}"
+        return f"[ERROR] Error getting registration status: {str(e)}"
 
 def process_unsent_messages(auto_retry=False):
     """Process any unsent messages in the local database and try to send them"""
-    try:
-        # Check if we're online
-        if not api_client.is_online():
-            return "Device is offline. Cannot process unsent messages."
+    # Check if we're online
+    if not api_client.is_online():
+        return "Device is offline. Cannot process unsent messages."
             
-        # Get unsent messages from local database
-        unsent_messages = local_db.get_unsent_scans()
-        if not unsent_messages:
-            return "No unsent messages to process."
+    # Get unsent messages from local database
+    unsent_messages = local_db.get_unsent_scans()
+    if not unsent_messages:
+        return "No unsent messages to process."
             
-        # Load configuration
-        config = load_config()
-        if not config:
-            return "Error: Failed to load configuration"
+    # Load configuration
+    config = load_config()
+    if not config:
+        return "Error: Failed to load configuration"
             
-        # Get dynamic registration service for generating device connection strings
-        # Get IoT Hub connection string for dynamic registration
-
-        iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
-
-        if not iot_hub_connection_string:
-
-            return "Error: No IoT Hub connection string found in configuration"
-
-        
-
-        registration_service = get_dynamic_registration_service(iot_hub_connection_string)
-
-        if not registration_service:
-
-            return "Error: Failed to initialize dynamic registration service"
+    # Get default connection string
+    default_connection_string = config.get("iot_hub", {}).get("connection_string", None)
+        if not default_connection_string:
+            return "Error: No default connection string provided."
+            
+        # Create IoT Hub client
+        hub_client = HubClient(default_connection_string)
         
         # Process each unsent message
         success_count = 0
@@ -2377,38 +2326,21 @@ def process_unsent_messages(auto_retry=False):
                 success_count += 1
                 continue
             
-            # Determine connection string for the device
-            devices_config = config.get("iot_hub", {}).get("devices", {})
-            if device_id in devices_config:
-                connection_string = devices_config[device_id]["connection_string"]
-            else:
-
-                # Use dynamic registration service to get device-specific connection string
-
-                try:
-
-                    device_connection_string = registration_service.register_device_with_azure(device_id)
-
-                    if not device_connection_string:
-
-                        logger.error(f"Failed to get connection string for device {device_id}")
-
-                        fail_count += 1
-
-                        continue
-
-                except Exception as reg_error:
-
-                    logger.error(f"Registration error for device {device_id}: {reg_error}")
-
-                    fail_count += 1
-
-                    continue
-
-            
-
-            # Create a new client for each message with device-specific connection string
-
+            # Get or create device-specific connection string
+            registration_service = get_dynamic_registration_service(iot_hub_owner_connection)
+            if not registration_service:
+                logger.error(f"Failed to initialize registration service for {device_id}")
+                fail_count += 1
+                continue
+                
+            # Get device-specific connection string
+            device_connection_string = registration_service.register_device_with_azure(device_id)
+            if not device_connection_string:
+                logger.error(f"Failed to get connection string for {device_id}")
+                fail_count += 1
+                continue
+                
+            # Create client with device-specific connection string
             message_client = HubClient(device_connection_string)
             
             # Create payload with quantity

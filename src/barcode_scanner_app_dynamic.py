@@ -525,7 +525,7 @@ with gr.Blocks(title="Dynamic Barcode Scanner", theme=gr.themes.Soft()) as app:
             )
             
             with gr.Row():
-                registration_status_button = gr.Button("📊 Check Registration Status")
+                # registration_status_button = gr.Button("📊 Check Registration Status")
                 process_unsent_button = gr.Button("🔄 Process Unsent Messages")
                 device_stats_button = gr.Button("📈 View Device Statistics")
                 

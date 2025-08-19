@@ -93,6 +93,17 @@ class BarcodeHubClient:
             
             barcode = barcode.strip()
             
+            # Strict EAN validation
+            try:
+                from barcode_validator import validate_ean, BarcodeValidationError
+                validate_ean(barcode)
+                logger.info(f"Barcode {barcode} passed EAN validation")
+            except BarcodeValidationError as e:
+                logger.error(f"Invalid EAN barcode format: {e}")
+                return False
+            except ImportError:
+                logger.warning("barcode_validator module not found, skipping EAN validation")
+            
             # Get device connection string (with auto-registration)
             connection_string = self.registration_service.get_device_connection_for_barcode(barcode)
             if not connection_string:
