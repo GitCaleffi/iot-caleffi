@@ -9,6 +9,7 @@ import threading
 import queue
 import subprocess
 import uuid
+from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
 
@@ -54,12 +55,42 @@ def simulate_offline_mode():
     return "⚠️ OFFLINE mode simulated. Barcodes will be stored locally and sent when 'online'."
 
 def simulate_online_mode():
-    """Restore normal online mode checking"""
+    """Restore normal online mode checking with progress"""
     global simulated_offline_mode
-    simulated_offline_mode = False
-    logger.info("✅ Simulated OFFLINE mode deactivated - normal operation restored")
-    result = process_unsent_messages(auto_retry=False)
-    return "✅ Online mode restored. Any pending messages will now be sent.\n\n" + (result or "")
+    # Show loading/progress messages immediately so the UI doesn't feel stuck
+    yield "⏳ Restoring online mode... establishing IoT connection. Please wait."
+
+    try:
+        # Restore online mode
+        simulated_offline_mode = False
+        logger.info("✅ Simulated OFFLINE mode deactivated - normal operation restored")
+
+        # Inform the user we are about to process pending items
+        yield "✅ Online connection restored. Now processing any unsent messages..."
+
+        # Stream progress while processing unsent messages
+        for msg in process_unsent_messages_ui():
+            yield msg
+
+        # Final status update
+        yield "🎉 Completed restore and unsent message processing."
+    except Exception as e:
+        error_msg = f"❌ Error restoring online mode: {str(e)}"
+        logger.error(error_msg)
+        yield error_msg
+
+# UI wrapper for processing unsent messages with progress
+def process_unsent_messages_ui():
+    """Process unsent messages with user-visible progress for Gradio UI."""
+    # Initial loading message so the user sees a loader immediately
+    yield "⏳ Processing unsent messages to IoT Hub... Please wait."
+    try:
+        result = process_unsent_messages(auto_retry=False)
+        yield "✅ Finished processing unsent messages.\n\n" + (result or "")
+    except Exception as e:
+        error_msg = f"❌ Error while processing unsent messages: {str(e)}"
+        logger.error(error_msg)
+        yield error_msg
 
 # Store reference to original is_online method before patching
 from api.api_client import ApiClient as OriginalApiClient
@@ -84,11 +115,56 @@ last_queue_check = datetime.now()
 retry_enabled = False
 
 def blink_led(color):
-    """Blink the Raspberry Pi LED. Use 'green' for success, 'red' for error."""
+    """Blink the Raspberry Pi LED. Use 'green' for success, 'red' for error, 'yellow' for warning."""
     try:
-        logger.info(f"Blinking {color} LED on Raspberry Pi.")
+        # Import GPIO library for Raspberry Pi
+        import RPi.GPIO as GPIO
+        import time
+        
+        # Set GPIO mode
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        
+        # Define LED pins (adjust these pin numbers based on your hardware setup)
+        LED_PINS = {
+            'red': 18,     # GPIO 18 for red LED
+            'green': 23,   # GPIO 23 for green LED  
+            'yellow': 24,  # GPIO 24 for yellow LED
+            'blue': 25     # GPIO 25 for blue LED
+        }
+        
+        # Get the pin for the requested color
+        pin = LED_PINS.get(color.lower())
+        if not pin:
+            logger.warning(f"Unknown LED color: {color}. Using red LED as fallback.")
+            pin = LED_PINS['red']
+        
+        # Setup the GPIO pin
+        GPIO.setup(pin, GPIO.OUT)
+        
+        # Blink the LED 3 times
+        for _ in range(3):
+            GPIO.output(pin, GPIO.HIGH)  # Turn LED on
+            time.sleep(0.2)              # Wait 200ms
+            GPIO.output(pin, GPIO.LOW)   # Turn LED off
+            time.sleep(0.2)              # Wait 200ms
+        
+        # Clean up GPIO
+        GPIO.cleanup(pin)
+        
+        logger.info(f"Successfully blinked {color} LED on Raspberry Pi.")
+        
+    except ImportError:
+        # Fallback for non-Raspberry Pi environments
+        logger.info(f"RPi.GPIO not available. Simulating {color} LED blink.")
+        print(f"🔴 LED BLINK: {color.upper()} LED blinking 3 times" if color == 'red' else 
+              f"🟢 LED BLINK: {color.upper()} LED blinking 3 times" if color == 'green' else
+              f"🟡 LED BLINK: {color.upper()} LED blinking 3 times" if color == 'yellow' else
+              f"🔵 LED BLINK: {color.upper()} LED blinking 3 times")
     except Exception as e:
         logger.error(f"LED blink error: {str(e)}")
+        # Fallback visual indication
+        print(f"⚠️ LED ERROR: Could not blink {color} LED - {str(e)}")
 
 def generate_registration_token():
     """Step 1: Generate a dynamic registration token for device registration"""
@@ -640,20 +716,15 @@ def process_barcode_scan(barcode, device_id):
             else:
                 blink_led("red")
                 return f"❌ {validation_message}"
-        
         # Validate the barcode format (optional - can be disabled for more flexibility)
         try:
-            validated_barcode = validate_ean(barcode)
+            validated_barcode = validate_barcode(barcode)
             logger.info(f"Barcode format validation passed: {validated_barcode}")
             # Use the validated barcode for further processing
             barcode = validated_barcode
         except BarcodeValidationError as e:
             logger.warning(f"Barcode validation error: {str(e)}")
             # Continue processing - dynamic system is more flexible with non-EAN barcodes
-        
-        # Check for duplicate barcode scan to prevent looping/repeated hits
-        recent_scans = local_db.get_recent_scans(device_id, barcode, minutes=5)  # Check last 5 minutes
-        if recent_scans:
             logger.info(f"Duplicate barcode scan detected for device {device_id}, barcode {barcode}")
             blink_led("yellow")  # Yellow LED for duplicate scan
             last_scan_time = recent_scans[0]['timestamp'] if recent_scans else 'Unknown'
@@ -1170,6 +1241,104 @@ def process_unsent_messages(auto_retry=False):
             return error_msg
         return None
 
+def process_unsent_messages_ui():
+    """Gradio-friendly generator that streams progress while sending unsent messages"""
+    try:
+        # Step 1: online check
+        if not api_client.is_online():
+            msg = "❌ Device is offline. Cannot process unsent messages."
+            logger.info(msg)
+            yield msg
+            return
+
+        # Step 2: fetch unsent
+        yield "⏳ Checking for unsent messages in local storage..."
+        unsent_messages = local_db.get_unsent_scans()
+        if not unsent_messages:
+            msg = "✅ No unsent messages to process."
+            logger.info(msg)
+            yield msg
+            return
+
+        yield f"📦 Found {len(unsent_messages)} unsent messages. Preparing to send..."
+
+        # Step 3: load config and registration service
+        config = load_config()
+        if not config:
+            msg = "❌ Error: Failed to load configuration"
+            logger.error(msg)
+            yield msg
+            return
+
+        iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
+        if not iot_hub_connection_string:
+            msg = "❌ Error: No IoT Hub connection string found in configuration"
+            logger.error(msg)
+            yield msg
+            return
+
+        registration_service = get_dynamic_registration_service(iot_hub_connection_string)
+        if not registration_service:
+            msg = "❌ Error: Failed to initialize dynamic registration service"
+            logger.error(msg)
+            yield msg
+            return
+
+        # Step 4: process each message with live updates
+        success_count = 0
+        fail_count = 0
+        total = len(unsent_messages)
+        for idx, message in enumerate(unsent_messages, start=1):
+            device_id = message["device_id"]
+            barcode = message["barcode"]
+            timestamp = message["timestamp"]
+            quantity = message.get("quantity", 1)
+
+            yield f"➡️ [{idx}/{total}] Sending barcode {barcode} (qty {quantity}) for device {device_id}..."
+
+            # Skip test barcodes (treat as success)
+            if api_client.is_test_barcode(barcode):
+                logger.info(f"Skipping test barcode in unsent messages: {barcode} - BLOCKED from IoT Hub")
+                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                success_count += 1
+                yield f"✔️ [{idx}/{total}] Test barcode {barcode} skipped and marked as sent."
+                continue
+
+            # Get device-specific connection string
+            try:
+                device_connection_string = registration_service.register_device_with_azure(device_id)
+                if not device_connection_string:
+                    fail_count += 1
+                    logger.error(f"Failed to get connection string for device {device_id}")
+                    yield f"❌ [{idx}/{total}] Failed to get device connection for {device_id}."
+                    continue
+            except Exception as reg_error:
+                fail_count += 1
+                logger.error(f"Registration error for device {device_id}: {reg_error}")
+                yield f"❌ [{idx}/{total}] Registration error for {device_id}: {reg_error}"
+                continue
+
+            message_client = HubClient(device_connection_string)
+
+            # Attempt send
+            sent = message_client.send_message(barcode, device_id)
+            if sent:
+                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                success_count += 1
+                yield f"✅ [{idx}/{total}] Sent {barcode} for {device_id}."
+            else:
+                fail_count += 1
+                yield f"⚠️ [{idx}/{total}] Failed to send {barcode} for {device_id}. Will retry later."
+
+        summary = f"📊 Processed {total} unsent messages. Success: {success_count}, Failed: {fail_count}"
+        logger.info(summary)
+        yield summary
+
+    except Exception as e:
+        error_msg = f"❌ Error processing unsent messages: {str(e)}"
+        logger.error(error_msg)
+        yield error_msg
+
 # Create Gradio interface
 with gr.Blocks(title="Barcode Scanner") as app:
     gr.Markdown("# Barcode Scanner")
@@ -1237,9 +1406,10 @@ with gr.Blocks(title="Barcode Scanner") as app:
 
     
     process_unsent_button.click(
-        fn=lambda: process_unsent_messages(auto_retry=False),
+        fn=process_unsent_messages_ui,
         inputs=[],
-        outputs=[status_text]
+        outputs=[status_text],
+        show_progress='full'
     )
     
     # Offline simulation handlers
@@ -1252,7 +1422,9 @@ with gr.Blocks(title="Barcode Scanner") as app:
     simulate_online_button.click(
         fn=simulate_online_mode,
         inputs=[],
-        outputs=[offline_status_text]
+        outputs=[offline_status_text],
+        show_progress='full',
+        api_name="restore_online"
     )
 
 # For testing offline mode
@@ -1266,12 +1438,29 @@ def simulate_offline_mode():
     return "⚠️ OFFLINE mode simulated. Barcodes will be stored locally and sent when 'online'."  
 
 def simulate_online_mode():
-    """Restore normal online mode checking"""
+    """Restore normal online mode checking with progress"""
     global simulated_offline_mode
-    simulated_offline_mode = False
-    logger.info("✅ Simulated OFFLINE mode deactivated - normal operation restored")
-    result = process_unsent_messages(auto_retry=False)
-    return "✅ Online mode restored. Any pending messages will now be sent.\n\n" + (result or "")
+    # Show loading/progress messages immediately so the UI doesn't feel stuck
+    yield "⏳ Restoring online mode... establishing IoT connection. Please wait."
+
+    try:
+        # Restore online mode
+        simulated_offline_mode = False
+        logger.info("✅ Simulated OFFLINE mode deactivated - normal operation restored")
+
+        # Inform the user we are about to process pending items
+        yield "✅ Online connection restored. Now processing any unsent messages..."
+
+        # Stream progress while processing unsent messages
+        for msg in process_unsent_messages_ui():
+            yield msg
+
+        # Final status update
+        yield "🎉 Completed restore and unsent message processing."
+    except Exception as e:
+        error_msg = f"❌ Error restoring online mode: {str(e)}"
+        logger.error(error_msg)
+        yield error_msg
 
 def register_device_with_iot_hub(device_id):
     """Register a device with Azure IoT Hub and update the config file
@@ -1375,11 +1564,56 @@ last_queue_check = datetime.now()
 retry_enabled = False
 
 def blink_led(color):
-    """Blink the Raspberry Pi LED. Use 'green' for success, 'red' for error."""
+    """Blink the Raspberry Pi LED. Use 'green' for success, 'red' for error, 'yellow' for warning."""
     try:
-        logger.info(f"Blinking {color} LED on Raspberry Pi.")
+        # Import GPIO library for Raspberry Pi
+        import RPi.GPIO as GPIO
+        import time
+        
+        # Set GPIO mode
+        GPIO.setmode(GPIO.BCM)
+        GPIO.setwarnings(False)
+        
+        # Define LED pins (adjust these pin numbers based on your hardware setup)
+        LED_PINS = {
+            'red': 18,     # GPIO 18 for red LED
+            'green': 23,   # GPIO 23 for green LED  
+            'yellow': 24,  # GPIO 24 for yellow LED
+            'blue': 25     # GPIO 25 for blue LED
+        }
+        
+        # Get the pin for the requested color
+        pin = LED_PINS.get(color.lower())
+        if not pin:
+            logger.warning(f"Unknown LED color: {color}. Using red LED as fallback.")
+            pin = LED_PINS['red']
+        
+        # Setup the GPIO pin
+        GPIO.setup(pin, GPIO.OUT)
+        
+        # Blink the LED 3 times
+        for _ in range(3):
+            GPIO.output(pin, GPIO.HIGH)  # Turn LED on
+            time.sleep(0.2)              # Wait 200ms
+            GPIO.output(pin, GPIO.LOW)   # Turn LED off
+            time.sleep(0.2)              # Wait 200ms
+        
+        # Clean up GPIO
+        GPIO.cleanup(pin)
+        
+        logger.info(f"Successfully blinked {color} LED on Raspberry Pi.")
+        
+    except ImportError:
+        # Fallback for non-Raspberry Pi environments
+        logger.info(f"RPi.GPIO not available. Simulating {color} LED blink.")
+        print(f"🔴 LED BLINK: {color.upper()} LED blinking 3 times" if color == 'red' else 
+              f"🟢 LED BLINK: {color.upper()} LED blinking 3 times" if color == 'green' else
+              f"🟡 LED BLINK: {color.upper()} LED blinking 3 times" if color == 'yellow' else
+              f"🔵 LED BLINK: {color.upper()} LED blinking 3 times")
     except Exception as e:
         logger.error(f"LED blink error: {str(e)}")
+        # Fallback visual indication
+        print(f"⚠️ LED ERROR: Could not blink {color} LED - {str(e)}")
 
 def register_device_id(barcode):
     """Step 1: Scan test barcode on registered device, hit API twice, send response to frontend"""
@@ -1444,6 +1678,19 @@ def confirm_registration(barcode, device_id):
     try:
         global processed_device_ids
         
+        # Validate input fields first
+        if not device_id or device_id.strip() == "":
+            blink_led("red")
+            return "❌ Please add device ID to confirm the registration."
+        
+        if not barcode or barcode.strip() == "":
+            blink_led("red")
+            return "❌ Please provide a barcode to confirm the registration."
+        
+        # Clean the inputs
+        device_id = device_id.strip()
+        barcode = barcode.strip()
+        
         # Since we no longer save test barcodes, use the provided barcode directly
         # This makes the registration process cleaner by only saving confirmed registrations
         test_scan = {'barcode': barcode}  # Use the provided barcode directly
@@ -1456,88 +1703,31 @@ def confirm_registration(barcode, device_id):
         device_already_registered = any(device['device_id'] == device_id for device in registered_devices)
         
         if device_already_registered:
-            logger.info(f"Device ID {device_id} already registered in database, sending quantity update")
+            logger.info(f"Device ID {device_id} already registered in database")
             
             # Find the registration details for this device
             device_info = next((device for device in registered_devices if device['device_id'] == device_id), None)
             registration_date = device_info['registration_date'] if device_info else 'Unknown'
             
-            # For already registered devices, just send quantity update to IoT Hub and API
-            quantity = 1  # Default quantity for update
+            # For already registered devices, just show the status without API calls
+            blink_led("yellow")  # YELLOW light for already registered device
             
-            # Send quantity update to API
-            api_result = api_client.send_barcode_scan(device_id, barcode, quantity)
-            
-            if api_result.get("success", False):
-                api_status = "✅ Quantity update sent to API"
-                logger.info(f"API quantity update successful for device {device_id}")
-            else:
-                api_status = "⚠️ Failed to send quantity update to API"
-                logger.error(f"API quantity update failed for device {device_id}: {api_result.get('message', 'Unknown error')}")
-            
-            # Send quantity update message to IoT Hub
-            try:
-                config = load_config()
-                if config:
-                    # Get IoT Hub connection string
-                    iot_hub_owner_connection = config.get("iot_hub", {}).get("connection_string", None)
-                    if not iot_hub_owner_connection:
-                        logger.error("IoT Hub owner connection string not found in config")
-                        iot_status = "⚠️ IoT Hub connection failed: Missing connection string in config"
-                    else:
-                        # Initialize dynamic registration service with the IoT Hub owner connection string
-                        registration_service = get_dynamic_registration_service(iot_hub_owner_connection)
-                        device_connection_string = registration_service.register_device_with_azure(device_id)
-                        
-                        if device_connection_string:
-                            # Send quantity update message to IoT Hub
-                            hub_client = HubClient(device_connection_string)
-                            
-                            # Create quantity update message
-                            quantity_message = {
-                                "scannedBarcode": barcode,
-                                "deviceId": device_id,
-                                "quantity": quantity,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                                "messageType": "quantity_update"
-                            }
-                            
-                            # Send message with the quantity update payload
-                            success = hub_client.send_message(quantity_message, device_id)
-                            if success:
-                                iot_status = "✅ Quantity update sent to IoT Hub"
-                                blink_led("green")  # GREEN light for successful update
-                            else:
-                                iot_status = "⚠️ Failed to send quantity update to IoT Hub"
-                                blink_led("yellow")  # YELLOW light for IoT Hub failure
-                        else:
-                            iot_status = "⚠️ Failed to get device connection string for IoT Hub"
-                            blink_led("yellow")  # YELLOW light for connection failure
-                else:
-                    iot_status = "⚠️ No IoT Hub configuration found"
-                    blink_led("yellow")  # YELLOW light for missing config
-            except Exception as e:
-                logger.error(f"Error sending quantity update to IoT Hub: {str(e)}")
-                iot_status = "⚠️ Error sending quantity update to IoT Hub"
-                blink_led("yellow")  # YELLOW light for error
-            
-            return f"""🟢 Quantity Update Processed
+            return f"""🟡 Device Already Registered
 
 **Device Details:**
 • Device ID: {device_id}
 • Barcode: {barcode}
-• Status: Already registered
+• Status: Already in database
 • Registered: {registration_date}
-• Quantity: {quantity}
 
 **Actions Completed:**
 • ✅ Device found in database
-• {api_status}
-• {iot_status}
+• ✅ Already registered message sent to IoT Hub
+• ⚠️ No duplicate registration performed
 
-**LED Status:** 🟢 Green light indicates successful quantity update.
+**LED Status:** 🟡 Yellow light indicates device already registered.
 
-**Status:** Quantity update processed successfully for existing device."""
+**Status:** Device is ready for barcode scanning operations!"""
         
         # Check if API is online
         is_online = api_client.is_online()
@@ -1559,13 +1749,13 @@ def confirm_registration(barcode, device_id):
         
         if device_already_registered:
             logger.info(f"Device ID {device_id} already registered, skipping registration")
-            blink_led("red")  # RED light for already registered device
+            blink_led("yellow")  # YELLOW light for already registered device
             
             # Find the registration details for this device
             device_info = next((device for device in registered_devices if device['device_id'] == device_id), None)
             registration_date = device_info['registration_date'] if device_info else 'Unknown'
             
-            return f"""🔴 Device Already Registered
+            return f"""🟡 Device Already Registered
 
 **Device Details:**
 • Device ID: {device_id}
@@ -1578,7 +1768,7 @@ def confirm_registration(barcode, device_id):
 • ✅ Already registered message sent to IoT Hub
 • ⚠️ No duplicate registration performed
 
-**LED Status:** 🔴 Red light indicates device already registered.
+**LED Status:** 🟡 Yellow light indicates device already registered.
 
 **Status:** Device is ready for barcode scanning operations!"""
                     
@@ -1793,10 +1983,10 @@ def confirm_registration(barcode, device_id):
                         except Exception as e:
                             logger.error(f"Error sending already registered message to IoT Hub: {e}")
                         
-                        # Blink red LED for already registered device
-                        blink_led("red")
+                        # Blink yellow LED for already registered device
+                        blink_led("yellow")
                         
-                        return f"""🔴 Device Already Registered
+                        return f"""🟡 Device Already Registered
 
 **Device Details:**
 • Device ID: {device_id}
@@ -1809,7 +1999,7 @@ def confirm_registration(barcode, device_id):
 • ✅ Already registered message sent to IoT Hub
 • ⚠️ No duplicate registration performed
 
-**LED Status:** 🔴 Red light indicates device already registered.
+**LED Status:** 🟡 Yellow light indicates device already registered.
 
 **Status:** Device is ready for barcode scanning operations!"""
                     
@@ -1993,15 +2183,33 @@ def process_barcode_scan(barcode, device_id=None):
             current_device_id = device_id
             logger.info(f"Using provided device ID: {current_device_id}")
         else:
-            # Use dynamic device ID based on system hardware (not static fallback)
             current_device_id = generate_dynamic_device_id()
             logger.info(f"Using dynamic device ID: {current_device_id}")
         
         # Process the barcode scan with the correct device ID
         if current_device_id and barcode:
-            # Save scan to local database
-            timestamp = local_db.save_scan(current_device_id, barcode)
-            logger.info(f"Saved scan to local database: {current_device_id}, {barcode}, {timestamp}")
+            # Validate barcode format before saving
+            try:
+                from barcode_validator import validate_ean, BarcodeValidationError
+                # Validate the barcode format
+                validated_barcode = validate_ean(barcode)
+                logger.info(f"Barcode validation passed: {validated_barcode}")
+                
+                # Save scan to local database
+                timestamp = local_db.save_scan(current_device_id, validated_barcode)
+                logger.info(f"Saved scan to local database: {current_device_id}, {validated_barcode}, {timestamp}")
+                
+            except BarcodeValidationError as e:
+                # Blink red LED for invalid barcode
+                blink_led("red")
+                logger.warning(f"Invalid barcode format: {str(e)}")
+                return f"""❌ Invalid Barcode
+                
+**Error:** {str(e)}
+
+**Barcode:** `{barcode}`
+
+**Status:** Barcode was not saved. Please scan a valid barcode."""
             
             # Check if we're in offline mode
             if simulated_offline_mode:
@@ -2524,7 +2732,9 @@ with gr.Blocks(title="Barcode Scanner") as app:
     simulate_online_button.click(
         fn=simulate_online_mode,
         inputs=[],
-        outputs=[offline_status_text]
+        outputs=[offline_status_text],
+        show_progress='minimal',
+        api_name="restore_online"
     )
 
 if __name__ == "__main__":

@@ -1,8 +1,4 @@
-#!/usr/bin/env python3
-"""
-Barcode Device Mapper - Maps barcodes to device IDs for commercial scale deployment
-Supports plug-and-play functionality without manual device ID input
-"""
+
 
 import hashlib
 import json
