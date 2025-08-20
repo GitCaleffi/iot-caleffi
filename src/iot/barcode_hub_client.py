@@ -57,10 +57,10 @@ class BarcodeHubClient:
         self.messages_sent = 0
         self.last_message_time = None
         
-        # Threading and retry logic
+        # Connection settings
         self.connection_lock = threading.Lock()
-        self.retry_count = 0
-        self.max_retries = 3
+        self.connection_timeout = 30  # seconds
+        self.operation_timeout = 10   # seconds
         
         # Initialize dynamic registration service
         self.registration_service = get_dynamic_registration_service(iot_hub_owner_connection_string)
@@ -135,77 +135,40 @@ class BarcodeHubClient:
         with self.connection_lock:
             try:
                 # Disconnect existing client if any
-                if self.client:
-                    try:
-                        self.client.disconnect()
-                    except:
-                        pass
-                    self.client = None
+                self._safe_disconnect()
                 
-                # Create new client
-                self.client = IoTHubDeviceClient.create_from_connection_string(connection_string)
+                # Create new client with operation timeout
+                self.client = IoTHubDeviceClient.create_from_connection_string(
+                    connection_string,
+                    connection_timeout=self.connection_timeout,
+                    operation_timeout=self.operation_timeout
+                )
                 
                 # Set up event handlers
                 self.client.on_connection_state_change = self._on_connection_state_change
                 self.client.on_message_sent = self._on_message_sent
                 
-                # Connect to IoT Hub
+                # Connect to IoT Hub with timeout
                 logger.info(f"Connecting to Azure IoT Hub with device ID: {self.current_device_id}")
                 self.client.connect()
                 
-                # Wait a moment for connection to establish
-                time.sleep(2)
+                # Wait for connection with timeout
+                start_time = time.time()
+                while time.time() - start_time < self.connection_timeout:
+                    if hasattr(self.client, 'connected') and self.client.connected:
+                        self.connected = True
+                        logger.info(f"✓ Successfully connected to Azure IoT Hub with barcode {self.current_barcode}")
+                        return True
+                    time.sleep(0.1)
                 
-                # Check connection status
-                if hasattr(self.client, 'connected') and self.client.connected:
-                    self.connected = True
-                    logger.info(f"✓ Successfully connected to Azure IoT Hub with barcode {self.current_barcode}")
-                    return True
-                else:
-                    logger.warning("Connection established but status unclear")
-                    self.connected = True  # Assume connected
-                    return True
+                logger.error("Connection to Azure IoT Hub timed out")
+                self._safe_disconnect()
+                return False
                 
             except Exception as e:
                 logger.error(f"Failed to connect to Azure IoT Hub: {e}")
-                self.connected = False
+                self._safe_disconnect()
                 return False
-    
-    def send_barcode_message(self, barcode: str, additional_data: dict = None) -> bool:
-        """
-        Send barcode data to Azure IoT Hub.
-        Automatically handles connection if not already connected.
-        
-        Args:
-            barcode: The barcode that was scanned
-            additional_data: Optional additional data to include in message
-            
-        Returns:
-            bool: True if message sent successfully, False otherwise
-        """
-        try:
-            # Connect with barcode (this handles registration automatically)
-            if not self.connect_with_barcode(barcode):
-                logger.error(f"Failed to connect/register device for barcode: {barcode}")
-                return False
-            
-            logger.info(f"Registering new device and sending barcode: {barcode} -> {self.current_device_id}")
-            
-            # Send initial barcode message with registration flag
-            message_data = {
-                'barcode': barcode,
-                'device_id': self.current_device_id,
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'message_type': 'device_registration',
-                'action': 'new_product_registered',
-                'quantity': 1
-            }
-            
-            return self._send_message(message_data)
-            
-        except Exception as e:
-            logger.error(f"Error registering device and sending barcode: {e}")
-            return False
     
     def send_inventory_update(self, barcode: str, device_id: str, quantity: int) -> bool:
         """
@@ -247,8 +210,7 @@ class BarcodeHubClient:
 
     def send_barcode_message(self, barcode: str, metadata: dict = None) -> bool:
         """
-        Send barcode message to Azure IoT Hub.
-        This is the main method for sending barcode data to the cloud.
+        Send a barcode message to Azure IoT Hub and then disconnect.
         
         Args:
             barcode: The barcode to send
@@ -258,8 +220,9 @@ class BarcodeHubClient:
             bool: True if message sent successfully, False otherwise
         """
         try:
-            if not self.connected or not self.client:
-                logger.warning(f"Not connected to Azure IoT Hub. Attempting to connect with barcode: {barcode}")
+            # Connect if not already connected
+            if not self.connected or not self.client or self.current_barcode != barcode:
+                logger.info(f"Establishing connection for barcode: {barcode}")
                 if not self.connect_with_barcode(barcode):
                     logger.error("Failed to connect to Azure IoT Hub")
                     return False
@@ -276,23 +239,26 @@ class BarcodeHubClient:
             if metadata:
                 message_data.update(metadata)
             
-            return self._send_message(message_data)
+            # Send message and ensure we disconnect after
+            try:
+                return self._send_message(message_data)
+            finally:
+                self.disconnect()
             
         except Exception as e:
-            logger.error(f"Error sending barcode message: {e}")
+            logger.error(f"Error in send_barcode_message: {e}")
+            self.disconnect()  # Ensure we clean up on error
             return False
     
     def _send_message(self, message_data: dict) -> bool:
         """
-        Internal method to send message to Azure IoT Hub
-        
-        Args:
-            message_data: Dictionary containing message data
-            
-        Returns:
-            bool: True if message sent successfully
+        Internal method to send message to Azure IoT Hub and ensure cleanup
         """
         try:
+            if not self.connected or not self.client:
+                logger.error("Not connected to IoT Hub when sending message")
+                return False
+                
             # Create and send message
             message_json = json.dumps(message_data)
             message = Message(message_json)
@@ -300,42 +266,37 @@ class BarcodeHubClient:
             message.content_type = "application/json"
             
             logger.info(f"Sending message to Azure IoT Hub: {message_data.get('message_type', 'unknown')}")
-            self.client.send_message(message)
+            
+            # Send with timeout
+            self.client.send_message(message, timeout=self.operation_timeout)
             
             # Update statistics
             self.messages_sent += 1
             self.last_message_time = datetime.now()
             
-            logger.info(f"Message sent successfully: {message_data.get('barcode', 'unknown')}")
+            logger.info(f"✓ Message sent successfully: {message_data.get('barcode', 'unknown')}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error sending message: {e}")
-            
-            # Try to reconnect on error
-            self.connected = False
-            
-            return False
-            
-        except Exception as e:
-            logger.error(f"Error sending barcode message: {e}")
-            logger.error(f"Stack trace: {traceback.format_exc()}")
             return False
     
     def _on_connection_state_change(self, *args):
         """Handle connection state changes"""
         try:
+            # Get connection status
             if self.client and hasattr(self.client, 'connected'):
-                status = self.client.connected
-            else:
-                status = False
+                new_status = self.client.connected
+                
+                # Only log state changes
+                if new_status != self.connected:
+                    if new_status:
+                        logger.info("Successfully connected to Azure IoT Hub")
+                    else:
+                        logger.info("Disconnected from Azure IoT Hub")
+                    
+                    self.connected = new_status
             
-            if status:
-                logger.info("Connected to Azure IoT Hub")
-                self.connected = True
-            else:
-                logger.warning("Disconnected from Azure IoT Hub")
-                self.connected = False
         except Exception as e:
             logger.error(f"Error in connection state change handler: {e}")
             self.connected = False
@@ -345,17 +306,14 @@ class BarcodeHubClient:
         logger.info(f"Message {message_id} confirmed by Azure IoT Hub")
     
     def _schedule_reconnect(self):
-        """Schedule a reconnection attempt with exponential backoff"""
-        # Reconnection disabled to prevent connection loops and timeout errors
-        logger.info("Reconnection disabled to prevent connection conflicts")
-        return
-
+        """Reconnection is handled at the application level"""
+        logger.debug("Automatic reconnection is disabled - handled at application level")
+        return None
     
     def _reconnect(self):
-        """Attempt to reconnect to Azure IoT Hub"""
-        # Reconnection disabled to prevent connection loops and timeout errors
-        logger.info("Reconnection disabled to prevent connection conflicts")
-        return
+        """Reconnection is handled at the application level"""
+        logger.debug("Automatic reconnection is disabled - handled at application level")
+        return False
 
     
     def get_status(self) -> dict:
@@ -389,19 +347,26 @@ class BarcodeHubClient:
             logger.error(f"Connection test failed: {e}")
             return False
     
-    def disconnect(self):
-        """Disconnect from Azure IoT Hub"""
+    def _safe_disconnect(self):
+        """Safely disconnect and clean up resources"""
         if self.client:
             try:
-                logger.info("Disconnecting from Azure IoT Hub...")
-                self.client.disconnect()
-                self.client = None
-                self.connected = False
-                logger.info("Successfully disconnected from Azure IoT Hub")
+                if hasattr(self.client, 'shutdown'):
+                    self.client.shutdown()
+                elif hasattr(self.client, 'disconnect'):
+                    self.client.disconnect()
             except Exception as e:
-                logger.error(f"Error during disconnect: {e}")
+                logger.warning(f"Error during client shutdown: {e}")
+            finally:
                 self.client = None
                 self.connected = False
+    
+    def disconnect(self):
+        """Disconnect from Azure IoT Hub completely"""
+        with self.connection_lock:
+            logger.info("Disconnecting from Azure IoT Hub...")
+            self._safe_disconnect()
+            logger.info("Successfully disconnected from Azure IoT Hub")
     
     def get_registration_stats(self) -> dict:
         """Get registration statistics for monitoring"""
