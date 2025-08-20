@@ -161,12 +161,23 @@ class LocalStorage:
         """Mark a scan as sent to IoT Hub"""
         conn = self._get_connection()
         cursor = conn.cursor()
+        # Normalize timestamp to our stored format to avoid equality mismatches
+        try:
+            normalized_ts = self.format_timestamp(timestamp)
+        except Exception:
+            normalized_ts = str(timestamp)
+
         cursor.execute(
             'UPDATE scans SET sent_to_hub = 1 WHERE device_id = ? AND barcode = ? AND timestamp = ?',
-            (device_id, barcode, timestamp)
+            (device_id, barcode, normalized_ts)
         )
+        affected = cursor.rowcount
         conn.commit()
         conn.close()
+        if affected == 0:
+            logger.warning(f"mark_sent_to_hub matched 0 rows (device_id={device_id}, barcode={barcode}, timestamp={timestamp}) - check timestamp formatting/source")
+        else:
+            logger.info(f"Marked {affected} scan(s) as sent: device_id={device_id}, barcode={barcode}, timestamp={normalized_ts}")
 
     def get_device_id(self):
         """Retrieve the stored device ID, or None if not set"""
@@ -247,18 +258,40 @@ class LocalStorage:
         return formatted_timestamp
 
     def get_unsent_scans(self):
-        """Get scans not yet sent to IoT Hub"""
+        """Get scans not yet sent to IoT Hub (includes SQLite rowid for robust marking)"""
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute(
-            'SELECT device_id, barcode, timestamp, quantity FROM scans WHERE sent_to_hub = 0'
+            'SELECT rowid, device_id, barcode, timestamp, quantity FROM scans WHERE sent_to_hub = 0'
         )
         rows = cursor.fetchall()
         conn.close()
         return [
-            {'device_id': row[0], 'barcode': row[1], 'timestamp': self.format_timestamp(row[2]), 'quantity': row[3] if len(row) > 3 else 1}
+            {
+                'id': row[0],
+                'device_id': row[1],
+                'barcode': row[2],
+                'timestamp': self.format_timestamp(row[3]),
+                'quantity': row[4] if len(row) > 4 else 1
+            }
             for row in rows
         ]
+
+    def mark_sent_by_id(self, row_id: int):
+        """Mark a scan as sent using its SQLite rowid. This avoids timestamp equality issues."""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'UPDATE scans SET sent_to_hub = 1 WHERE rowid = ?',
+            (row_id,)
+        )
+        affected = cursor.rowcount
+        conn.commit()
+        conn.close()
+        if affected == 0:
+            logger.warning(f"mark_sent_by_id matched 0 rows (rowid={row_id})")
+        else:
+            logger.info(f"Marked scan as sent by id: rowid={row_id}")
     
     def save_unsent_message(self, device_id, message, timestamp):
         """Save an unsent message for retry later"""

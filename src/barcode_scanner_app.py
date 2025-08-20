@@ -1193,7 +1193,7 @@ def process_unsent_messages(auto_retry=False):
             # Check if this is a test barcode - if so, skip sending to IoT Hub
             if api_client.is_test_barcode(barcode):
                 logger.info(f"Skipping test barcode in unsent messages: {barcode} - BLOCKED from IoT Hub")
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                local_db.mark_sent_by_id(message.get("id"))
                 success_count += 1
                 continue
             
@@ -1222,7 +1222,7 @@ def process_unsent_messages(auto_retry=False):
             success = message_client.send_message(barcode, device_id)
             
             if success:
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                local_db.mark_sent_by_id(message.get("id"))
                 success_count += 1
             else:
                 fail_count += 1
@@ -1299,7 +1299,7 @@ def process_unsent_messages_ui():
             # Skip test barcodes (treat as success)
             if api_client.is_test_barcode(barcode):
                 logger.info(f"Skipping test barcode in unsent messages: {barcode} - BLOCKED from IoT Hub")
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                local_db.mark_sent_by_id(message.get("id"))
                 success_count += 1
                 yield f"✔️ [{idx}/{total}] Test barcode {barcode} skipped and marked as sent."
                 continue
@@ -1323,7 +1323,7 @@ def process_unsent_messages_ui():
             # Attempt send
             sent = message_client.send_message(barcode, device_id)
             if sent:
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                local_db.mark_sent_by_id(message.get("id"))
                 success_count += 1
                 yield f"✅ [{idx}/{total}] Sent {barcode} for {device_id}."
             else:
@@ -2581,7 +2581,7 @@ def process_unsent_messages(auto_retry=False):
             # Check if this is a test barcode - if so, skip sending to IoT Hub
             if api_client.is_test_barcode(barcode):
                 logger.info(f"Skipping test barcode in unsent messages: {barcode} - BLOCKED from IoT Hub")
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                local_db.mark_sent_by_id(message.get("id"))
                 success_count += 1
                 continue
             
@@ -2631,7 +2631,7 @@ def process_unsent_messages(auto_retry=False):
             success = message_client.send_message(barcode, device_id)
             
             if success:
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                local_db.mark_sent_by_id(message.get("id"))
                 success_count += 1
             else:
                 fail_count += 1
