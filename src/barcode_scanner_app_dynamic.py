@@ -115,8 +115,8 @@ def generate_registration_token():
         blink_led("red")
         return f"❌ Error: {str(e)}", ""
 
-def confirm_registration(registration_token, device_id):
-    """Step 2: Confirm device registration using token and device ID"""
+def confirm_registration(device_id):
+    """Step 2: Confirm device registration using Device ID"""
     try:
         # Generate registration token automatically and clean up expired tokens
         registration_token = device_manager.generate_registration_token()
@@ -510,11 +510,6 @@ with gr.Blocks(title="Dynamic Barcode Scanner", theme=gr.themes.Soft()) as app:
                 generate_token_button = gr.Button("1️⃣ Generate Registration Token", variant="primary")
                 confirm_registration_button = gr.Button("2️⃣ Confirm Registration", variant="primary")
             
-            registration_token_input = gr.Textbox(
-                label="Registration Token", 
-                placeholder="Enter registration token from step 1",
-                type="password"
-            )
             
             with gr.Row():
                 # registration_status_button = gr.Button("📊 Check Registration Status")
@@ -546,17 +541,17 @@ with gr.Blocks(title="Dynamic Barcode Scanner", theme=gr.themes.Soft()) as app:
     # Dynamic registration handlers
     def handle_token_generation():
         msg, token = generate_registration_token()
-        return msg, token
+        return msg
     
     generate_token_button.click(
         fn=handle_token_generation,
         inputs=[],
-        outputs=[status_text, registration_token_input]
+        outputs=[status_text]
     )
     
     confirm_registration_button.click(
         fn=confirm_registration,
-        inputs=[registration_token_input, device_id_input],
+        inputs=[device_id_input],
         outputs=[status_text]
     )
     
