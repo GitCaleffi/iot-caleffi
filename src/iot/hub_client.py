@@ -156,10 +156,22 @@ class HubClient:
         """
         logger.info(f"Sending message with device ID: {device_id}")
 
+        # First check basic internet connectivity
+        try:
+            import subprocess
+            result = subprocess.run(['ping', '-c', '1', '-W', '3', '8.8.8.8'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                logger.error("No internet connectivity - cannot send to IoT Hub")
+                return False
+        except Exception as e:
+            logger.error(f"Connectivity check failed: {e}")
+            return False
+
         if not self.client or not self.connected:
             logger.info("No active connection, attempting to connect...")
             if not self.connect():
-                logger.error("Failed to establish connection")
+                logger.error("Failed to establish connection to IoT Hub")
                 return False
 
         # Handle both barcode strings and message dictionaries
