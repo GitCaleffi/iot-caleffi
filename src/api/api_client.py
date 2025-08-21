@@ -34,18 +34,20 @@ class ApiClient:
     
     def is_online(self) -> bool:
         """
-        Check if the device has internet connectivity.
+        Check if the device has internet connectivity using ping.
         
         Returns:
             bool: True if online, False otherwise
         """
+        import subprocess
         try:
-            # Try to reach a reliable endpoint
-            response = requests.get(
-                "https://httpbin.org/status/200", 
+            # Try to ping Google's DNS server (more reliable than HTTP requests)
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "3", "8.8.8.8"], 
+                capture_output=True, 
                 timeout=5
             )
-            return response.status_code == 200
+            return result.returncode == 0
         except Exception as e:
             logger.debug(f"Connectivity check failed: {e}")
             return False

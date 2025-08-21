@@ -261,37 +261,103 @@ class LocalStorage:
         """Get scans not yet sent to IoT Hub (includes SQLite rowid for robust marking)"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            'SELECT rowid, device_id, barcode, timestamp, quantity FROM scans WHERE sent_to_hub = 0'
-        )
-        rows = cursor.fetchall()
+        
+        # Get unsent scans from both tables for compatibility
+        unsent_messages = []
+        
+        # Get from scans table (legacy)
+        try:
+            cursor.execute(
+                'SELECT rowid, device_id, barcode, timestamp, quantity FROM scans WHERE sent_to_hub = 0'
+            )
+            rows = cursor.fetchall()
+            for row in rows:
+                unsent_messages.append({
+                    'id': f"scans_{row[0]}",  # Prefix to identify table
+                    'device_id': row[1],
+                    'barcode': row[2],
+                    'timestamp': self.format_timestamp(row[3]),
+                    'quantity': row[4] if len(row) > 4 else 1,
+                    'source': 'scans'
+                })
+        except Exception as e:
+            logger.debug(f"Error getting unsent scans from scans table: {e}")
+        
+        # Get from unsent_messages table (new)
+        try:
+            cursor.execute(
+                'SELECT rowid, device_id, message, timestamp FROM unsent_messages WHERE sent_to_hub = 0'
+            )
+            rows = cursor.fetchall()
+            for row in rows:
+                # Parse message as barcode if it's a simple string
+                message = row[2]
+                barcode = message if isinstance(message, str) and not message.startswith('{') else 'unknown'
+                
+                unsent_messages.append({
+                    'id': f"unsent_{row[0]}",  # Prefix to identify table
+                    'device_id': row[1],
+                    'barcode': barcode,
+                    'timestamp': self.format_timestamp(row[3]),
+                    'quantity': 1,
+                    'source': 'unsent_messages'
+                })
+        except Exception as e:
+            logger.debug(f"Error getting unsent messages from unsent_messages table: {e}")
+        
         conn.close()
-        return [
-            {
-                'id': row[0],
-                'device_id': row[1],
-                'barcode': row[2],
-                'timestamp': self.format_timestamp(row[3]),
-                'quantity': row[4] if len(row) > 4 else 1
-            }
-            for row in rows
-        ]
+        return unsent_messages
 
-    def mark_sent_by_id(self, row_id: int):
-        """Mark a scan as sent using its SQLite rowid. This avoids timestamp equality issues."""
+    def mark_sent_by_id(self, message_id):
+        """Mark a message as sent by its ID (handles both tables)"""
         conn = self._get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            'UPDATE scans SET sent_to_hub = 1 WHERE rowid = ?',
-            (row_id,)
-        )
-        affected = cursor.rowcount
+        
+        try:
+            # Determine which table based on ID prefix
+            if isinstance(message_id, str) and message_id.startswith('scans_'):
+                # Remove prefix and update scans table
+                actual_id = message_id.replace('scans_', '')
+                cursor.execute(
+                    'UPDATE scans SET sent_to_hub = 1 WHERE rowid = ?',
+                    (actual_id,)
+                )
+                logger.debug(f"Marked scan {actual_id} as sent in scans table")
+            elif isinstance(message_id, str) and message_id.startswith('unsent_'):
+                # Remove prefix and update unsent_messages table
+                actual_id = message_id.replace('unsent_', '')
+                cursor.execute(
+                    'UPDATE unsent_messages SET sent_to_hub = 1 WHERE rowid = ?',
+                    (actual_id,)
+                )
+                logger.debug(f"Marked message {actual_id} as sent in unsent_messages table")
+            else:
+                # Legacy support - try scans table first
+                cursor.execute(
+                    'UPDATE scans SET sent_to_hub = 1 WHERE rowid = ?',
+                    (message_id,)
+                )
+                logger.debug(f"Marked message {message_id} as sent in scans table (legacy)")
+                
+        except Exception as e:
+            logger.error(f"Error marking message {message_id} as sent: {e}")
+        
         conn.commit()
         conn.close()
-        if affected == 0:
-            logger.warning(f"mark_sent_by_id matched 0 rows (rowid={row_id})")
-        else:
-            logger.info(f"Marked scan as sent by id: rowid={row_id}")
+
+    def save_device_registration(self, device_id, timestamp):
+        """Save device registration with timestamp"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        formatted_timestamp = self.format_timestamp(timestamp)
+        cursor.execute(
+            'INSERT INTO device_info (device_id, timestamp) VALUES (?, ?)',
+            (device_id, formatted_timestamp)
+        )
+        conn.commit()
+        conn.close()
+        logger.info(f"Device registration saved: {device_id} at {formatted_timestamp}")
+        return True
     
     def save_unsent_message(self, device_id, message, timestamp):
         """Save an unsent message for retry later"""
