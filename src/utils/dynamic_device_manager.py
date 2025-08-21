@@ -215,6 +215,30 @@ class DynamicDeviceManager:
                 'total_tokens_generated': len(self.registration_tokens)
             }
     
+    def register_device_without_token(self, device_id: str, device_info: Dict = None) -> Tuple[bool, str]:
+        """
+        Register a device without requiring a token.
+        Returns (success, message)
+        """
+        with self.lock:
+            # Check if device ID is already registered
+            if device_id in self.device_cache:
+                return False, f"Device {device_id} is already registered"
+            
+            # Register the device
+            self.device_cache[device_id] = {
+                'device_id': device_id,
+                'registered_at': datetime.now(timezone.utc).isoformat(),
+                'last_seen': datetime.now(timezone.utc).isoformat(),
+                'status': 'active',
+                'registration_method': 'direct',
+                'device_info': device_info or {}
+            }
+            
+            self.save_device_config()
+            logger.info(f"Device {device_id} registered successfully (without token)")
+            return True, f"Device {device_id} registered successfully"
+            
     def validate_barcode_for_device(self, barcode: str, device_id: str) -> Tuple[bool, str]:
         """
         Validate if a barcode can be processed by a specific device.

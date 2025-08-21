@@ -495,27 +495,22 @@ def generate_registration_token():
 
 @require_pi_connection
 def confirm_registration(registration_token, device_id):
-    """Step 2: Confirm device registration using token and device ID"""
+    """Step 2: Confirm device registration using device ID (token optional, not validated)"""
     if not is_scanner_connected():
         return "⚠️ No barcode scanner detected. Please connect your device."
     try:
         global processed_device_ids
-        
-        # Registration token optional - bypass token requirement
-        
+
         if not device_id or device_id.strip() == "":
             blink_led("red")
             return "❌ Please enter a device ID."
         
-        registration_token = registration_token.strip()
+        # Strip inputs safely
+        registration_token = (registration_token or "").strip()
         device_id = device_id.strip()
         
-        # Validate registration token
-        is_valid, message = device_manager.validate_registration_token(registration_token)
-        if not is_valid:
-            blink_led("red")
-            return f"❌ {message}"
-        
+        # 🔴 Removed token validation check
+
         # Check if device is already registered in our system
         if device_manager.is_device_registered(device_id):
             blink_led("red")
@@ -529,18 +524,19 @@ def confirm_registration(registration_token, device_id):
         
         # Gather device info for registration
         device_info = {
-            "registration_method": "dynamic_token",
-            "online_at_registration": True,  # Will be updated based on comprehensive connectivity check
+            "registration_method": "direct_id",   # renamed to indicate no token
+            "online_at_registration": True,
             "user_agent": "Barcode Scanner App v2.0"
         }
         
-        # Register device with dynamic device manager
-        success, reg_message = device_manager.register_device(registration_token, device_id, device_info)
+        # Register device directly without token check
+        success, reg_message = device_manager.register_device_without_token(device_id, device_info)
+
         if not success:
             blink_led("red")
             return f"❌ Registration failed: {reg_message}"
         
-        # Save device ID locally for backward compatibility
+        # Save device ID locally
         local_db.save_device_id(device_id)
         
         # Create registration confirmation message
@@ -548,13 +544,12 @@ def confirm_registration(registration_token, device_id):
             "deviceId": device_id,
             "status": "registered",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "message": "Device registration confirmed via dynamic token",
-            "registration_token": registration_token
+            "message": "Device registration confirmed",
+            "registration_token": registration_token or None
         }
         confirmation_message_json = json.dumps(confirmation_message_data)
         
-        # Use the enhanced connection manager to send registration confirmation
-        # This will check Internet + IoT Hub + Raspberry Pi availability
+        # Send registration confirmation
         success, status_msg = connection_manager.send_message_with_retry(
             device_id, 
             confirmation_message_json, 
@@ -562,7 +557,7 @@ def confirm_registration(registration_token, device_id):
             "device_registration"
         )
         
-        # Determine the appropriate status message based on connectivity
+        # Determine message
         if success:
             iot_status = "✅ Registration confirmation sent to IoT Hub"
             blink_led("green")
@@ -575,10 +570,10 @@ def confirm_registration(registration_token, device_id):
 **Device Details:**
 • Device ID: {device_id}
 • Registered At: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}
-• Registration Method: Dynamic Token
+• Registration Method: Direct (no token validation)
 
 **Actions Completed:**
-• ✅ Device registered with dynamic device manager
+• ✅ Device registered with device manager
 • ✅ Device ID saved locally
 • {iot_status}
 
@@ -590,6 +585,7 @@ def confirm_registration(registration_token, device_id):
         logger.error(f"Error in confirm_registration: {str(e)}")
         blink_led("red")
         return f"❌ Error: {str(e)}"
+
 
 def is_barcode_registered(barcode: str) -> bool:
     """Check if a barcode is registered in the system"""
