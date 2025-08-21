@@ -118,22 +118,14 @@ def generate_registration_token():
 def confirm_registration(registration_token, device_id):
     """Step 2: Confirm device registration using token and device ID"""
     try:
-        if not registration_token or registration_token.strip() == "":
-            blink_led("red")
-            return "❌ Please enter a valid registration token."
-        
+        # Generate registration token automatically and clean up expired tokens
+        registration_token = device_manager.generate_registration_token()
+        device_manager.cleanup_expired_tokens()
+        # Validate Device ID
         if not device_id or device_id.strip() == "":
             blink_led("red")
             return "❌ Please enter a valid Device ID."
-        
-        registration_token = registration_token.strip()
         device_id = device_id.strip()
-        
-        # Validate registration token
-        is_valid, message = device_manager.validate_registration_token(registration_token)
-        if not is_valid:
-            blink_led("red")
-            return f"❌ {message}"
         
         # Check if device is already registered in our system
         if device_manager.is_device_registered(device_id):
