@@ -346,13 +346,7 @@ class AutoBarcodeService:
     def _setup_input_device(self):
         """Set up the input device for barcode scanning"""
         try:
-            # Try to find a barcode scanner device
-            # This is a simplified approach - in production, you might want to 
-            # identify the specific input device more precisely
-            
-            # For now, we'll just use stdin in non-blocking mode
-            # This allows the service to read from standard input (keyboard/scanner)
-            # without blocking the main thread
+        
             
             fd = sys.stdin.fileno()
             fl = fcntl.fcntl(fd, fcntl.F_GETFL)

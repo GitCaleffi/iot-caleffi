@@ -10,6 +10,15 @@ from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# Import registration flag to block API calls during registration
+try:
+    from barcode_scanner_app import REGISTRATION_IN_PROGRESS, registration_lock
+except ImportError:
+    # Fallback if import fails
+    REGISTRATION_IN_PROGRESS = False
+    import threading
+    registration_lock = threading.Lock()
+
 class ApiClient:
     """Client for handling API communications with the backend services."""
     
@@ -219,7 +228,6 @@ class ApiClient:
                 "success": False,
                 "message": f"Error: {str(e)}"
             }
-    
     def register_device(self, device_id: str) -> Dict[str, Any]:
         """
         Register a device with the API.
@@ -231,7 +239,7 @@ class ApiClient:
             dict: Result with success flag and message
         """
         try:
-            url = f"{self.base_url}/raspberry/registerDevice"
+            url = f"{self.base_url}/raspberry/saveDeviceId"  # Changed endpoint
             payload = {"deviceId": device_id}
             
             response = self.session.post(
@@ -243,33 +251,109 @@ class ApiClient:
             if response.status_code == 200:
                 return {
                     "success": True,
-                    "message": f"Device {device_id} registered successfully"
+                    "message": f"Device {device_id} registered successfully",
+                    "response": response.json()  # Include full response
                 }
             else:
                 return {
                     "success": False,
-                    "message": f"HTTP {response.status_code}: {response.text}"
+                    "message": f"HTTP {response.status_code}: {response.text}",
+                    "response": response.text
                 }
                 
         except Exception as e:
             logger.error(f"Error registering device: {e}")
             return {
                 "success": False,
-                "message": f"Error: {str(e)}"
+                "message": f"Error: {str(e)}",
+                "response": None
             }
     
-    def send_barcode_scan(self, device_id: str, barcode: str, quantity: int = 1) -> Dict[str, Any]:
+    def confirm_registration(self, device_id: str, pi_ip: str = None) -> Dict[str, Any]:
         """
-        Send a barcode scan to the API.
+        Confirm device registration with the API.
+        
+        IMPORTANT: This method is for DEVICE REGISTRATION ONLY - NO INVENTORY UPDATES!
         
         Args:
-            device_id (str): The device ID
-            barcode (str): The scanned barcode
-            quantity (int): The quantity scanned
+            device_id (str): The device ID to confirm registration for
+            pi_ip (str): The Raspberry Pi IP address (optional)
             
         Returns:
             dict: Result with success flag and message
         """
+        try:
+            url = f"{self.base_url}/raspberry/confirmRegistration"
+            payload = {
+                "deviceId": device_id,
+                "timestamp": int(time.time()),
+                "status": "registered",
+                "operation_type": "device_registration",  # Explicit operation type
+                "messageType": "device_registration",  # Additional explicit type
+                "action": "registration_confirmation",  # Clear action type
+                "no_inventory_update": True,  # Explicit flag to prevent inventory updates
+                "registration_only": True  # Additional safety flag
+            }
+            
+            # Add Pi IP if provided
+            if pi_ip:
+                payload["pi_ip"] = pi_ip
+            
+            logger.info(f"🔒 REGISTRATION ONLY - NO INVENTORY UPDATES")
+            logger.info(f"Sending confirmation registration to: {url}")
+            logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+            
+            response = self.session.post(
+                url, 
+                json=payload, 
+                timeout=self.timeout
+            )
+            
+            logger.info(f"Confirmation registration response: {response.status_code} - {response.text}")
+            
+            if response.status_code == 200:
+                return {
+                    "success": True,
+                    "message": f"Device {device_id} registration confirmed successfully (NO INVENTORY IMPACT)",
+                    "response": response.json() if response.text else None
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"HTTP {response.status_code}: {response.text}",
+                    "response": response.text
+                }
+                
+        except Exception as e:
+            logger.error(f"Error confirming device registration: {e}")
+            return {
+                "success": False,
+                "message": f"Error: {str(e)}",
+                "response": None
+            }
+    
+    def send_barcode_scan(self, device_id: str, barcode: str, quantity: int = 1) -> Dict[str, Any]:
+        """
+        Send a barcode scan to the API for processing.
+        
+        Args:
+            device_id (str): The device ID that scanned the barcode
+            barcode (str): The scanned barcode
+            quantity (int): The quantity scanned (default: 1)
+            
+        Returns:
+            dict: Result with success flag, message, and response data
+        """
+        # Check if registration is in progress and block quantity updates
+        with registration_lock:
+            if REGISTRATION_IN_PROGRESS:
+                logger.warning("🚫 BLOCKING quantity update - device registration in progress")
+                return {
+                    "success": False,
+                    "message": "Quantity update blocked during device registration",
+                    "response": None
+                }
+        
         try:
             # Try multiple API endpoints since the correct one is unclear
             endpoints_to_try = [
