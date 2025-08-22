@@ -28,6 +28,7 @@ from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.dynamic_device_id import generate_dynamic_device_id
 from utils.network_discovery import NetworkDiscovery
 from utils.connection_manager import get_connection_manager
+from utils.mqtt_device_discovery import get_mqtt_discovery, discover_raspberry_pi_devices, get_primary_raspberry_pi_ip as mqtt_get_primary_pi_ip
 from utils.auto_ip_detector import start_auto_ip_detection, get_auto_detected_ip
 
 # Import IoT Hub registry manager for device registration
@@ -154,14 +155,33 @@ def discover_raspberry_pi_devices():
 def get_primary_raspberry_pi_ip():
     """Get the IP address of the primary Raspberry Pi device for connection.
     
-    This function uses the automatic IP detection service to find Pi devices
-    and automatically updates the configuration file when devices connect.
+    This function uses MQTT discovery as primary method, with fallback to
+    automatic IP detection service and network scanning.
     
     Returns:
         str or None: IP address of the primary Raspberry Pi, or None if not found
     """
     try:
-        # First check if we have a cached IP from the auto detection service
+        # FIRST: Try MQTT discovery for plug-and-play detection
+        try:
+            mqtt_pi_ip = mqtt_get_primary_pi_ip()
+            if mqtt_pi_ip:
+                logger.info(f"📡 Using MQTT-discovered Pi IP: {mqtt_pi_ip}")
+                # Update config with MQTT-discovered IP
+                try:
+                    config = load_config()
+                    if not config.get('raspberry_pi'):
+                        config['raspberry_pi'] = {}
+                    config['raspberry_pi']['mqtt_detected_ip'] = mqtt_pi_ip
+                    config['raspberry_pi']['last_mqtt_detection'] = datetime.now(timezone.utc).isoformat()
+                    save_config(config)
+                except Exception as e:
+                    logger.warning(f"Could not save MQTT-discovered IP to config: {e}")
+                return mqtt_pi_ip
+        except Exception as e:
+            logger.warning(f"MQTT discovery failed: {e}")
+        
+        # SECOND: Check if we have a cached IP from the auto detection service
         auto_detected_ip = get_auto_detected_ip()
         if auto_detected_ip:
             logger.info(f"💾 Using auto-detected Pi IP from service: {auto_detected_ip}")
