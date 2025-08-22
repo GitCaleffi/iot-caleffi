@@ -34,7 +34,7 @@
   },
   "raspberry_pi": {
     "auto_detected_ip": "192.168.1.18",
-    "last_detection": "2025-08-22T08:22:17.689914+00:00",
+    "last_detection": "2025-08-22T08:21:51.071968+00:00",
     "mac_address": "2c:cf:67:6c:45:f2"
   }
 }
