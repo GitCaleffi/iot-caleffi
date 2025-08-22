@@ -63,14 +63,14 @@ Requires=mosquitto.service
 Type=simple
 User=azureuser
 Group=azureuser
-WorkingDirectory=/var/www/html/abhimanyu/barcode_scanner_clean/src/utils
-ExecStart=/usr/bin/python3 /var/www/html/abhimanyu/barcode_scanner_clean/src/utils/mqtt_device_discovery.py
+WorkingDirectory=/var/www/html/iot-caleffi/src/utils
+ExecStart=/usr/bin/python3 /var/www/html/iot-caleffi/src/utils/test_mqtt_discovery.py
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
-Environment=PYTHONPATH=/var/www/html/abhimanyu/barcode_scanner_clean/src
+Environment=PYTHONPATH=/var/www/html/iot-caleffi/
 
 [Install]
 WantedBy=multi-user.target

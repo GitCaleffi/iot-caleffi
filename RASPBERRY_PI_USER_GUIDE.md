@@ -66,7 +66,8 @@ import time
 from datetime import datetime
 
 # Configuration
-SERVER_URL = "http://YOUR-SERVER-IP"  # Replace with your server IP
+SERVER_IP = "50.85.252.172"  # Your server's public IP
+SERVER_URL =  f"http://{SERVER_IP}/api/scan"   # Replace with your server IP
 API_ENDPOINT = f"{SERVER_URL}/api/scan"
 
 def scan_barcode(barcode):
