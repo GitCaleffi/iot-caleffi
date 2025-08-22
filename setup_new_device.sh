@@ -42,7 +42,7 @@ fi
 
 # Get current user
 CURRENT_USER=$(whoami)
-PROJECT_DIR="/var/www/html/$CURRENT_USER/barcode_scanner_clean"
+PROJECT_DIR="/var/www/html/$CURRENT_USER/iot-caleffi/src"
 
 print_step "Starting setup for user: $CURRENT_USER"
 print_step "Project will be installed to: $PROJECT_DIR"
@@ -112,7 +112,7 @@ sudo tee /etc/systemd/system/barcode-scanner.service > /dev/null << EOF
 Description=Commercial Barcode Scanner Web Service
 After=network.target
 Wants=network.target
-Documentation=https://github.com/your-repo/barcode-scanner
+
 
 [Service]
 Type=simple

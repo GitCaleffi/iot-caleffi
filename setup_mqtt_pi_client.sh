@@ -10,7 +10,7 @@ echo "🍓 Setting up MQTT Pi Client for automatic server discovery..."
 # Configuration
 SERVER_HOST="iot.caleffionline.it"
 SERVICE_NAME="mqtt-pi-client"
-INSTALL_DIR="/home/pi/barcode_scanner_clean"
+INSTALL_DIR="/home/pi/iot-caleffi/src/utils"
 
 # Check if running on Raspberry Pi
 if ! grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null; then
