@@ -9,6 +9,7 @@ import threading
 import queue
 import subprocess
 import uuid
+import requests
 from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
@@ -100,6 +101,17 @@ def is_raspberry_pi():
     return False
 
 IS_RASPBERRY_PI = is_raspberry_pi()
+def get_pi_status_api():
+    """Return Pi connection status for API use (True/False + IP)."""
+    # Refresh status before returning
+    connected = check_raspberry_pi_connection()
+    return {
+        "connected": connected,
+        "ip": _pi_connection_status.get("ip"),
+        "ssh_available": _pi_connection_status.get("ssh_available"),
+        "web_available": _pi_connection_status.get("web_available"),
+        "last_check": _pi_connection_status.get("last_check").isoformat() if _pi_connection_status.get("last_check") else None
+    }
 
 def is_scanner_connected():
     """Checks if a USB barcode scanner is connected by checking input device names."""
@@ -1261,6 +1273,153 @@ def refresh_pi_connection():
         logger.warning("❌ Connection refresh failed")
     
     return status_display
+
+def check_local_pi_and_notify_server():
+    """
+    Check if Raspberry Pi is locally attached and send notification to server.
+    This function only checks local network connectivity, not live server connection.
+    
+    Returns:
+        dict: Status information including pi_attached (True/False) and notification result
+    """
+    try:
+        logger.info("🔍 Checking local Raspberry Pi attachment status...")
+        
+        # Check if Pi is locally attached
+        pi_ip = get_primary_raspberry_pi_ip()
+        pi_attached = False
+        pi_details = {}
+        
+        if pi_ip:
+            # Test local connectivity to Pi
+            discovery = NetworkDiscovery()
+            ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22)
+            web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000)
+            
+            # Pi is considered attached if at least one service is available
+            pi_attached = ssh_available or web_available
+            
+            pi_details = {
+                'ip': pi_ip,
+                'ssh_available': ssh_available,
+                'web_available': web_available,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            logger.info(f"📍 Pi Status: {'✅ Attached' if pi_attached else '❌ Not Attached'} at {pi_ip}")
+        else:
+            logger.info("📍 Pi Status: ❌ Not Found on local network")
+        
+        # Prepare notification payload
+        notification_payload = {
+            'pi_attached': pi_attached,
+            'device_id': generate_dynamic_device_id(),
+            'timestamp': datetime.now().isoformat(),
+            'pi_details': pi_details,
+            'check_type': 'local_attachment'
+        }
+        
+        # Send notification to server
+        notification_result = _send_pi_status_notification(notification_payload)
+        
+        # Prepare response
+        response = {
+            'pi_attached': pi_attached,
+            'pi_ip': pi_ip if pi_attached else None,
+            'notification_sent': notification_result['success'],
+            'notification_details': notification_result,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        status_emoji = "✅" if pi_attached else "❌"
+        notification_emoji = "📤" if notification_result['success'] else "⚠️"
+        
+        logger.info(f"{status_emoji} Pi Attachment Check Complete: {pi_attached}")
+        logger.info(f"{notification_emoji} Server Notification: {'Sent' if notification_result['success'] else 'Failed'}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking Pi attachment status: {e}")
+        return {
+            'pi_attached': False,
+            'pi_ip': None,
+            'notification_sent': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }
+
+
+def _send_pi_status_notification(payload):
+    """
+    Send Pi status notification to server.
+    
+    Args:
+        payload (dict): Notification payload with Pi status
+        
+    Returns:
+        dict: Result of notification attempt
+    """
+    try:
+        # Load configuration to get server notification URL
+        config = load_config()
+        
+        # Try multiple notification endpoints
+        notification_urls = [
+            config.get("frontend", {}).get("notification_url", "https://iot.caleffionline.it/api/pi-status-notification"),
+            "https://api2.caleffionline.it/api/v1/raspberry/piStatus",
+            config.get("frontend", {}).get("base_url", "https://iot.caleffionline.it") + "/api/pi-status"
+        ]
+        
+        headers = {
+            'Content-Type': 'application/json',
+            'User-Agent': 'RaspberryPi-BarcodeScanner/1.0'
+        }
+        
+        last_error = None
+        
+        for url in notification_urls:
+            try:
+                logger.info(f"📤 Sending Pi status notification to: {url}")
+                
+                response = requests.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=10
+                )
+                
+                if response.status_code in [200, 201, 202]:
+                    logger.info(f"✅ Pi status notification sent successfully to {url}")
+                    return {
+                        'success': True,
+                        'status_code': response.status_code,
+                        'url': url,
+                        'response': response.text[:200] if response.text else None
+                    }
+                else:
+                    logger.warning(f"⚠️ Server returned status {response.status_code} for {url}")
+                    last_error = f"HTTP {response.status_code}: {response.text[:100]}"
+                    
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"⚠️ Failed to send notification to {url}: {e}")
+                last_error = str(e)
+                continue
+        
+        # If all URLs failed
+        logger.error(f"❌ Failed to send Pi status notification to all endpoints. Last error: {last_error}")
+        return {
+            'success': False,
+            'error': last_error,
+            'attempted_urls': notification_urls
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error sending Pi status notification: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
 
 # Create Gradio interface
 with gr.Blocks(title="Barcode Scanner") as app:
