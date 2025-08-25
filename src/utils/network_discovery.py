@@ -81,70 +81,24 @@ class NetworkDiscovery:
         self._arp_cache = output
         self._cache_timestamp = time.time()
     
+    def _check_arp_availability(self) -> bool:
+        """Check if arp command is available on the system"""
+        try:
+            result = subprocess.run(
+                ["which", "arp"], 
+                capture_output=True, 
+                timeout=2
+            )
+            return result.returncode == 0
+        except:
+            return False
+    
     def discover_devices_arp(self) -> List[Dict[str, str]]:
-        """Discover devices using ARP table scanning with caching"""
-        devices = []
-        
-        # Try to use cached data first
-        output = self._get_cached_arp_output()
-        
-        if output is None:
-            try:
-                logger.info("Scanning ARP table for devices...")
-                # Use shorter timeout and more robust command
-                output = subprocess.check_output("arp -a", shell=True, timeout=3).decode()
-                self._update_arp_cache(output)
-            except subprocess.TimeoutExpired:
-                logger.warning("ARP scan timed out - using fallback method")
-                # Fallback: try with even shorter timeout
-                try:
-                    output = subprocess.check_output("arp -a", shell=True, timeout=1).decode()
-                    self._update_arp_cache(output)
-                except Exception as e:
-                    logger.error(f"ARP fallback also failed: {e}")
-                    # If ARP completely fails, try alternative method
-                    return self._discover_devices_alternative()
-            except Exception as e:
-                logger.error(f"Error scanning ARP table: {e}")
-                return self._discover_devices_alternative()
-        
-        if output:
-            for line in output.splitlines():
-                # Extract IP and MAC address from ARP output
-                # Format: hostname (192.168.1.100) at aa:bb:cc:dd:ee:ff [ether] on eth0
-                ip_match = re.search(r"\(([\d.]+)\)", line)
-                mac_match = re.search(r"at ([a-fA-F0-9:]{17})", line)
-                hostname_match = re.search(r"^([^\s]+)", line)
-                
-                if ip_match and mac_match:
-                    ip = ip_match.group(1)
-                    mac = mac_match.group(1).lower()
-                    hostname = hostname_match.group(1) if hostname_match else "Unknown"
-                    
-                    # Check if MAC address matches Raspberry Pi
-                    is_raspberry_pi_mac = any(mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
-                    
-                    # Check if hostname suggests Raspberry Pi
-                    is_raspberry_pi_hostname = any(pi_name in hostname.lower() for pi_name in self.RASPBERRY_PI_HOSTNAMES)
-                    
-                    # Device is considered Raspberry Pi if either MAC or hostname matches
-                    is_raspberry_pi = is_raspberry_pi_mac or is_raspberry_pi_hostname
-                    
-                    device_info = {
-                        "ip": ip,
-                        "mac": mac,
-                        "hostname": hostname,
-                        "is_raspberry_pi": is_raspberry_pi,
-                        "detection_reason": "MAC" if is_raspberry_pi_mac else ("hostname" if is_raspberry_pi_hostname else "none"),
-                        "discovery_method": "arp"
-                    }
-                    devices.append(device_info)
-                    
-                    if is_raspberry_pi:
-                        reason = device_info["detection_reason"]
-                        logger.info(f"🍓 Raspberry Pi found via ARP: {ip} ({mac}) - detected by {reason}")
-        
-        return devices
+        """Discover devices using modern network discovery methods (prioritizes enhanced methods)"""
+        # For live server environments, prioritize enhanced discovery methods
+        # This avoids ARP command issues and provides more reliable detection
+        logger.info("Using enhanced discovery methods for reliable Pi detection")
+        return self._discover_devices_alternative()
     
     def _discover_devices_alternative(self) -> List[Dict[str, str]]:
         """Alternative discovery method when ARP fails - uses multiple detection methods"""
