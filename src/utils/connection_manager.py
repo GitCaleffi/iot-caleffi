@@ -51,6 +51,7 @@ class ConnectionManager:
     def check_internet_connectivity(self) -> bool:
         """
         Check if device has internet connectivity using multiple methods.
+        For live server deployment, prioritize Python-based checks.
         
         Returns:
             bool: True if online, False otherwise
@@ -65,40 +66,52 @@ class ConnectionManager:
         logger.debug("Performing fresh internet connectivity check...")
         
         try:
-            # Method 1: Ping Google DNS
-            logger.debug("Trying Method 1: ping 8.8.8.8")
-            result = subprocess.run(
-                ["ping", "-c", "1", "-W", "3", "8.8.8.8"], 
-                capture_output=True, 
-                timeout=5
-            )
+            # Method 1: Python socket connection (works on live servers)
+            import socket
+            logger.debug("Trying Method 1: Python socket connection to Google DNS")
             
-            logger.debug(f"Method 1 result: return_code={result.returncode}, stdout_len={len(result.stdout)}, stderr_len={len(result.stderr)}")
-            
-            if result.returncode == 0:
-                logger.debug("Method 1 SUCCESS - Internet connected")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(5)
+                result = sock.connect_ex(("8.8.8.8", 53))  # DNS port
+                
+            if result == 0:
+                logger.debug("Method 1 SUCCESS - Internet connected via socket")
                 self.is_connected_to_internet = True
                 self.last_connection_check = current_time
                 return True
                 
             logger.debug("Method 1 FAILED - Trying Method 2")
             
-            # Method 2: Try alternative DNS server
-            logger.debug("Trying Method 2: ping 1.1.1.1")
+            # Method 2: HTTP request to reliable endpoint
+            logger.debug("Trying Method 2: HTTP request to Google")
+            try:
+                import urllib.request
+                urllib.request.urlopen('http://www.google.com', timeout=5)
+                logger.debug("Method 2 SUCCESS - Internet connected via HTTP")
+                self.is_connected_to_internet = True
+                self.last_connection_check = current_time
+                return True
+            except Exception as http_e:
+                logger.debug(f"Method 2 FAILED: {http_e}")
+            
+            # Method 3: Fallback to ping (if available)
+            logger.debug("Trying Method 3: ping 8.8.8.8")
             result = subprocess.run(
-                ["ping", "-c", "1", "-W", "3", "1.1.1.1"], 
+                ["ping", "-c", "1", "-W", "3", "8.8.8.8"], 
                 capture_output=True, 
                 timeout=5
             )
             
-            logger.debug(f"Method 2 result: return_code={result.returncode}, stdout_len={len(result.stdout)}, stderr_len={len(result.stderr)}")
+            if result.returncode == 0:
+                logger.debug("Method 3 SUCCESS - Internet connected via ping")
+                self.is_connected_to_internet = True
+                self.last_connection_check = current_time
+                return True
             
-            connected = result.returncode == 0
-            logger.debug(f"Method 2 final result: {connected}")
-            
-            self.is_connected_to_internet = connected
+            logger.debug("All methods FAILED - No internet connectivity")
+            self.is_connected_to_internet = False
             self.last_connection_check = current_time
-            return connected
+            return False
             
         except Exception as e:
             logger.debug(f"Internet connectivity check failed with exception: {e}")
