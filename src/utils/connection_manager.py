@@ -210,69 +210,55 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        For live server deployment: Check if local barcode scanner devices are available.
-        This checks for USB barcode scanners connected to the server itself.
+        Check if external Raspberry Pi devices are available on the network.
+        Uses network discovery to detect actual Pi devices and test connectivity.
         """
         current_time = time.time()
         
         # Use cached result if recent check
         if current_time - self.last_pi_check < self.pi_check_interval:
-            logger.debug(f"Using cached local scanner availability result: {self.raspberry_pi_devices_available}")
+            logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
             return self.raspberry_pi_devices_available
         
         try:
-            # Check for USB input devices (barcode scanners)
-            import os
-            import glob
+            # Use network discovery to find actual Raspberry Pi devices
+            pi_devices = self.network_discovery.discover_raspberry_pi_devices()
             
-            # Look for USB input devices that could be barcode scanners
-            usb_devices_found = False
+            if not pi_devices:
+                logger.debug("❌ No external Raspberry Pi devices found on network")
+                self.raspberry_pi_devices_available = False
+                self.last_pi_check = current_time
+                return False
             
-            # Method 1: Check /dev/input/event* devices
-            event_devices = glob.glob('/dev/input/event*')
-            if event_devices:
-                logger.debug(f"Found {len(event_devices)} input event devices")
-                usb_devices_found = True
+            # Test connectivity to each discovered Pi device
+            available_pis = []
+            for device in pi_devices:
+                ip = device.get("ip")
+                if ip:
+                    # Test actual connectivity using ping and port checks
+                    pi_device = self.network_discovery.discover_raspberry_pi_by_ip(ip)
+                    if pi_device:
+                        available_pis.append(pi_device)
+                        logger.debug(f"✅ Raspberry Pi {ip} is available and responsive")
+                    else:
+                        logger.debug(f"❌ Raspberry Pi {ip} found in ARP but not responsive")
             
-            # Method 2: Check for USB HID devices
-            try:
-                usb_hid_devices = glob.glob('/sys/class/input/input*/device/modalias')
-                hid_count = 0
-                for device_file in usb_hid_devices:
-                    try:
-                        with open(device_file, 'r') as f:
-                            modalias = f.read().strip()
-                            if 'usb:' in modalias.lower():
-                                hid_count += 1
-                    except:
-                        continue
-                
-                if hid_count > 0:
-                    logger.debug(f"Found {hid_count} USB HID input devices")
-                    usb_devices_found = True
-                        
-            except Exception as e:
-                logger.debug(f"Error checking USB HID devices: {e}")
-            
-            # For live server: Always consider scanner available if we have input devices
-            # This allows the system to work with any USB barcode scanner plugged in
-            if usb_devices_found:
-                logger.debug("✅ Local input devices detected - Scanner functionality available")
+            if available_pis:
+                logger.debug(f"✅ Found {len(available_pis)} responsive Raspberry Pi device(s)")
                 self.raspberry_pi_devices_available = True
             else:
-                logger.debug("⚠️ No input devices detected - Scanner may not be connected")
-                # Still return True for live server to allow manual barcode entry
-                self.raspberry_pi_devices_available = True
+                logger.debug("❌ No responsive Raspberry Pi devices found (all offline)")
+                self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
             return self.raspberry_pi_devices_available
             
         except Exception as e:
-            logger.debug(f"Error checking local scanner availability: {e}")
-            # For live server: Always return True to allow operation
-            self.raspberry_pi_devices_available = True
+            logger.debug(f"Error checking Raspberry Pi availability: {e}")
+            # On error, assume Pi is offline to be safe
+            self.raspberry_pi_devices_available = False
             self.last_pi_check = current_time
-            return True
+            return False
     
     def _start_auto_refresh_worker(self):
         """
