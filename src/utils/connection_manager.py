@@ -209,11 +209,70 @@ class ConnectionManager:
             return False
     
     def check_raspberry_pi_availability(self) -> bool:
-        """Always returns True - no device validation needed for local operation"""
-        # Skip all network discovery and always return True
-        self.raspberry_pi_devices_available = True
-        self.last_pi_check = time.time()
-        return True
+        """
+        For live server deployment: Check if local barcode scanner devices are available.
+        This checks for USB barcode scanners connected to the server itself.
+        """
+        current_time = time.time()
+        
+        # Use cached result if recent check
+        if current_time - self.last_pi_check < self.pi_check_interval:
+            logger.debug(f"Using cached local scanner availability result: {self.raspberry_pi_devices_available}")
+            return self.raspberry_pi_devices_available
+        
+        try:
+            # Check for USB input devices (barcode scanners)
+            import os
+            import glob
+            
+            # Look for USB input devices that could be barcode scanners
+            usb_devices_found = False
+            
+            # Method 1: Check /dev/input/event* devices
+            event_devices = glob.glob('/dev/input/event*')
+            if event_devices:
+                logger.debug(f"Found {len(event_devices)} input event devices")
+                usb_devices_found = True
+            
+            # Method 2: Check for USB HID devices
+            try:
+                usb_hid_devices = glob.glob('/sys/class/input/input*/device/modalias')
+                hid_count = 0
+                for device_file in usb_hid_devices:
+                    try:
+                        with open(device_file, 'r') as f:
+                            modalias = f.read().strip()
+                            if 'usb:' in modalias.lower():
+                                hid_count += 1
+                    except:
+                        continue
+                
+                if hid_count > 0:
+                    logger.debug(f"Found {hid_count} USB HID input devices")
+                    usb_devices_found = True
+                        
+            except Exception as e:
+                logger.debug(f"Error checking USB HID devices: {e}")
+            
+            # For live server: Always consider scanner available if we have input devices
+            # This allows the system to work with any USB barcode scanner plugged in
+            if usb_devices_found:
+                logger.debug("✅ Local input devices detected - Scanner functionality available")
+                self.raspberry_pi_devices_available = True
+            else:
+                logger.debug("⚠️ No input devices detected - Scanner may not be connected")
+                # Still return True for live server to allow manual barcode entry
+                self.raspberry_pi_devices_available = True
+                
+            self.last_pi_check = current_time
+            return self.raspberry_pi_devices_available
+            
+        except Exception as e:
+            logger.debug(f"Error checking local scanner availability: {e}")
+            # For live server: Always return True to allow operation
+            self.raspberry_pi_devices_available = True
+            self.last_pi_check = current_time
+            return True
     
     def _start_auto_refresh_worker(self):
         """
@@ -303,8 +362,14 @@ class ConnectionManager:
                 }
                 message_json = json.dumps(message_data)
                 
-                # Skip Pi availability check - always proceed with sending
-                is_pi_available = True
+                # Check Pi availability first (highest priority)
+                is_pi_available = self.check_raspberry_pi_availability()
+                
+                if not is_pi_available:
+                    logger.info(f"Raspberry Pi offline - saving message locally for device {device_id}")
+                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
+                    status_msg = "🍓 Raspberry Pi offline - Message saved locally for retry when Pi is connected"
+                    return False, status_msg
                 
                 # Only check other connectivity if Pi is available
                 is_internet_online = self.is_connected_to_internet
@@ -362,7 +427,9 @@ class ConnectionManager:
             Tuple[bool, str]: (success, status_message)
         """
         try:
-            # Skip Pi availability check - always proceed
+            # Check Pi availability before sending
+            if not self.check_raspberry_pi_availability():
+                return False, "🍓 Raspberry Pi offline - Cannot send message"
             
             # Load configuration
             config = load_config()
@@ -428,16 +495,19 @@ class ConnectionManager:
             try:
                 time.sleep(60)  # Check every minute
                 
-                # Check internet connectivity only
+                # Check both internet and Pi connectivity
                 is_internet_online = self.check_internet_connectivity()
-                is_pi_available = True  # Always assume Pi is available
+                is_pi_available = self.check_raspberry_pi_availability()
                 
-                logger.debug(f"Retry worker check - Internet: {'✅' if is_internet_online else '❌'}")
+                logger.debug(f"Retry worker check - Internet: {'✅' if is_internet_online else '❌'}, Pi: {'✅' if is_pi_available else '❌'}")
                 
-                if is_internet_online:
+                if is_internet_online and is_pi_available:
                     self._process_unsent_messages_background()
                 else:
-                    logger.info("Skipping message retry - Internet offline")
+                    if not is_internet_online:
+                        logger.info("Skipping message retry - Internet offline")
+                    if not is_pi_available:
+                        logger.info("Skipping message retry - Raspberry Pi offline")
                     
             except Exception as e:
                 logger.error(f"Error in retry worker: {e}")
@@ -469,7 +539,10 @@ class ConnectionManager:
                     if not device_id or not barcode:
                         continue
                         
-                    # Skip Pi availability check - always proceed
+                    # Check Pi availability before sending each message
+                    if not self.check_raspberry_pi_availability():
+                        logger.info("Pi went offline during background processing - stopping")
+                        break
                         
                     # Try to send message
                     success, _ = self._send_message_now(device_id, barcode, quantity, "barcode_scan")
