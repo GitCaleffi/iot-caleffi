@@ -1283,32 +1283,49 @@ def check_local_pi_and_notify_server():
         dict: Status information including pi_attached (True/False) and notification result
     """
     try:
-        logger.info("🔍 Checking local Raspberry Pi attachment status...")
+        logger.info("🔍 Testing Pi status notification API (live server mode)...")
+        
+        # COMMENTED OUT FOR LIVE SERVER TESTING
+        # On live server, we don't want to check actual Pi connectivity
+        # Just test the notification API with mock data
         
         # Check if Pi is locally attached
-        pi_ip = get_primary_raspberry_pi_ip()
-        pi_attached = False
-        pi_details = {}
+        # pi_ip = get_primary_raspberry_pi_ip()
+        # pi_attached = False
+        # pi_details = {}
         
-        if pi_ip:
-            # Test local connectivity to Pi
-            discovery = NetworkDiscovery()
-            ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22)
-            web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000)
-            
-            # Pi is considered attached if at least one service is available
-            pi_attached = ssh_available or web_available
-            
-            pi_details = {
-                'ip': pi_ip,
-                'ssh_available': ssh_available,
-                'web_available': web_available,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            logger.info(f"📍 Pi Status: {'✅ Attached' if pi_attached else '❌ Not Attached'} at {pi_ip}")
-        else:
-            logger.info("📍 Pi Status: ❌ Not Found on local network")
+        # if pi_ip:
+        #     # Test local connectivity to Pi
+        #     discovery = NetworkDiscovery()
+        #     ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22)
+        #     web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000)
+        #     
+        #     # Pi is considered attached if at least one service is available
+        #     pi_attached = ssh_available or web_available
+        #     
+        #     pi_details = {
+        #         'ip': pi_ip,
+        #         'ssh_available': ssh_available,
+        #         'web_available': web_available,
+        #         'timestamp': datetime.now().isoformat()
+        #     }
+        #     
+        #     logger.info(f"📍 Pi Status: {'✅ Attached' if pi_attached else '❌ Not Attached'} at {pi_ip}")
+        # else:
+        #     logger.info("📍 Pi Status: ❌ Not Found on local network")
+        
+        # MOCK DATA FOR LIVE SERVER TESTING
+        pi_attached = True  # Test with True status
+        pi_ip = "192.168.1.18"  # Mock IP for testing
+        pi_details = {
+            'ip': pi_ip,
+            'ssh_available': True,
+            'web_available': False,
+            'timestamp': datetime.now().isoformat(),
+            'note': 'Mock data for live server API testing'
+        }
+        
+        logger.info(f"📍 Pi Status (MOCK): ✅ Testing with attached status at {pi_ip}")
         
         # Prepare notification payload
         notification_payload = {
