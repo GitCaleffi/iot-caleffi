@@ -114,23 +114,27 @@ def get_pi_status_api():
     }
 
 def is_scanner_connected():
-    """Checks if a USB barcode scanner is connected by checking input device names."""
+    """Checks if a USB barcode scanner is connected - for live server, always return True."""
     try:
-        # Command to find devices that look like a keyboard or scanner
-        command = "grep -E -i 'scanner|barcode|keyboard' /sys/class/input/event*/device/name"
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        # For live server deployment, skip physical scanner check
+        # The server acts as the barcode input interface
+        logger.info("📱 Live server mode: Virtual barcode scanner enabled")
+        return True
         
-        # If grep finds any matches, it returns a zero exit code
-        if result.returncode == 0 and result.stdout:
-            logger.info(f"Scanner check successful, found devices:\n{result.stdout.strip()}")
-            return True
-        else:
-            logger.warning("No barcode scanner detected via input device names.")
-            return False
+        # Original physical scanner detection (commented for live server)
+        # command = "grep -E -i 'scanner|barcode|keyboard' /sys/class/input/event*/device/name"
+        # result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        # 
+        # if result.returncode == 0 and result.stdout:
+        #     logger.info(f"Scanner check successful, found devices:\n{result.stdout.strip()}")
+        #     return True
+        # else:
+        #     logger.warning("No barcode scanner detected via input device names.")
+        #     return False
     except Exception as e:
         logger.error(f"Error checking for scanner: {e}")
-        # In case of error, assume not connected to be safe
-        return False
+        # For live server, return True even on error
+        return True
 
 def discover_raspberry_pi_devices():
     """Automatically discover Raspberry Pi devices on the local network."""
