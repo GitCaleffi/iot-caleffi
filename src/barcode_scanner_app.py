@@ -1287,35 +1287,15 @@ def refresh_pi_connection():
 def get_device_mac_address():
     """
     Get the current device's MAC address dynamically.
-    Works on both Raspberry Pi and other Linux systems.
+    Works on both Raspberry Pi and other Linux systems including live servers.
     
     Returns:
         str: MAC address if found, None otherwise
     """
-    try:
-        # Method 1: Check active network interfaces for MAC addresses
-        interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33']
-        for interface in interfaces:
-            try:
-                result = subprocess.run(
-                    ["cat", f"/sys/class/net/{interface}/address"],
-                    capture_output=True,
-                    text=True,
-                    timeout=3
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    mac = result.stdout.strip().lower()
-                    # Check if this is a valid MAC address (not all zeros)
-                    if mac and mac != "00:00:00:00:00:00" and ":" in mac:
-                        logger.info(f"📍 Device MAC address detected from {interface}: {mac}")
-                        return mac
-            except Exception:
-                continue
-    except Exception as e:
-        logger.warning(f"MAC address detection method 1 failed: {e}")
+    import re
     
+    # Method 1: Use ip link command (most reliable for servers)
     try:
-        # Method 2: Use ip link command
         result = subprocess.run(
             ["ip", "link", "show"],
             capture_output=True,
@@ -1323,7 +1303,6 @@ def get_device_mac_address():
             timeout=5
         )
         if result.returncode == 0:
-            import re
             # Look for MAC addresses in the output
             mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
             matches = re.findall(mac_pattern, result.stdout.lower())
@@ -1332,10 +1311,10 @@ def get_device_mac_address():
                     logger.info(f"📍 Device MAC address detected via ip link: {mac}")
                     return mac
     except Exception as e:
-        logger.warning(f"MAC address detection method 2 failed: {e}")
+        logger.warning(f"ip link method failed: {e}")
     
+    # Method 2: Use ifconfig command (fallback)
     try:
-        # Method 3: Fallback using ifconfig if available
         result = subprocess.run(
             ["ifconfig"],
             capture_output=True,
@@ -1343,7 +1322,6 @@ def get_device_mac_address():
             timeout=5
         )
         if result.returncode == 0:
-            import re
             # Look for MAC addresses in ifconfig output
             mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
             matches = re.findall(mac_pattern, result.stdout.lower())
@@ -1352,9 +1330,54 @@ def get_device_mac_address():
                     logger.info(f"📍 Device MAC address detected via ifconfig: {mac}")
                     return mac
     except Exception as e:
-        logger.warning(f"MAC address detection method 3 failed: {e}")
+        logger.warning(f"ifconfig method failed: {e}")
     
-    logger.error("❌ Could not detect device MAC address")
+    # Method 3: Check /sys/class/net files (if available)
+    try:
+        interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33', 'eno1', 'ens160']
+        for interface in interfaces:
+            try:
+                with open(f"/sys/class/net/{interface}/address", 'r') as f:
+                    mac = f.read().strip().lower()
+                    if mac and mac != "00:00:00:00:00:00" and ":" in mac:
+                        logger.info(f"📍 Device MAC address detected from {interface}: {mac}")
+                        return mac
+            except (FileNotFoundError, PermissionError):
+                continue
+    except Exception as e:
+        logger.debug(f"/sys/class/net method failed: {e}")
+    
+    # Method 4: Use hostname -I + ARP lookup (server-friendly)
+    try:
+        # Get local IP first
+        ip_result = subprocess.run(
+            ["hostname", "-I"],
+            capture_output=True,
+            text=True,
+            timeout=3
+        )
+        if ip_result.returncode == 0 and ip_result.stdout.strip():
+            local_ip = ip_result.stdout.strip().split()[0]
+            
+            # Try to find MAC via ARP for local IP
+            arp_result = subprocess.run(
+                ["arp", "-n", local_ip],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if arp_result.returncode == 0:
+                # Parse ARP output for MAC
+                mac_match = re.search(r'([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})', arp_result.stdout.lower())
+                if mac_match:
+                    mac = mac_match.group(1)
+                    if mac != "00:00:00:00:00:00":
+                        logger.info(f"📍 Device MAC address detected via ARP lookup: {mac}")
+                        return mac
+    except Exception as e:
+        logger.debug(f"ARP lookup method failed: {e}")
+    
+    logger.error("❌ Could not detect device MAC address using any method")
     return None
 
 def get_device_ip():

@@ -144,30 +144,10 @@ class NetworkDiscovery:
     
     def _get_local_device_mac(self) -> str:
         """Get the MAC address of the local device dynamically"""
-        try:
-            # Method 1: Check active network interfaces for MAC addresses
-            interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33']
-            for interface in interfaces:
-                try:
-                    result = subprocess.run(
-                        ["cat", f"/sys/class/net/{interface}/address"],
-                        capture_output=True,
-                        text=True,
-                        timeout=3
-                    )
-                    if result.returncode == 0 and result.stdout.strip():
-                        mac = result.stdout.strip().lower()
-                        # Check if this is a valid MAC address (not all zeros)
-                        if mac and mac != "00:00:00:00:00:00" and ":" in mac:
-                            logger.debug(f"Found MAC address from {interface}: {mac}")
-                            return mac
-                except Exception:
-                    continue
-        except Exception as e:
-            logger.warning(f"MAC address detection method 1 failed: {e}")
+        import re
         
+        # Method 1: Use ip link command (most reliable for servers)
         try:
-            # Method 2: Use ip link command
             result = subprocess.run(
                 ["ip", "link", "show"],
                 capture_output=True,
@@ -175,18 +155,72 @@ class NetworkDiscovery:
                 timeout=5
             )
             if result.returncode == 0:
-                import re
                 # Look for MAC addresses in the output
                 mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
                 matches = re.findall(mac_pattern, result.stdout.lower())
                 for mac in matches:
                     if mac != "00:00:00:00:00:00":
-                        logger.debug(f"Found MAC address via ip link: {mac}")
+                        logger.info(f"📍 Found MAC address via ip link: {mac}")
                         return mac
         except Exception as e:
-            logger.warning(f"MAC address detection method 2 failed: {e}")
+            logger.warning(f"ip link method failed: {e}")
         
-        logger.warning("Could not detect local device MAC address")
+        # Method 2: Use ifconfig command (fallback)
+        try:
+            result = subprocess.run(
+                ["ifconfig"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                # Look for MAC addresses in ifconfig output
+                mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+                matches = re.findall(mac_pattern, result.stdout.lower())
+                for mac in matches:
+                    if mac != "00:00:00:00:00:00":
+                        logger.info(f"📍 Found MAC address via ifconfig: {mac}")
+                        return mac
+        except Exception as e:
+            logger.warning(f"ifconfig method failed: {e}")
+        
+        # Method 3: Check /sys/class/net files (if available)
+        try:
+            interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33', 'eno1', 'ens160']
+            for interface in interfaces:
+                try:
+                    with open(f"/sys/class/net/{interface}/address", 'r') as f:
+                        mac = f.read().strip().lower()
+                        if mac and mac != "00:00:00:00:00:00" and ":" in mac:
+                            logger.info(f"📍 Found MAC address from {interface}: {mac}")
+                            return mac
+                except (FileNotFoundError, PermissionError):
+                    continue
+        except Exception as e:
+            logger.debug(f"/sys/class/net method failed: {e}")
+        
+        # Method 4: Use cat /proc/net/arp (alternative approach)
+        try:
+            result = subprocess.run(
+                ["cat", "/proc/net/arp"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                # Parse ARP table for local device info
+                lines = result.stdout.strip().split('\n')[1:]  # Skip header
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        mac = parts[3].lower()
+                        if mac and mac != "00:00:00:00:00:00" and ":" in mac and len(mac) == 17:
+                            logger.info(f"📍 Found MAC address via /proc/net/arp: {mac}")
+                            return mac
+        except Exception as e:
+            logger.debug(f"/proc/net/arp method failed: {e}")
+        
+        logger.error("❌ Could not detect local device MAC address using any method")
         return None
     
     def _test_ip_connectivity(self, ip: str) -> bool:
