@@ -263,6 +263,13 @@ class HubClient:
         return False
 
 
+    def send_barcode_message(self, barcode, message_data=None):
+        """Send barcode message to IoT Hub - compatibility method"""
+        if message_data:
+            return self.send_message(message_data, message_data.get('deviceId', self.device_id))
+        else:
+            return self.send_message(barcode, self.device_id)
+
     def get_status(self):
         """Get current IoT Hub client status"""
         return {

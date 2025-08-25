@@ -72,7 +72,7 @@ from utils.dynamic_device_id import generate_dynamic_device_id
 from utils.network_discovery import NetworkDiscovery
 from utils.connection_manager import get_connection_manager
 from utils.mqtt_device_discovery import get_mqtt_discovery, discover_raspberry_pi_devices, get_primary_raspberry_pi_ip as mqtt_get_primary_pi_ip
-from utils.auto_ip_detector import start_auto_ip_detection, get_auto_detected_ip
+# Removed auto IP detection - not needed for local MAC address mode
 
 # Import IoT Hub registry manager for device registration
 try:
@@ -1612,17 +1612,12 @@ auto_register_device_to_server()
 logger.info(f"✅ Device ready for barcode scanning")
 
 if __name__ == "__main__":
-    # Initialize connection manager with auto-refresh for automatic Pi detection
-    logger.info("🚀 Starting Barcode Scanner API with automatic Pi detection...")
+    # Initialize connection manager without Pi detection
+    logger.info("🚀 Starting Barcode Scanner API in local mode...")
     connection_manager = get_connection_manager()
-    logger.info("✅ Auto-refresh connection monitoring initialized")
-    logger.info("🔄 Pi connectivity will be automatically detected every 10 seconds")
-    logger.info("📡 No need to restart API - connection changes detected automatically!")
+    logger.info("✅ Connection manager initialized for local operation")
     
-    # Start automatic IP detection service for plug-and-play Pi detection
-    logger.info("🔍 Starting automatic Raspberry Pi IP detection service...")
-    start_auto_ip_detection()
-    logger.info("✅ Auto IP detection service started - Pi devices will be detected automatically")
-    logger.info("🔌 Plug-and-play ready: Connect any Pi and it will be detected automatically!")
+    # Auto IP detection disabled - using local MAC address mode
+    logger.info("✅ Local MAC address mode active - no network discovery needed")
     
     app.launch(server_name="0.0.0.0", server_port=7861)
