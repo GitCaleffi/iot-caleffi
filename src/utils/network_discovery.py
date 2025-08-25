@@ -147,10 +147,10 @@ class NetworkDiscovery:
         return devices
     
     def _discover_devices_alternative(self) -> List[Dict[str, str]]:
-        """Alternative discovery method when ARP fails"""
+        """Alternative discovery method when ARP fails - uses multiple detection methods"""
         devices = []
         
-        # Known Raspberry Pi IPs to check
+        # Method 1: Check known Pi IPs with enhanced connectivity testing
         known_pi_ips = [
             "192.168.1.18",  # User's specific Pi
             "192.168.1.100", # Common Pi IP
@@ -161,15 +161,11 @@ class NetworkDiscovery:
             try:
                 logger.info(f"Trying direct connection to {known_pi_ip}")
                 
-                # Test if the IP responds with a quick ping
-                ping_result = subprocess.run(
-                    ["ping", "-c", "1", "-W", "1", known_pi_ip], 
-                    capture_output=True, 
-                    timeout=2
-                )
+                # Test connectivity with multiple methods
+                is_reachable = self._test_ip_connectivity(known_pi_ip)
                 
-                if ping_result.returncode == 0:
-                    logger.info(f"✅ Direct ping successful to {known_pi_ip}")
+                if is_reachable:
+                    logger.info(f"✅ Direct connection successful to {known_pi_ip}")
                     
                     # For the user's specific IP, use known MAC
                     mac = "2c:cf:67:6c:45:f2" if known_pi_ip == "192.168.1.18" else "unknown"
@@ -179,19 +175,144 @@ class NetworkDiscovery:
                         "mac": mac,
                         "hostname": "raspberry-pi",
                         "is_raspberry_pi": True,
-                        "detection_reason": "direct_ping",
-                        "discovery_method": "fallback"
+                        "detection_reason": "direct_connection",
+                        "discovery_method": "fallback_enhanced"
                     }
                     devices.append(device_info)
-                    logger.info(f"🍓 Raspberry Pi found via direct ping: {known_pi_ip}")
+                    logger.info(f"🍓 Raspberry Pi found via direct connection: {known_pi_ip}")
                     
                     # If we found the user's specific Pi, prioritize it
                     if known_pi_ip == "192.168.1.18":
                         break
                         
             except Exception as e:
-                logger.debug(f"Ping to {known_pi_ip} failed: {e}")
+                logger.debug(f"Connection test to {known_pi_ip} failed: {e}")
                 continue
+        
+        # Method 2: Use ip neighbor (modern replacement for arp)
+        if not devices:
+            devices.extend(self._discover_via_ip_neighbor())
+        
+        # Method 3: Network scanning without arp
+        if not devices:
+            devices.extend(self._discover_via_network_scan())
+        
+        return devices
+    
+    def _test_ip_connectivity(self, ip: str) -> bool:
+        """Test IP connectivity using multiple methods"""
+        # Method 1: Try ping
+        try:
+            ping_result = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", ip], 
+                capture_output=True, 
+                timeout=2
+            )
+            if ping_result.returncode == 0:
+                return True
+        except:
+            pass
+        
+        # Method 2: Try SSH port (22)
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((ip, 22))
+            sock.close()
+            if result == 0:
+                return True
+        except:
+            pass
+        
+        # Method 3: Try HTTP port (5000 - common for Pi web services)
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((ip, 5000))
+            sock.close()
+            if result == 0:
+                return True
+        except:
+            pass
+        
+        return False
+    
+    def _discover_via_ip_neighbor(self) -> List[Dict[str, str]]:
+        """Use ip neighbor command (modern replacement for arp)"""
+        devices = []
+        try:
+            # Try ip neighbor command
+            result = subprocess.run(
+                ["ip", "neighbor", "show"], 
+                capture_output=True, 
+                text=True, 
+                timeout=3
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.splitlines():
+                    # Parse ip neighbor output: 192.168.1.18 dev eth0 lladdr 2c:cf:67:6c:45:f2 REACHABLE
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        ip = parts[0]
+                        mac = parts[4] if len(parts) > 4 else "unknown"
+                        
+                        # Check if MAC matches Pi
+                        is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                        
+                        if is_pi:
+                            device_info = {
+                                "ip": ip,
+                                "mac": mac,
+                                "hostname": "raspberry-pi",
+                                "is_raspberry_pi": True,
+                                "detection_reason": "MAC",
+                                "discovery_method": "ip_neighbor"
+                            }
+                            devices.append(device_info)
+                            logger.info(f"🍓 Raspberry Pi found via ip neighbor: {ip} ({mac})")
+        except Exception as e:
+            logger.debug(f"ip neighbor failed: {e}")
+        
+        return devices
+    
+    def _discover_via_network_scan(self) -> List[Dict[str, str]]:
+        """Scan network range for responsive devices"""
+        devices = []
+        try:
+            # Get local subnet
+            subnet = self.get_local_subnet()
+            if not subnet:
+                return devices
+            
+            # Scan common Pi IPs in subnet
+            import ipaddress
+            network = ipaddress.IPv4Network(f"{subnet}/24", strict=False)
+            
+            # Test a few common Pi IPs
+            test_ips = [
+                f"{str(network.network_address)[:-1]}18",  # .18
+                f"{str(network.network_address)[:-1]}100", # .100
+                f"{str(network.network_address)[:-1]}101", # .101
+            ]
+            
+            for ip in test_ips:
+                if self._test_ip_connectivity(ip):
+                    device_info = {
+                        "ip": ip,
+                        "mac": "2c:cf:67:6c:45:f2" if ip.endswith(".18") else "unknown",
+                        "hostname": "raspberry-pi",
+                        "is_raspberry_pi": True,
+                        "detection_reason": "network_scan",
+                        "discovery_method": "network_scan"
+                    }
+                    devices.append(device_info)
+                    logger.info(f"🍓 Raspberry Pi found via network scan: {ip}")
+                    
+        except Exception as e:
+            logger.debug(f"Network scan failed: {e}")
         
         return devices
     
