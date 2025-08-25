@@ -158,10 +158,13 @@ class HubClient:
 
         # First check basic internet connectivity
         try:
-            import subprocess
-            result = subprocess.run(['ping', '-c', '1', '-W', '3', '8.8.8.8'], 
-                                  capture_output=True, text=True, timeout=5)
-            if result.returncode != 0:
+            # Use Python socket connection instead of ping for live server compatibility
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(5)
+                result = sock.connect_ex(("8.8.8.8", 53))  # DNS port
+                
+            if result != 0:
                 logger.error("No internet connectivity - cannot send to IoT Hub")
                 return False
         except Exception as e:

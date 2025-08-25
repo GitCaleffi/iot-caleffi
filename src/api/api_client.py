@@ -43,20 +43,18 @@ class ApiClient:
     
     def is_online(self) -> bool:
         """
-        Check if the device has internet connectivity using ping.
+        Check if the device has internet connectivity using Python socket.
         
         Returns:
             bool: True if online, False otherwise
         """
-        import subprocess
+        import socket
         try:
-            # Try to ping Google's DNS server (more reliable than HTTP requests)
-            result = subprocess.run(
-                ["ping", "-c", "1", "-W", "3", "8.8.8.8"], 
-                capture_output=True, 
-                timeout=5
-            )
-            return result.returncode == 0
+            # Use Python socket connection for live server compatibility
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(5)
+                result = sock.connect_ex(("8.8.8.8", 53))  # DNS port
+            return result == 0
         except Exception as e:
             logger.debug(f"Connectivity check failed: {e}")
             return False
