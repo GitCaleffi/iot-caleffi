@@ -486,20 +486,21 @@ def process_unsent_messages_ui():
     # Check if Raspberry Pi is connected using connection manager for consistency
     from utils.connection_manager import get_connection_manager
     connection_manager = get_connection_manager()
-    if not connection_manager.check_raspberry_pi_availability():
-        error_msg = """🟡 **Cannot Process Unsent Messages**
+    pi_available = connection_manager.check_raspberry_pi_availability()
+    
+    if not pi_available:
+        logger.warning("Process unsent messages blocked: Raspberry Pi not connected")
+        blink_led("red")
+        return """❌ **Operation Failed: Raspberry Pi Not Connected**
 
-**Status:** Raspberry Pi is currently offline.
+Cannot process unsent messages while Raspberry Pi is offline.
+Messages will remain in local database until Pi reconnects.
+Please ensure the Raspberry Pi device is connected and reachable on the network.
 
-Unsent messages will be processed automatically when the Raspberry Pi is back online. No action is needed at this time."""
-        logger.warning("Processing of unsent messages blocked: Raspberry Pi not connected")
-        blink_led("yellow")
-        yield error_msg
-        return
-        
-    if not is_scanner_connected():
-        yield "⚠️ No barcode scanner detected. Please connect your device."
-        return
+🔴 Red LED indicates Pi connection failure"""
+    
+    logger.info("Processing unsent messages with Pi connection verified")
+    
     # Initial loading message so the user sees a loader immediately
     yield "⏳ Processing unsent messages to IoT Hub... Please wait."
     try:
@@ -618,24 +619,25 @@ def blink_led(color):
 
 def generate_registration_token():
     """Prepare for device registration (no token required)"""
-    # COMMENTED OUT FOR LIVE SERVER DEPLOYMENT
-    # On live server, we don't want to check actual Pi connectivity
     
     # Check Raspberry Pi connection first
-    # connection_manager = get_connection_manager()
-    # pi_ip = get_primary_raspberry_pi_ip()
-    # pi_connected = connection_manager.check_raspberry_pi_availability()
-    # 
-    # if not pi_connected:
-    #     error_msg = "❌ **Operation Failed: Raspberry Pi Not Connected**\n\n"
-    #     error_msg += f"**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline\n\n"
-    #     error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before registration."
-    #     logger.warning("Registration preparation blocked: Raspberry Pi not connected")
-    #     blink_led("red")
-    #     return error_msg
+    from utils.connection_manager import get_connection_manager
+    connection_manager = get_connection_manager()
+    pi_available = connection_manager.check_raspberry_pi_availability()
     
-    logger.info("🔍 Registration preparation (live server mode - Pi check disabled)")
-    pi_ip = "192.168.1.18"  # Mock IP for live server
+    if not pi_available:
+        logger.warning("Registration preparation blocked: Raspberry Pi not connected")
+        blink_led("red")
+        return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
+
+**Status:** Cannot prepare device registration
+**Reason:** Raspberry Pi device not reachable on network
+
+Please ensure the Raspberry Pi device is connected and reachable on the network before registration.
+
+🔴 Red LED indicates Pi connection failure"""
+    
+    logger.info("🔍 Registration preparation - Pi connection verified")
     
     if not is_scanner_connected():
         return "⚠️ No barcode scanner detected. Please connect your device."
@@ -643,7 +645,7 @@ def generate_registration_token():
     try:
         response_msg = f"""✅ Ready for Device Registration!
 
-**Pi Status:** {pi_ip} - Connected ✅ (Live Server Mode)
+**Pi Status:** Connected ✅
 **Scanner Status:** Connected ✅
 
 **Instructions:**
@@ -676,7 +678,25 @@ def confirm_registration(registration_token, device_id):
     logger.info("🔒 This is REGISTRATION ONLY operation - no barcode scans or inventory changes")
     logger.info("🔒 REGISTRATION_IN_PROGRESS flag set to TRUE - blocking all quantity updates")
     
-    # COMMENTED OUT FOR LIVE SERVER DEPLOYMENT
+    # Check Raspberry Pi connection first
+    from utils.connection_manager import get_connection_manager
+    connection_manager = get_connection_manager()
+    pi_available = connection_manager.check_raspberry_pi_availability()
+    
+    if not pi_available:
+        logger.warning("Device registration blocked: Raspberry Pi not connected")
+        # Clear registration flag on error
+        with registration_lock:
+            REGISTRATION_IN_PROGRESS = False
+        blink_led("red")
+        return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
+
+**Device ID:** {device_id}
+**Status:** Registration cancelled - Pi not reachable
+
+Please ensure the Raspberry Pi device is connected and reachable on the network before registration.
+
+🔴 Red LED indicates Pi connection failure"""
     # On live server, we don't want to check actual Pi connectivity
     
     # 1. First check Raspberry Pi connection before proceeding
@@ -692,8 +712,8 @@ def confirm_registration(registration_token, device_id):
     #     error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before registration."
     #     logger.warning("Registration blocked: Raspberry Pi not connected")
     
-    logger.info("🔍 Device registration (live server mode - Pi check disabled)")
-    pi_ip = "192.168.1.18"  # Mock IP for live server
+    logger.info("📍 Raspberry Pi connection verified for registration")
+    pi_ip = get_primary_raspberry_pi_ip() or "Unknown"
     
     # 2. Check if barcode scanner is connected (if needed)
     # Note: Removed scanner check as it may not be required for all setups
@@ -889,13 +909,51 @@ def process_barcode_scan(barcode, device_id=None):
 
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
+    # Check Raspberry Pi connection first
+    from utils.connection_manager import get_connection_manager
+    connection_manager = get_connection_manager()
+    pi_available = connection_manager.check_raspberry_pi_availability()
+    
+    if not pi_available:
+        logger.warning("❌ Raspberry Pi not connected - saving message locally")
+        try:
+            # Save scan to local database for retry when Pi is available
+            timestamp = datetime.now(timezone.utc)
+            local_db.save_barcode_scan(device_id, barcode, timestamp)
+            
+            # Save as unsent message for retry
+            message_data = {
+                "deviceId": device_id,
+                "barcode": barcode,
+                "timestamp": timestamp.isoformat(),
+                "quantity": 1,
+                "messageType": "barcode_scan"
+            }
+            local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
+            
+            blink_led("red")
+            return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
+
+**Barcode:** {barcode}
+**Device ID:** {device_id}
+**Status:** Saved locally - will send when Pi reconnects
+**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+
+Please ensure the Raspberry Pi device is connected and reachable on the network.
+
+🔴 Red LED indicates Pi connection failure"""
+        except Exception as e:
+            logger.error(f"❌ Error saving barcode locally: {e}")
+            blink_led("red")
+            return f"❌ Error: Could not save barcode. {str(e)[:100]}"
+
     try:
         # Save scan to local database
         timestamp = datetime.now(timezone.utc)
         local_db.save_barcode_scan(device_id, barcode, timestamp)
         logger.info(f"💾 Saved barcode scan locally: {barcode}")
         
-        # Try to send to IoT Hub
+        # Try to send to IoT Hub (only if Pi is connected)
         try:
             # Get or create IoT Hub connection
             registration_service = get_dynamic_registration_service()
