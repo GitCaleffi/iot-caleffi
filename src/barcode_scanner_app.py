@@ -122,8 +122,11 @@ def auto_register_device_to_server():
             "ip_address": local_ip
         }
         
-        # Send to live server
-        live_server_url = "https://iot.caleffionline.it/api/pi-device-register"
+        # Send to live server - try multiple endpoints
+        live_server_urls = [
+            "http://localhost:5000/api/pi-device-register",  # Local web app first
+            "https://iot.caleffionline.it/api/pi-device-register"  # Live server fallback
+        ]
         
         logger.info(f"📤 Auto-registering device {device_id} to live server...")
         
@@ -900,7 +903,7 @@ def process_barcode_scan(barcode, device_id=None):
                     "quantity": 1
                 }
                 
-                hub_client.send_barcode_message(barcode, message_data)
+                hub_client.send_message(message_data, device_id)
                 logger.info(f"✅ Sent barcode to IoT Hub: {barcode}")
                 
                 # Mark as sent in local database
