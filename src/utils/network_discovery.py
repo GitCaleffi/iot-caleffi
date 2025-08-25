@@ -227,9 +227,59 @@ class NetworkDiscovery:
         return None
     
     def _get_server_ip(self) -> str:
-        """Get the actual server IP address"""
+        """Get the actual server IP address using Python socket methods"""
+        import socket
+        
         try:
-            # Method 1: Use hostname -I (most reliable)
+            # Method 1: Use Python socket to connect to external IP
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Connect to Google DNS (doesn't actually send data)
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                if local_ip and not local_ip.startswith('127.'):
+                    logger.info(f"📍 Server IP detected via socket: {local_ip}")
+                    return local_ip
+        except Exception as e:
+            logger.debug(f"Socket method failed: {e}")
+        
+        try:
+            # Method 2: Use socket.gethostbyname with hostname
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+            if local_ip and not local_ip.startswith('127.'):
+                logger.info(f"📍 Server IP detected via hostname: {local_ip}")
+                return local_ip
+        except Exception as e:
+            logger.debug(f"gethostbyname method failed: {e}")
+        
+        try:
+            # Method 3: Read from /proc/net/route (Linux-specific)
+            with open('/proc/net/route', 'r') as f:
+                for line in f:
+                    fields = line.strip().split()
+                    if len(fields) >= 8 and fields[1] == '00000000':  # Default route
+                        interface = fields[0]
+                        # Get IP for this interface from /proc/net/fib_trie or similar
+                        break
+            
+            # Try to get IP from network interfaces using /sys/class/net
+            interfaces = ['eth0', 'eno1', 'ens160', 'enp0s3']
+            for iface in interfaces:
+                try:
+                    result = subprocess.run(
+                        ["cat", f"/proc/net/fib_trie"],
+                        capture_output=True,
+                        text=True,
+                        timeout=2
+                    )
+                    # This is complex parsing, skip for now
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"proc/net/route method failed: {e}")
+        
+        try:
+            # Method 4: Use hostname command if available
             result = subprocess.run(
                 ["hostname", "-I"],
                 capture_output=True,
@@ -237,34 +287,13 @@ class NetworkDiscovery:
                 timeout=3
             )
             if result.returncode == 0 and result.stdout.strip():
-                # Get first IPv4 address (ignore IPv6)
                 ips = result.stdout.strip().split()
                 for ip in ips:
-                    if '.' in ip and not ip.startswith('127.'):  # IPv4 and not localhost
-                        logger.info(f"📍 Server IP detected: {ip}")
+                    if '.' in ip and not ip.startswith('127.'):
+                        logger.info(f"📍 Server IP detected via hostname: {ip}")
                         return ip
         except Exception as e:
-            logger.debug(f"hostname -I method failed: {e}")
-        
-        try:
-            # Method 2: Use ip route to get default interface IP
-            result = subprocess.run(
-                ["ip", "route", "get", "8.8.8.8"],
-                capture_output=True,
-                text=True,
-                timeout=3
-            )
-            if result.returncode == 0:
-                import re
-                # Extract IP from route output
-                ip_match = re.search(r'src ([0-9.]+)', result.stdout)
-                if ip_match:
-                    ip = ip_match.group(1)
-                    if not ip.startswith('127.'):
-                        logger.info(f"📍 Server IP detected via route: {ip}")
-                        return ip
-        except Exception as e:
-            logger.debug(f"ip route method failed: {e}")
+            logger.debug(f"hostname command failed: {e}")
         
         logger.warning("Could not detect server IP, using localhost")
         return "127.0.0.1"
