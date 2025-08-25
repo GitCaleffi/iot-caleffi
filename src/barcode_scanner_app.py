@@ -1284,85 +1284,211 @@ def refresh_pi_connection():
     
     return status_display
 
+def get_device_ip():
+    """
+    Get the current device's IP address using multiple methods.
+    Works on both Raspberry Pi and other Linux systems.
+    
+    Returns:
+        str: IP address if found, None otherwise
+    """
+    try:
+        # Method 1: Use hostname -I (most reliable for Pi)
+        result = subprocess.run(
+            ["hostname", "-I"], 
+            capture_output=True, 
+            text=True, 
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            # Get first IPv4 address (ignore IPv6)
+            ips = result.stdout.strip().split()
+            for ip in ips:
+                if '.' in ip and not ip.startswith('127.'):  # IPv4 and not localhost
+                    logger.info(f"📍 Device IP detected via hostname -I: {ip}")
+                    return ip
+    except Exception as e:
+        logger.warning(f"hostname -I method failed: {e}")
+    
+    try:
+        # Method 2: Check multiple network interfaces
+        interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33']
+        for interface in interfaces:
+            result = subprocess.run(
+                f"ip addr show {interface} | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1",
+                shell=True, 
+                capture_output=True, 
+                text=True, 
+                timeout=5
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                ip = result.stdout.strip()
+                if ip and not ip.startswith('127.'):
+                    logger.info(f"📍 Device IP detected via {interface}: {ip}")
+                    return ip
+    except Exception as e:
+        logger.warning(f"Interface scanning method failed: {e}")
+    
+    try:
+        # Method 3: Use ip route (fallback)
+        result = subprocess.run(
+            "ip route get 8.8.8.8 | awk '{print $7}' | head -1",
+            shell=True, 
+            capture_output=True, 
+            text=True, 
+            timeout=5
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            ip = result.stdout.strip()
+            if ip and not ip.startswith('127.'):
+                logger.info(f"📍 Device IP detected via route: {ip}")
+                return ip
+    except Exception as e:
+        logger.warning(f"Route method failed: {e}")
+    
+    logger.error("❌ Could not detect device IP address")
+    return None
+
+
 def check_local_pi_and_notify_server():
     """
-    Check if Raspberry Pi is locally attached and send notification to server.
-    This function only checks local network connectivity, not live server connection.
+    Check if Raspberry Pi is locally attached and send notification to IoT Hub.
+    Uses improved IP detection and integrates with existing IoT Hub system.
     
     Returns:
         dict: Status information including pi_attached (True/False) and notification result
     """
     try:
-        logger.info("🔍 Testing Pi status notification API (live server mode)...")
+        logger.info("🔍 Checking Pi device status and sending to IoT Hub...")
         
-        # COMMENTED OUT FOR LIVE SERVER TESTING
-        # On live server, we don't want to check actual Pi connectivity
-        # Just test the notification API with mock data
+        # Get current device IP address
+        device_ip = get_device_ip()
+        pi_attached = device_ip is not None
         
-        # Check if Pi is locally attached
-        # pi_ip = get_primary_raspberry_pi_ip()
-        # pi_attached = False
-        # pi_details = {}
+        # Generate unique device ID
+        device_id = generate_dynamic_device_id()
         
-        # if pi_ip:
-        #     # Test local connectivity to Pi
-        #     discovery = NetworkDiscovery()
-        #     ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22)
-        #     web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000)
-        #     
-        #     # Pi is considered attached if at least one service is available
-        #     pi_attached = ssh_available or web_available
-        #     
-        #     pi_details = {
-        #         'ip': pi_ip,
-        #         'ssh_available': ssh_available,
-        #         'web_available': web_available,
-        #         'timestamp': datetime.now().isoformat()
-        #     }
-        #     
-        #     logger.info(f"📍 Pi Status: {'✅ Attached' if pi_attached else '❌ Not Attached'} at {pi_ip}")
-        # else:
-        #     logger.info("📍 Pi Status: ❌ Not Found on local network")
-        
-        # MOCK DATA FOR LIVE SERVER TESTING
-        pi_attached = True  # Test with True status
-        pi_ip = "192.168.1.18"  # Mock IP for testing
         pi_details = {
-            'ip': pi_ip,
-            'ssh_available': True,
-            'web_available': False,
+            'ip': device_ip,
+            'device_id': device_id,
             'timestamp': datetime.now().isoformat(),
-            'note': 'Mock data for live server API testing'
+            'detection_method': 'hostname_command' if device_ip else 'failed'
         }
         
-        logger.info(f"📍 Pi Status (MOCK): ✅ Testing with attached status at {pi_ip}")
+        if pi_attached:
+            logger.info(f"📍 Pi Status: ✅ Device Connected at {device_ip}")
+        else:
+            logger.info("📍 Pi Status: ❌ Device Not Connected - No IP detected")
         
-        # Prepare notification payload
-        notification_payload = {
+        # Send to IoT Hub instead of external API
+        iot_result = _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details)
+        
+        # Also try external API as backup
+        api_result = _send_pi_status_notification({
             'pi_attached': pi_attached,
-            'device_id': generate_dynamic_device_id(),
+            'device_id': device_id,
             'timestamp': datetime.now().isoformat(),
             'pi_details': pi_details,
-            'check_type': 'local_attachment'
-        }
-        
-        # Send notification to server
-        notification_result = _send_pi_status_notification(notification_payload)
+            'check_type': 'device_status_check'
+        })
         
         # Prepare response
         response = {
             'pi_attached': pi_attached,
-            'pi_ip': pi_ip if pi_attached else None,
-            'notification_sent': notification_result['success'],
-            'notification_details': notification_result,
+            'pi_ip': device_ip,
+            'device_id': device_id,
+            'iot_hub_sent': iot_result['success'],
+            'api_notification_sent': api_result['success'],
+            'iot_hub_details': iot_result,
+            'api_details': api_result,
             'timestamp': datetime.now().isoformat()
         }
         
         status_emoji = "✅" if pi_attached else "❌"
-        notification_emoji = "📤" if notification_result['success'] else "⚠️"
+        iot_emoji = "📤" if iot_result['success'] else "⚠️"
+        api_emoji = "📤" if api_result['success'] else "⚠️"
         
-        logger.info(f"{status_emoji} Pi Attachment Check Complete: {pi_attached}")
-        logger.info(f"{notification_emoji} Server Notification: {'Sent' if notification_result['success'] else 'Failed'}")
+        logger.info(f"{status_emoji} Pi Status Check Complete: {pi_attached}")
+        logger.info(f"{iot_emoji} IoT Hub Notification: {'Sent' if iot_result['success'] else 'Failed'}")
+        logger.info(f"{api_emoji} API Notification: {'Sent' if api_result['success'] else 'Failed'}")
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking Pi status: {e}")
+        return {
+            'pi_attached': False,
+            'pi_ip': None,
+            'device_id': None,
+            'iot_hub_sent': False,
+            'api_notification_sent': False,
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }
+
+
+def _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details):
+    """
+    Send Pi status to IoT Hub using existing hub client.
+    
+    Args:
+        device_id (str): Device identifier
+        pi_attached (bool): Whether Pi is attached
+        pi_details (dict): Pi connection details
+        
+    Returns:
+        dict: Result of IoT Hub send attempt
+    """
+    try:
+        # Create message payload for IoT Hub
+        message_data = {
+            "messageType": "device_status",
+            "deviceId": device_id,
+            "status": "connected" if pi_attached else "disconnected",
+            "ip_address": pi_details.get('ip'),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "detection_method": pi_details.get('detection_method'),
+            "device_info": {
+                "pi_attached": pi_attached,
+                "connection_details": pi_details
+            }
+        }
+        
+        # Get dynamic registration service for device connection
+        registration_service = get_dynamic_registration_service()
+        device_connection_string = registration_service.register_device_with_azure(device_id)
+        
+        if not device_connection_string:
+            logger.error(f"❌ Failed to get device connection string for {device_id}")
+            return {
+                'success': False,
+                'error': 'Failed to get device connection string'
+            }
+        
+        # Initialize IoT Hub client and send message
+        hub_client = HubClient(device_connection_string)
+        result = hub_client.send_message(message_data)
+        
+        if result:
+            logger.info(f"✅ Pi status sent to IoT Hub for device {device_id}")
+            return {
+                'success': True,
+                'device_id': device_id,
+                'message_type': 'device_status'
+            }
+        else:
+            logger.error(f"❌ Failed to send Pi status to IoT Hub for device {device_id}")
+            return {
+                'success': False,
+                'error': 'IoT Hub send failed'
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ Error sending Pi status to IoT Hub: {e}")
+        return {
+            'success': False,
+            'error': str(e)
+        }
         
         return response
         
