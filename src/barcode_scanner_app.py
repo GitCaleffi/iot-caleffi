@@ -1284,6 +1284,79 @@ def refresh_pi_connection():
     
     return status_display
 
+def get_device_mac_address():
+    """
+    Get the current device's MAC address dynamically.
+    Works on both Raspberry Pi and other Linux systems.
+    
+    Returns:
+        str: MAC address if found, None otherwise
+    """
+    try:
+        # Method 1: Check active network interfaces for MAC addresses
+        interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33']
+        for interface in interfaces:
+            try:
+                result = subprocess.run(
+                    ["cat", f"/sys/class/net/{interface}/address"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    mac = result.stdout.strip().lower()
+                    # Check if this is a valid MAC address (not all zeros)
+                    if mac and mac != "00:00:00:00:00:00" and ":" in mac:
+                        logger.info(f"📍 Device MAC address detected from {interface}: {mac}")
+                        return mac
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"MAC address detection method 1 failed: {e}")
+    
+    try:
+        # Method 2: Use ip link command
+        result = subprocess.run(
+            ["ip", "link", "show"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            import re
+            # Look for MAC addresses in the output
+            mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+            matches = re.findall(mac_pattern, result.stdout.lower())
+            for mac in matches:
+                if mac != "00:00:00:00:00:00":
+                    logger.info(f"📍 Device MAC address detected via ip link: {mac}")
+                    return mac
+    except Exception as e:
+        logger.warning(f"MAC address detection method 2 failed: {e}")
+    
+    try:
+        # Method 3: Fallback using ifconfig if available
+        result = subprocess.run(
+            ["ifconfig"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            import re
+            # Look for MAC addresses in ifconfig output
+            mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+            matches = re.findall(mac_pattern, result.stdout.lower())
+            for mac in matches:
+                if mac != "00:00:00:00:00:00":
+                    logger.info(f"📍 Device MAC address detected via ifconfig: {mac}")
+                    return mac
+    except Exception as e:
+        logger.warning(f"MAC address detection method 3 failed: {e}")
+    
+    logger.error("❌ Could not detect device MAC address")
+    return None
+
 def get_device_ip():
     """
     Get the current device's IP address using multiple methods.
@@ -1352,50 +1425,53 @@ def get_device_ip():
 
 def check_local_pi_and_notify_server():
     """
-    Check if Raspberry Pi is locally attached and send notification to IoT Hub.
-    Uses improved IP detection and integrates with existing IoT Hub system.
+    Check if Raspberry Pi is locally attached and send MAC address notification to live server.
+    Uses dynamic MAC address detection instead of static IP addresses.
     
     Returns:
         dict: Status information including pi_attached (True/False) and notification result
     """
     try:
-        logger.info("🔍 Checking Pi device status and sending to IoT Hub...")
+        logger.info("🔍 Checking Pi device status and sending MAC address to live server...")
         
-        # Get current device IP address
-        device_ip = get_device_ip()
-        pi_attached = device_ip is not None
+        # Get current device MAC address dynamically
+        device_mac = get_device_mac_address()
+        pi_attached = device_mac is not None
         
         # Generate unique device ID
         device_id = generate_dynamic_device_id()
         
+        # Create JSON payload with MAC address for live server
         pi_details = {
-            'ip': device_ip,
+            'mac_address': device_mac,
             'device_id': device_id,
             'timestamp': datetime.now().isoformat(),
-            'detection_method': 'hostname_command' if device_ip else 'failed'
+            'detection_method': 'dynamic_mac_detection' if device_mac else 'failed',
+            'device_type': 'raspberry_pi' if device_mac else 'unknown'
         }
         
         if pi_attached:
-            logger.info(f"📍 Pi Status: ✅ Device Connected at {device_ip}")
+            logger.info(f"📍 Pi Status: ✅ Device Connected with MAC: {device_mac}")
         else:
-            logger.info("📍 Pi Status: ❌ Device Not Connected - No IP detected")
+            logger.info("📍 Pi Status: ❌ Device Not Connected - No MAC address detected")
         
-        # Send to IoT Hub instead of external API
+        # Send to IoT Hub with MAC address
         iot_result = _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details)
         
-        # Also try external API as backup
+        # Send MAC address to live server in JSON format
         api_result = _send_pi_status_notification({
             'pi_attached': pi_attached,
             'device_id': device_id,
+            'mac_address': device_mac,
             'timestamp': datetime.now().isoformat(),
             'pi_details': pi_details,
-            'check_type': 'device_status_check'
+            'check_type': 'mac_address_detection'
         })
         
-        # Prepare response
+        # Prepare response with MAC address
         response = {
             'pi_attached': pi_attached,
-            'pi_ip': device_ip,
+            'pi_mac_address': device_mac,
             'device_id': device_id,
             'iot_hub_sent': iot_result['success'],
             'api_notification_sent': api_result['success'],

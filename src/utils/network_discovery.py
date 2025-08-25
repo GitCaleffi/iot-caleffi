@@ -101,57 +101,93 @@ class NetworkDiscovery:
         return self._discover_devices_alternative()
     
     def _discover_devices_alternative(self) -> List[Dict[str, str]]:
-        """Alternative discovery method when ARP fails - uses multiple detection methods"""
+        """Alternative discovery method - uses dynamic MAC address detection"""
         devices = []
         
-        # Method 1: Check known Pi IPs with enhanced connectivity testing
-        known_pi_ips = [
-            "192.168.1.18",  # User's specific Pi
-            "192.168.1.100", # Common Pi IP
-            "192.168.1.101", # Common Pi IP
-        ]
-        
-        for known_pi_ip in known_pi_ips:
-            try:
-                logger.info(f"Trying direct connection to {known_pi_ip}")
+        # Method 1: Detect local device MAC address (current Pi device)
+        try:
+            logger.info("🔍 Detecting local Raspberry Pi device via MAC address...")
+            
+            # Get local device MAC address dynamically
+            local_mac = self._get_local_device_mac()
+            
+            if local_mac:
+                # Check if this MAC belongs to a Raspberry Pi
+                is_pi_mac = any(local_mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
                 
-                # Test connectivity with multiple methods
-                is_reachable = self._test_ip_connectivity(known_pi_ip)
-                
-                if is_reachable:
-                    logger.info(f"✅ Direct connection successful to {known_pi_ip}")
-                    
-                    # For the user's specific IP, use known MAC
-                    mac = "2c:cf:67:6c:45:f2" if known_pi_ip == "192.168.1.18" else "unknown"
+                if is_pi_mac:
+                    logger.info(f"✅ Local Raspberry Pi detected with MAC: {local_mac}")
                     
                     device_info = {
-                        "ip": known_pi_ip,
-                        "mac": mac,
-                        "hostname": "raspberry-pi",
+                        "ip": "local_device",  # No specific IP needed
+                        "mac": local_mac,
+                        "hostname": "local-raspberry-pi",
                         "is_raspberry_pi": True,
-                        "detection_reason": "direct_connection",
-                        "discovery_method": "fallback_enhanced"
+                        "detection_reason": "local_mac_detection",
+                        "discovery_method": "dynamic_mac"
                     }
                     devices.append(device_info)
-                    logger.info(f"🍓 Raspberry Pi found via direct connection: {known_pi_ip}")
-                    
-                    # If we found the user's specific Pi, prioritize it
-                    if known_pi_ip == "192.168.1.18":
-                        break
-                        
-            except Exception as e:
-                logger.debug(f"Connection test to {known_pi_ip} failed: {e}")
-                continue
-        
-        # Method 2: Use ip neighbor (modern replacement for arp)
+                    logger.info(f"🍓 Local Raspberry Pi found via MAC: {local_mac}")
+                else:
+                    logger.info(f"📍 Local device MAC detected but not a Raspberry Pi: {local_mac}")
+            else:
+                logger.warning("⚠️ Could not detect local device MAC address")
+                
+        except Exception as e:
+            logger.warning(f"Local MAC detection failed: {e}")
+            
+        # Method 2: Use ip neighbor for network-wide MAC detection (no static IPs)
         if not devices:
             devices.extend(self._discover_via_ip_neighbor())
         
-        # Method 3: Network scanning without arp
-        if not devices:
-            devices.extend(self._discover_via_network_scan())
-        
         return devices
+    
+    def _get_local_device_mac(self) -> str:
+        """Get the MAC address of the local device dynamically"""
+        try:
+            # Method 1: Check active network interfaces for MAC addresses
+            interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33']
+            for interface in interfaces:
+                try:
+                    result = subprocess.run(
+                        ["cat", f"/sys/class/net/{interface}/address"],
+                        capture_output=True,
+                        text=True,
+                        timeout=3
+                    )
+                    if result.returncode == 0 and result.stdout.strip():
+                        mac = result.stdout.strip().lower()
+                        # Check if this is a valid MAC address (not all zeros)
+                        if mac and mac != "00:00:00:00:00:00" and ":" in mac:
+                            logger.debug(f"Found MAC address from {interface}: {mac}")
+                            return mac
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.warning(f"MAC address detection method 1 failed: {e}")
+        
+        try:
+            # Method 2: Use ip link command
+            result = subprocess.run(
+                ["ip", "link", "show"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode == 0:
+                import re
+                # Look for MAC addresses in the output
+                mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+                matches = re.findall(mac_pattern, result.stdout.lower())
+                for mac in matches:
+                    if mac != "00:00:00:00:00:00":
+                        logger.debug(f"Found MAC address via ip link: {mac}")
+                        return mac
+        except Exception as e:
+            logger.warning(f"MAC address detection method 2 failed: {e}")
+        
+        logger.warning("Could not detect local device MAC address")
+        return None
     
     def _test_ip_connectivity(self, ip: str) -> bool:
         """Test IP connectivity using multiple methods"""
