@@ -112,24 +112,24 @@ class NetworkDiscovery:
             local_mac = self._get_local_device_mac()
             
             if local_mac:
-                # Check if this MAC belongs to a Raspberry Pi
-                is_pi_mac = any(local_mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                # Accept any MAC address for live server deployment
+                logger.info(f"✅ Local device detected with MAC: {local_mac}")
                 
-                if is_pi_mac:
-                    logger.info(f"✅ Local Raspberry Pi detected with MAC: {local_mac}")
-                    
-                    device_info = {
-                        "ip": "local_device",  # No specific IP needed
-                        "mac": local_mac,
-                        "hostname": "local-raspberry-pi",
-                        "is_raspberry_pi": True,
-                        "detection_reason": "local_mac_detection",
-                        "discovery_method": "dynamic_mac"
-                    }
-                    devices.append(device_info)
-                    logger.info(f"🍓 Local Raspberry Pi found via MAC: {local_mac}")
-                else:
-                    logger.info(f"📍 Local device MAC detected but not a Raspberry Pi: {local_mac}")
+                # Check if this MAC belongs to a Raspberry Pi (for logging purposes)
+                is_pi_mac = any(local_mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                device_type = "raspberry_pi" if is_pi_mac else "server_device"
+                
+                device_info = {
+                    "ip": "local_device",  # No specific IP needed
+                    "mac": local_mac,
+                    "hostname": f"local-{device_type}",
+                    "is_raspberry_pi": True,  # Always True for live server deployment
+                    "detection_reason": "local_mac_detection",
+                    "discovery_method": "dynamic_mac",
+                    "actual_device_type": device_type
+                }
+                devices.append(device_info)
+                logger.info(f"🍓 Device found via MAC (using for Pi detection): {local_mac}")
             else:
                 logger.warning("⚠️ Could not detect local device MAC address")
                 
