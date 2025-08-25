@@ -119,8 +119,11 @@ class NetworkDiscovery:
                 is_pi_mac = any(local_mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
                 device_type = "raspberry_pi" if is_pi_mac else "server_device"
                 
+                # Get actual server IP for connection checks
+                server_ip = self._get_server_ip()
+                
                 device_info = {
-                    "ip": "local_device",  # No specific IP needed
+                    "ip": server_ip if server_ip else "127.0.0.1",  # Use actual server IP
                     "mac": local_mac,
                     "hostname": f"local-{device_type}",
                     "is_raspberry_pi": True,  # Always True for live server deployment
@@ -222,6 +225,49 @@ class NetworkDiscovery:
         
         logger.error("❌ Could not detect local device MAC address using any method")
         return None
+    
+    def _get_server_ip(self) -> str:
+        """Get the actual server IP address"""
+        try:
+            # Method 1: Use hostname -I (most reliable)
+            result = subprocess.run(
+                ["hostname", "-I"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Get first IPv4 address (ignore IPv6)
+                ips = result.stdout.strip().split()
+                for ip in ips:
+                    if '.' in ip and not ip.startswith('127.'):  # IPv4 and not localhost
+                        logger.info(f"📍 Server IP detected: {ip}")
+                        return ip
+        except Exception as e:
+            logger.debug(f"hostname -I method failed: {e}")
+        
+        try:
+            # Method 2: Use ip route to get default interface IP
+            result = subprocess.run(
+                ["ip", "route", "get", "8.8.8.8"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                import re
+                # Extract IP from route output
+                ip_match = re.search(r'src ([0-9.]+)', result.stdout)
+                if ip_match:
+                    ip = ip_match.group(1)
+                    if not ip.startswith('127.'):
+                        logger.info(f"📍 Server IP detected via route: {ip}")
+                        return ip
+        except Exception as e:
+            logger.debug(f"ip route method failed: {e}")
+        
+        logger.warning("Could not detect server IP, using localhost")
+        return "127.0.0.1"
     
     def _test_ip_connectivity(self, ip: str) -> bool:
         """Test IP connectivity using multiple methods"""
