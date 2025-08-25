@@ -318,41 +318,82 @@ class NetworkDiscovery:
         return False
     
     def _discover_via_ip_neighbor(self) -> List[Dict[str, str]]:
-        """Use ip neighbor command (modern replacement for arp)"""
+        """Use arp command for network device discovery (more reliable than ip neighbor)"""
         devices = []
+        
+        # Method 1: Try arp command (more reliable)
         try:
-            # Try ip neighbor command
             result = subprocess.run(
-                ["ip", "neighbor", "show"], 
+                ["arp", "-a"], 
                 capture_output=True, 
                 text=True, 
-                timeout=3
+                timeout=5
             )
             
             if result.returncode == 0:
                 for line in result.stdout.splitlines():
-                    # Parse ip neighbor output: 192.168.1.18 dev eth0 lladdr 2c:cf:67:6c:45:f2 REACHABLE
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        ip = parts[0]
-                        mac = parts[4] if len(parts) > 4 else "unknown"
-                        
-                        # Check if MAC matches Pi
-                        is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
-                        
-                        if is_pi:
-                            device_info = {
-                                "ip": ip,
-                                "mac": mac,
-                                "hostname": "raspberry-pi",
-                                "is_raspberry_pi": True,
-                                "detection_reason": "MAC",
-                                "discovery_method": "ip_neighbor"
-                            }
-                            devices.append(device_info)
-                            logger.info(f"🍓 Raspberry Pi found via ip neighbor: {ip} ({mac})")
+                    # Parse arp output: ? (192.168.1.18) at 2c:cf:67:6c:45:f2 [ether] on eno1
+                    if "at" in line and "[ether]" in line:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            # Extract IP (remove parentheses)
+                            ip_part = parts[1] if "(" in parts[1] else parts[0]
+                            ip = ip_part.strip("()")
+                            
+                            # Extract MAC address
+                            mac = parts[3] if len(parts) > 3 else "unknown"
+                            
+                            # Check if MAC matches Pi prefixes
+                            is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                            
+                            if is_pi:
+                                device_info = {
+                                    "ip": ip,
+                                    "mac": mac,
+                                    "hostname": "raspberry-pi",
+                                    "is_raspberry_pi": True,
+                                    "detection_reason": "MAC",
+                                    "discovery_method": "arp"
+                                }
+                                devices.append(device_info)
+                                logger.info(f"🍓 Raspberry Pi found via arp: {ip} ({mac})")
         except Exception as e:
-            logger.debug(f"ip neighbor failed: {e}")
+            logger.debug(f"arp command failed: {e}")
+        
+        # Method 2: Fallback to ip neighbor if arp didn't work
+        if not devices:
+            try:
+                result = subprocess.run(
+                    ["ip", "neighbor", "show"], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=3
+                )
+                
+                if result.returncode == 0:
+                    for line in result.stdout.splitlines():
+                        # Parse ip neighbor output: 192.168.1.18 dev eth0 lladdr 2c:cf:67:6c:45:f2 REACHABLE
+                        parts = line.split()
+                        if len(parts) >= 5:
+                            ip = parts[0]
+                            mac = parts[4] if len(parts) > 4 else "unknown"
+                            
+                            # Check if MAC matches Pi
+                            is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                            
+                            if is_pi:
+                                device_info = {
+                                    "ip": ip,
+                                    "mac": mac,
+                                    "hostname": "raspberry-pi",
+                                    "is_raspberry_pi": True,
+                                    "detection_reason": "MAC",
+                                    "discovery_method": "ip_neighbor"
+                                }
+                                devices.append(device_info)
+                                logger.info(f"🍓 Raspberry Pi found via ip neighbor: {ip} ({mac})")
+            except Exception as e:
+                logger.debug(f"ip neighbor fallback failed: {e}")
         
         return devices
     
