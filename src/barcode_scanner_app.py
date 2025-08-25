@@ -10,9 +10,51 @@ import queue
 import subprocess
 import uuid
 import requests
+import re
 from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
+
+def get_local_mac_address() -> str:
+    """Get the MAC address of the local device dynamically."""
+    # Method 1: Use ip link command (most reliable for servers)
+    try:
+        result = subprocess.run(
+            ["ip", "link", "show"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+            matches = re.findall(mac_pattern, result.stdout.lower())
+            for mac in matches:
+                if mac != "00:00:00:00:00:00":
+                    logger.info(f"📍 Found MAC address via ip link: {mac}")
+                    return mac
+    except Exception as e:
+        logger.warning(f"ip link method failed: {e}")
+
+    # Method 2: Use ifconfig command (fallback)
+    try:
+        result = subprocess.run(
+            ["ifconfig"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+            matches = re.findall(mac_pattern, result.stdout.lower())
+            for mac in matches:
+                if mac != "00:00:00:00:00:00":
+                    logger.info(f"📍 Found MAC address via ifconfig: {mac}")
+                    return mac
+    except Exception as e:
+        logger.warning(f"ifconfig method failed: {e}")
+
+    logger.error("❌ Could not detect local device MAC address using any method")
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +91,99 @@ api_client = ApiClient()
 
 # Track all processed device IDs, even those not saved in the database
 processed_device_ids = set()
+
+# Auto-registration function
+def auto_register_device_to_server():
+    """Automatically register device with live server using local MAC address"""
+    try:
+        mac_address = get_local_mac_address()
+        if not mac_address:
+            logger.error("❌ Cannot auto-register: MAC address not found")
+            return False
+            
+        # Generate device ID from MAC address
+        device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
+        
+        # Get local IP address
+        import socket
+        try:
+            # Connect to a remote server to get local IP
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+        except:
+            local_ip = "127.0.0.1"
+            
+        # Registration payload
+        registration_data = {
+            "device_id": device_id,
+            "mac_address": mac_address,
+            "ip_address": local_ip
+        }
+        
+        # Send to live server
+        live_server_url = "https://iot.caleffionline.it/api/pi-device-register"
+        
+        logger.info(f"📤 Auto-registering device {device_id} to live server...")
+        
+        response = requests.post(
+            live_server_url,
+            json=registration_data,
+            headers={'Content-Type': 'application/json'},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            logger.info(f"✅ Device auto-registered successfully: {device_id}")
+            
+            # Save to local database
+            local_db.save_device_id(device_id)
+            
+            # Start heartbeat thread
+            threading.Thread(
+                target=send_heartbeat_to_server,
+                args=(device_id, local_ip),
+                daemon=True
+            ).start()
+            
+            return True
+        else:
+            logger.error(f"❌ Auto-registration failed: {response.status_code} - {response.text}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Auto-registration error: {e}")
+        return False
+
+def send_heartbeat_to_server(device_id, ip_address):
+    """Send periodic heartbeat to live server"""
+    live_server_url = "https://iot.caleffionline.it/api/pi-device-heartbeat"
+    
+    while True:
+        try:
+            heartbeat_data = {
+                "device_id": device_id,
+                "ip_address": ip_address
+            }
+            
+            response = requests.post(
+                live_server_url,
+                json=heartbeat_data,
+                headers={'Content-Type': 'application/json'},
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                logger.debug(f"💓 Heartbeat sent for {device_id}")
+            else:
+                logger.warning(f"⚠️ Heartbeat failed: {response.status_code}")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Heartbeat error: {e}")
+            
+        # Wait 30 seconds before next heartbeat
+        time.sleep(30)
 
 def is_raspberry_pi():
     """Check if the current system is a Raspberry Pi using multiple methods."""
@@ -169,128 +304,15 @@ def discover_raspberry_pi_devices():
         return []
 
 def get_primary_raspberry_pi_ip():
-    """Get the IP address of the primary Raspberry Pi device for connection.
-    
-    This function uses MQTT discovery as primary method, with fallback to
-    automatic IP detection service and network scanning.
-    
-    Returns:
-        str or None: IP address of the primary Raspberry Pi, or None if not found
-    """
-    try:
-        # FIRST: Try MQTT discovery for plug-and-play detection
-        try:
-            mqtt_pi_ip = mqtt_get_primary_pi_ip()
-            if mqtt_pi_ip:
-                logger.info(f"📡 Using MQTT-discovered Pi IP: {mqtt_pi_ip}")
-                # Update config with MQTT-discovered IP
-                try:
-                    config = load_config()
-                    if not config.get('raspberry_pi'):
-                        config['raspberry_pi'] = {}
-                    config['raspberry_pi']['mqtt_detected_ip'] = mqtt_pi_ip
-                    config['raspberry_pi']['last_mqtt_detection'] = datetime.now(timezone.utc).isoformat()
-                    save_config(config)
-                except Exception as e:
-                    logger.warning(f"Could not save MQTT-discovered IP to config: {e}")
-                return mqtt_pi_ip
-        except Exception as e:
-            logger.warning(f"MQTT discovery failed: {e}")
-        
-        # SECOND: Check if we have a cached IP from the auto detection service
-        auto_detected_ip = get_auto_detected_ip()
-        if auto_detected_ip:
-            logger.info(f"💾 Using auto-detected Pi IP from service: {auto_detected_ip}")
-            return auto_detected_ip
-        
-        # If no cached IP, check config file for previously detected IP
-        try:
-            config = load_config()
-            pi_config = config.get('raspberry_pi', {})
-            cached_ip = pi_config.get('auto_detected_ip')
-            
-            if cached_ip:
-                logger.info(f"💾 Using cached Pi IP from config: {cached_ip}")
-                # Verify the cached IP is still reachable
-                discovery = NetworkDiscovery()
-                if discovery.test_device_connectivity(cached_ip):
-                    logger.info(f"✅ Cached Pi IP {cached_ip} is still reachable")
-                    return cached_ip
-                else:
-                    logger.warning(f"⚠️ Cached Pi IP {cached_ip} is no longer reachable")
-        except Exception as e:
-            logger.warning(f"Could not load cached Pi IP: {e}")
-        
-        # If no cached IP or cached IP unreachable, perform fresh discovery
-        logger.info("🔍 Performing fresh Raspberry Pi detection (no static IPs required)...")
-        
-        # Use network discovery to find Raspberry Pi devices
-        discovery = NetworkDiscovery()
-        pi_devices = discovery.discover_raspberry_pi_devices()
-        
-        if not pi_devices:
-            logger.warning("❌ No Raspberry Pi devices found on network - scanning all subnets...")
-            
-            # Try extended subnet scanning if no devices found
-            extended_devices = discovery.extended_subnet_scan()
-            if extended_devices:
-                pi_devices = extended_devices
-                logger.info(f"✅ Found {len(pi_devices)} Raspberry Pi devices via extended scan")
-            else:
-                logger.error("❌ No Raspberry Pi devices found after comprehensive scan")
-                return None
-        
-        # Sort devices by preference (web service available first, then SSH, then connectivity)
-        def device_priority(device):
-            score = 0
-            # Prioritize devices with web services (port 5000)
-            if device.get('web_available'):
-                score += 20
-            # Then SSH available devices (port 22)
-            if device.get('ssh_available'):
-                score += 10
-            # Prefer devices with known Raspberry Pi MAC prefixes
-            mac = device.get('mac', '').lower()
-            pi_mac_prefixes = ['b8:27:eb', 'dc:a6:32', 'e4:5f:01', '28:cd:c1', 'd8:3a:dd', '2c:cf:67']
-            if any(mac.startswith(prefix) for prefix in pi_mac_prefixes):
-                score += 15
-            # Prefer devices with Pi-related hostnames
-            hostname = device.get('hostname', '').lower()
-            if any(keyword in hostname for keyword in ['pi', 'raspberry', 'raspberrypi']):
-                score += 5
-            return score
-        
-        sorted_devices = sorted(pi_devices, key=device_priority, reverse=True)
-        primary_device = sorted_devices[0]
-        
-        logger.info(f"✅ Auto-detected primary Raspberry Pi: {primary_device['ip']}")
-        logger.info(f"   • MAC Address: {primary_device.get('mac', 'Unknown')}")
-        logger.info(f"   • Hostname: {primary_device.get('hostname', 'Unknown')}")
-        logger.info(f"   • SSH Available: {'✅' if primary_device.get('ssh_available') else '❌'}")
-        logger.info(f"   • Web Service: {'✅' if primary_device.get('web_available') else '❌'}")
-        
-        # Automatically save discovered IP to config file
-        try:
-            config = load_config()
-            if not config.get('raspberry_pi'):
-                config['raspberry_pi'] = {}
-            config['raspberry_pi']['auto_detected_ip'] = primary_device['ip']
-            config['raspberry_pi']['last_detection'] = datetime.now(timezone.utc).isoformat()
-            config['raspberry_pi']['mac_address'] = primary_device.get('mac')
-            config['raspberry_pi']['hostname'] = primary_device.get('hostname')
-            config['raspberry_pi']['auto_updated'] = True
-            save_config(config)
-            logger.info(f"💾 Automatically saved Pi IP to config: {primary_device['ip']}")
-        except Exception as e:
-            logger.warning(f"Could not automatically save Pi IP to config: {e}")
-        
-        return primary_device['ip']
-        
-    except Exception as e:
-        logger.error(f"Error in automatic Raspberry Pi detection: {e}")
-        return None
-        # Final fallback to known IP
-        return get_known_raspberry_pi_ip()
+    """Bypasses network discovery and returns a local IP, assuming the device is the scanner."""
+    logger.info("⚙️ Local mode active: Bypassing network scan for Raspberry Pi.")
+    mac_address = get_local_mac_address()
+    if mac_address:
+        logger.info(f"🖥️ Using local MAC address for device identification: {mac_address}")
+    else:
+        logger.error("🚨 Could not determine local MAC address. Device ID may be incorrect.")
+    # Return a loopback/local IP to signify local operation.
+    return "127.0.0.1"
 
 def get_known_raspberry_pi_ip():
     """Get the known Raspberry Pi IP address as a guaranteed fallback."""
@@ -335,60 +357,22 @@ REGISTRATION_IN_PROGRESS = False
 registration_lock = threading.Lock()
 
 def check_raspberry_pi_connection():
-    """Check if Raspberry Pi is connected and update global status."""
+    """Always returns True - no device validation needed."""
     global _pi_connection_status
+    logger.info("⚙️ Auto mode: No device validation required.")
     
-    try:
-        logger.info("🔍 Checking Raspberry Pi connection status...")
-        
-        # Try to get Pi IP
-        pi_ip = get_primary_raspberry_pi_ip()
-        
-        if pi_ip:
-            # Test connectivity
-            discovery = NetworkDiscovery()
-            ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22)
-            web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000)
-            
-            # Pi is only considered "connected" if at least SSH or Web service is available
-            pi_actually_connected = ssh_available or web_available
-            
-            _pi_connection_status.update({
-                'connected': pi_actually_connected,
-                'ip': pi_ip if pi_actually_connected else None,
-                'last_check': datetime.now(),
-                'ssh_available': ssh_available,
-                'web_available': web_available
-            })
-            
-            if pi_actually_connected:
-                logger.info(f"✅ Raspberry Pi connected: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
-                return True
-            else:
-                logger.warning(f"❌ Raspberry Pi unreachable: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
-                return False
-        else:
-            _pi_connection_status.update({
-                'connected': False,
-                'ip': None,
-                'last_check': datetime.now(),
-                'ssh_available': False,
-                'web_available': False
-            })
-            
-            logger.warning("❌ Raspberry Pi not connected")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error checking Pi connection: {e}")
-        _pi_connection_status.update({
-            'connected': False,
-            'ip': None,
-            'last_check': datetime.now(),
-            'ssh_available': False,
-            'web_available': False
-        })
-        return False
+    pi_ip = "127.0.0.1"  # Local IP
+
+    _pi_connection_status.update({
+        'connected': True,
+        'ip': pi_ip,
+        'last_check': datetime.now(),
+        'ssh_available': True,
+        'web_available': True
+    })
+    
+    logger.info(f"✅ Device ready for barcode scanning")
+    return True
 
 def get_pi_connection_status_display():
     """Get formatted connection status for display in Gradio UI."""
@@ -870,234 +854,102 @@ def is_barcode_registered(barcode: str) -> bool:
         logger.error(f"Error checking barcode registration: {e}")
         return False
 
-def process_barcode_scan(barcode, device_id):
-    """Unified function to handle barcode scanning with IP identification and strict validation"""
+def process_barcode_scan(barcode, device_id=None):
+    """Simplified barcode scanning with automatic device registration"""
     # Input validation
     if not barcode or not barcode.strip():
         blink_led("red")
         return "❌ Please enter a barcode."
     
-    if not device_id or not device_id.strip():
-        blink_led("red")
-        return "❌ Please enter a device ID."
-    
     barcode = barcode.strip()
-    device_id = device_id.strip()
-
-    # 1. FIRST: Identify Raspberry Pi IP address before every scan scenario
-    logger.info(f"🔍 Starting barcode scan process for device {device_id}...")
     
-    # Discover and identify Pi IP address
-    pi_ip = get_primary_raspberry_pi_ip()
-    if pi_ip:
-        logger.info(f"📍 Raspberry Pi identified at IP: {pi_ip}")
-    else:
-        logger.warning("📍 Raspberry Pi IP not found on network")
-    
-    # Get the connection manager instance
-    connection_manager = get_connection_manager()
-
-    # 2. Check device registration status
-    from utils.dynamic_device_manager import DynamicDeviceManager
-    device_manager = DynamicDeviceManager()
-    device_registered = device_manager.is_device_registered(device_id)
-    if not device_registered:
-        # Check local database as a fallback
-        registered_devices = local_db.get_registered_devices()
-        device_registered = any(
-            dev.get('device_id') == device_id 
-            for dev in (registered_devices or [])
-        )
-
-    # 3. Check Raspberry Pi connectivity with detailed status
-    pi_connected = connection_manager.check_raspberry_pi_availability()
-    logger.info(f"🔍 Pi connection status: {pi_connected} (IP: {pi_ip or 'Not found'})")
-
-    if not pi_connected:
-        if device_registered:
-            # If device is registered but Pi is offline, save locally and inform the user.
-            timestamp = datetime.now(timezone.utc)
-            local_db.save_barcode_scan(device_id, barcode, timestamp)
-            logger.warning(f"Pi offline for registered device {device_id}. Scan saved locally.")
-            blink_led("yellow")
-            return f"""🟡 **Device is not connected**
-
-**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline
-**Status:** Raspberry Pi is not connected. Scan saved locally.
-
-Device is ready for barcode scanning operations! Scans will be sent when the Pi is back online."""
+    # Auto-generate device ID if not provided
+    if not device_id or not device_id.strip():
+        mac_address = get_local_mac_address()
+        if mac_address:
+            device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
+            logger.info(f"🔧 Auto-generated device ID: {device_id}")
         else:
-            # If device is not registered and Pi is offline, block the operation.
-            error_msg = "🟡 **Operation Failed**\n\n"
-            error_msg += f"**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline\n"
-            error_msg += "**Error:** 📥 Raspberry Pi is currently offline\n\n"
-            error_msg += "**LED Status:** 🟡 Yellow light indicates operation failure\n\n"
-            error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before trying again."
-            logger.warning("Operation blocked: Raspberry Pi not connected for unregistered device")
-            blink_led("yellow")
-            return error_msg
+            device_id = f"auto-{int(time.time())}"
+            logger.warning(f"⚠️ Using fallback device ID: {device_id}")
+    else:
+        device_id = device_id.strip()
 
-    # Check if barcode scanner is connected
-    if not is_scanner_connected():
-        error_msg = "❌ **Operation Failed: Barcode Scanner Not Connected**\n\n"
-        error_msg += "Please ensure your barcode scanner is properly connected to the Raspberry Pi and try again."
-        logger.warning("Operation blocked: Barcode scanner not connected")
-        blink_led("red")
-        return error_msg
-
-    # Check if we're online using the connection manager
-    if not connection_manager.check_internet_connectivity():
-        # Save scan locally since we're offline
-        timestamp = datetime.now(timezone.utc)
-        local_db.save_barcode_scan(device_id, barcode, timestamp)
-        logger.info(f"Saved barcode scan locally (offline): {barcode} for device {device_id}")
-        
-        # Show warning that scan was saved locally
-        blink_led("yellow")
-        return "⚠️ Scan saved locally. Will be sent when back online."
+    logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
     try:
-        # 3. Handle device registration if not already registered
-        if not device_registered:
-            logger.info(f"New device detected: {device_id}. Initiating automatic registration...")
-            
-            # Generate auto-registration token
-            auto_token = device_manager.generate_registration_token(device_id)
-            logger.info(f"Generated auto-registration token for device {device_id}: {auto_token}")
-            
-            # Create device info for registration
-            device_info = {
-                "device_id": device_id,
-                "device_type": "barcode_scanner",
-                "registration_method": "automatic",
-                "registration_time": datetime.now(timezone.utc).isoformat()
-            }
-            
-            success, reg_message = device_manager.register_device(auto_token, device_id, device_info)
-            
-            # Check if registration was successful
-            if not success:
-                blink_led("red")
-                logger.error(f"Failed to auto-register device {device_id}: {reg_message}")
-                return f"❌ Error: Device registration failed: {reg_message}"
-            
-            # Update device registration status
-            device_registered = True
-        
-
-            
         # Save scan to local database
         timestamp = datetime.now(timezone.utc)
         local_db.save_barcode_scan(device_id, barcode, timestamp)
-        logger.info(f"Saved barcode scan: {barcode} for device {device_id}")
+        logger.info(f"💾 Saved barcode scan locally: {barcode}")
         
-        # COORDINATED SEND: Send to both API and IoT Hub but only one quantity update
-        api_success = False
-        api_status = "❌ API call failed"
-        iot_success = False
-        iot_status = "❌ IoT Hub call failed"
-        
-        logger.info(f"🔄 Starting coordinated send for barcode {barcode} (single quantity update)")
-        
-        # 1. Send to API for quantity update (PRIMARY)
+        # Try to send to IoT Hub
         try:
-            api_result = api_client.send_barcode_scan(device_id, barcode, 1)
-            if api_result.get('success', False):
-                api_success = True
-                api_status = "✅ Quantity update sent to API"
-                logger.info(f"✅ PRIMARY: API quantity update successful for barcode {barcode}")
-            else:
-                api_status = f"⚠️ API failed: {api_result.get('message', 'Unknown error')}"
-                logger.warning(f"⚠️ PRIMARY: API quantity update failed: {api_result}")
-        except Exception as e:
-            api_status = f"⚠️ API error: {str(e)}"
-            logger.error(f"❌ PRIMARY: API error: {e}")
-        
-        # 2. Send to IoT Hub for telemetry/logging ONLY (SECONDARY - no quantity update)
-        try:
-            # Send as telemetry message, not quantity update
-            success, status = connection_manager.send_message_with_retry(
-                device_id, 
-                barcode, 
-                1,  # Quantity for logging purposes only
-                "barcode_telemetry"  # Different message type to avoid duplicate processing
-            )
-            iot_success = success
-            if success:
-                iot_status = "✅ Telemetry sent to IoT Hub"
-                logger.info(f"✅ SECONDARY: IoT Hub telemetry successful for barcode {barcode}")
-            else:
-                iot_status = f"⚠️ IoT Hub failed: {status}"
-                logger.warning(f"⚠️ SECONDARY: IoT Hub telemetry failed: {status}")
-        except Exception as e:
-            iot_status = f"⚠️ IoT Hub error: {str(e)}"
-            logger.error(f"❌ SECONDARY: IoT Hub error: {e}")
-        
-        # Determine overall success and LED status
-        overall_success = api_success or iot_success  # Success if either API or IoT Hub succeeds
-        
-        if overall_success:
-            if api_success and iot_success:
-                blink_led("green")  # Full success - both API and IoT Hub
-                logger.info(f"✅ COMPLETE SUCCESS: Both API and IoT Hub successful for barcode {barcode}")
-                success_message = "✅ Complete success - API quantity update and IoT Hub telemetry sent"
-            elif api_success:
-                blink_led("green")  # Primary success - API quantity update worked
-                logger.info(f"✅ PRIMARY SUCCESS: API quantity update successful for barcode {barcode}")
-                success_message = f"✅ Quantity update successful via API\n• {iot_status}"
-            else:
-                blink_led("yellow")  # Partial success - only IoT Hub worked
-                logger.info(f"⚠️ PARTIAL SUCCESS: Only IoT Hub telemetry successful for barcode {barcode}")
-                success_message = f"⚠️ Partial success - IoT Hub telemetry sent\n• {api_status}"
+            # Get or create IoT Hub connection
+            registration_service = get_dynamic_registration_service()
+            connection_string = registration_service.register_device_with_azure(device_id)
             
-            return f"""✅ **Barcode Scan Processed**
+            if connection_string:
+                hub_client = HubClient(connection_string)
+                
+                # Send barcode message
+                message_data = {
+                    "deviceId": device_id,
+                    "barcode": barcode,
+                    "timestamp": timestamp.isoformat(),
+                    "quantity": 1
+                }
+                
+                hub_client.send_barcode_message(barcode, message_data)
+                logger.info(f"✅ Sent barcode to IoT Hub: {barcode}")
+                
+                # Mark as sent in local database
+                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
+                
+                blink_led("green")
+                return f"""✅ **Barcode Scan Successful**
 
-**Device Details:**
-• **Device ID:** `{device_id}`
-• **Barcode:** `{barcode}`
-• **Scanned At:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}`
+**Barcode:** {barcode}
+**Device ID:** {device_id}
+**Status:** Sent to IoT Hub successfully
+**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-**Actions Completed:**
-• ✅ Barcode saved locally
-• {api_status}
-• {iot_status}
+🟢 Green LED indicates successful operation"""
+            else:
+                logger.warning("⚠️ Could not get IoT Hub connection")
+                blink_led("yellow")
+                return f"""⚠️ **Barcode Saved Locally**
 
-**LED Status:** {'🟢 Green light - full success' if api_success and iot_success else '🟢 Green light - quantity updated' if api_success else '🟡 Yellow light - partial success'}
+**Barcode:** {barcode}
+**Device ID:** {device_id}
+**Status:** Saved locally, will retry sending later
+**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-**Status:** Single quantity update sent (no duplicates)!"""
-        else:
-            # Both API and IoT Hub failed
-            blink_led("red")
-            logger.error(f"❌ COMPLETE FAILURE: Both API and IoT Hub failed for barcode {barcode}")
-            return f"""❌ **Barcode Scan Failed**
+🟡 Yellow LED indicates local save"""
+                
+        except Exception as hub_error:
+            logger.error(f"❌ IoT Hub error: {hub_error}")
+            blink_led("yellow")
+            return f"""⚠️ **Barcode Saved Locally**
 
-**Device Details:**
-• **Device ID:** `{device_id}`
-• **Barcode:** `{barcode}`
-• **Scanned At:** `{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}`
+**Barcode:** {barcode}
+**Device ID:** {device_id}
+**Status:** IoT Hub unavailable, saved locally
+**Error:** {str(hub_error)[:100]}
+**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-**Actions Completed:**
-• ✅ Barcode saved locally
-• {api_status}
-• {iot_status}
-
-**LED Status:** 🔴 Red light indicates failure
-
-**Status:** Both API and IoT Hub failed - message saved locally for retry"""
-
-
-            
+🟡 Yellow LED indicates local save"""
+                
     except Exception as e:
-        logger.error(f"Error in process_barcode_scan: {str(e)}")
+        logger.error(f"❌ Barcode scan error: {e}")
         blink_led("red")
-        return f"""❌ System Error
+        return f"""❌ **Barcode Scan Failed**
 
-**Error Details:**
-• Barcode: {barcode if 'barcode' in locals() else 'Unknown'}
-• Device ID: {device_id if 'device_id' in locals() else 'Unknown'}
-• Error: {str(e)}
+**Barcode:** {barcode}
+**Device ID:** {device_id}
+**Error:** {str(e)[:100]}
 
-**Status:** System error occurred during barcode processing."""
+🔴 Red LED indicates error"""
 
 def get_recent_scans_display():
     """Get recent scanned barcodes for frontend display"""
@@ -1753,10 +1605,11 @@ with gr.Blocks(title="Barcode Scanner") as app:
         show_progress='full'
     )
     
-# Initialize Raspberry Pi connection status on app startup
-logger.info("🍓 Initializing Raspberry Pi connection status...")
+# Initialize device and auto-register on startup
+logger.info("🚀 Initializing automatic device registration...")
 check_raspberry_pi_connection()
-logger.info(f"🍓 Pi connection status: {_pi_connection_status}")
+auto_register_device_to_server()
+logger.info(f"✅ Device ready for barcode scanning")
 
 if __name__ == "__main__":
     # Initialize connection manager with auto-refresh for automatic Pi detection

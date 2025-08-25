@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timezone
 import threading
 import time
+import sqlite3
 from pathlib import Path
 
 # Add src directory to path
@@ -707,6 +708,62 @@ def api_get_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pi-device-register', methods=['POST'])
+def pi_device_register():
+    """Register a Pi device from remote location"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        device_id = data.get('device_id', 'unknown')
+        mac_address = data.get('mac_address', 'unknown')
+        ip_address = data.get('ip_address', 'unknown')
+        
+        # Use the global storage object for database operations
+        storage.create_available_devices_table()
+        storage.save_available_device(
+            device_id=device_id, 
+            device_name=f"Pi-{mac_address[-8:]}", 
+            ip_address=ip_address, 
+            mac_address=mac_address, 
+            device_type="raspberry_pi", 
+            status='online'
+        )
+        
+        logger.info(f"✅ Registered Pi device: {device_id} at {ip_address}")
+        
+        return jsonify({
+            "status": "success",
+            "message": "Device registered successfully",
+            "device_id": device_id
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in pi_device_register: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/pi-device-heartbeat', methods=['POST'])
+def pi_device_heartbeat():
+    """Receive heartbeat from Pi device"""
+    try:
+        data = request.get_json()
+        device_id = data.get('device_id')
+        ip_address = data.get('ip_address')
+        
+        if not device_id:
+            return jsonify({"error": "Device ID required"}), 400
+        
+        # Update device status using the storage object
+        storage.update_available_device_status(device_id, 'online', ip_address)
+        
+        return jsonify({"status": "success"}), 200
+        
+    except Exception as e:
+        logger.error(f"Error in pi_device_heartbeat: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/devices')
 def api_get_devices():

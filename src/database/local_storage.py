@@ -54,8 +54,15 @@ class LocalStorage:
         # Create available_devices table if it doesn't exist
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS available_devices (
-                device_id TEXT PRIMARY KEY,
-                timestamp DATETIME
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT UNIQUE,
+                device_name TEXT,
+                ip_address TEXT,
+                mac_address TEXT,
+                device_type TEXT,
+                status TEXT DEFAULT 'offline',
+                registered_at TEXT,
+                last_seen TEXT
             )
         ''')
         # Create test_barcode_scans table if it doesn't exist
@@ -402,6 +409,44 @@ class LocalStorage:
         
         conn.commit()
         conn.close()
+
+    def save_available_device(self, device_id, device_name, ip_address, mac_address, device_type, status):
+        """Save or update an available device's information."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor.execute("""
+            INSERT INTO available_devices (device_id, device_name, ip_address, mac_address, device_type, status, registered_at, last_seen)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(device_id) DO UPDATE SET
+                device_name=excluded.device_name,
+                ip_address=excluded.ip_address,
+                mac_address=excluded.mac_address,
+                device_type=excluded.device_type,
+                status=excluded.status,
+                last_seen=excluded.last_seen
+            """, (
+                device_id, device_name, ip_address, mac_address, device_type,
+                status, now, now
+            ))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def update_available_device_status(self, device_id, status, ip_address):
+        """Update the status and last_seen time for a device."""
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            cursor.execute(
+                "UPDATE available_devices SET status = ?, last_seen = ?, ip_address = ? WHERE device_id = ?",
+                (status, now, ip_address, device_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def get_available_devices(self):
         """Get available device IDs from the database"""
