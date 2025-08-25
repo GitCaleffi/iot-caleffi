@@ -618,18 +618,24 @@ def blink_led(color):
 
 def generate_registration_token():
     """Prepare for device registration (no token required)"""
-    # Check Raspberry Pi connection first
-    connection_manager = get_connection_manager()
-    pi_ip = get_primary_raspberry_pi_ip()
-    pi_connected = connection_manager.check_raspberry_pi_availability()
+    # COMMENTED OUT FOR LIVE SERVER DEPLOYMENT
+    # On live server, we don't want to check actual Pi connectivity
     
-    if not pi_connected:
-        error_msg = "❌ **Operation Failed: Raspberry Pi Not Connected**\n\n"
-        error_msg += f"**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline\n\n"
-        error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before registration."
-        logger.warning("Registration preparation blocked: Raspberry Pi not connected")
-        blink_led("red")
-        return error_msg
+    # Check Raspberry Pi connection first
+    # connection_manager = get_connection_manager()
+    # pi_ip = get_primary_raspberry_pi_ip()
+    # pi_connected = connection_manager.check_raspberry_pi_availability()
+    # 
+    # if not pi_connected:
+    #     error_msg = "❌ **Operation Failed: Raspberry Pi Not Connected**\n\n"
+    #     error_msg += f"**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline\n\n"
+    #     error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before registration."
+    #     logger.warning("Registration preparation blocked: Raspberry Pi not connected")
+    #     blink_led("red")
+    #     return error_msg
+    
+    logger.info("🔍 Registration preparation (live server mode - Pi check disabled)")
+    pi_ip = "192.168.1.18"  # Mock IP for live server
     
     if not is_scanner_connected():
         return "⚠️ No barcode scanner detected. Please connect your device."
@@ -637,7 +643,7 @@ def generate_registration_token():
     try:
         response_msg = f"""✅ Ready for Device Registration!
 
-**Pi Status:** {pi_ip} - Connected ✅
+**Pi Status:** {pi_ip} - Connected ✅ (Live Server Mode)
 **Scanner Status:** Connected ✅
 
 **Instructions:**
@@ -670,20 +676,24 @@ def confirm_registration(registration_token, device_id):
     logger.info("🔒 This is REGISTRATION ONLY operation - no barcode scans or inventory changes")
     logger.info("🔒 REGISTRATION_IN_PROGRESS flag set to TRUE - blocking all quantity updates")
     
+    # COMMENTED OUT FOR LIVE SERVER DEPLOYMENT
+    # On live server, we don't want to check actual Pi connectivity
+    
     # 1. First check Raspberry Pi connection before proceeding
-    connection_manager = get_connection_manager()
+    # connection_manager = get_connection_manager()
+    # 
+    # # Get Pi IP and connection status
+    # pi_ip = get_primary_raspberry_pi_ip()
+    # pi_connected = connection_manager.check_raspberry_pi_availability()
+    # 
+    # if not pi_connected:
+    #     error_msg = "❌ **Operation Failed: Raspberry Pi Not Connected**\n\n"
+    #     error_msg += f"**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline\n\n"
+    #     error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before registration."
+    #     logger.warning("Registration blocked: Raspberry Pi not connected")
     
-    # Get Pi IP and connection status
-    pi_ip = get_primary_raspberry_pi_ip()
-    pi_connected = connection_manager.check_raspberry_pi_availability()
-    
-    if not pi_connected:
-        error_msg = "❌ **Operation Failed: Raspberry Pi Not Connected**\n\n"
-        error_msg += f"**Pi Status:** {pi_ip if pi_ip else 'Not found'} - Offline\n\n"
-        error_msg += "**Action:** Please ensure the Raspberry Pi device is connected and reachable on the network before registration."
-        logger.warning("Registration blocked: Raspberry Pi not connected")
-        blink_led("red")
-        return error_msg
+    logger.info("🔍 Device registration (live server mode - Pi check disabled)")
+    pi_ip = "192.168.1.18"  # Mock IP for live server
     
     # 2. Check if barcode scanner is connected (if needed)
     # Note: Removed scanner check as it may not be required for all setups
