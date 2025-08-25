@@ -220,8 +220,8 @@ class ConnectionManager:
             logger.info("🔍 Checking external Raspberry Pi connection status...")
             
             try:
-                # Get all discovered devices
-                devices = self.network_discovery._discover_devices_alternative()
+                # Get all discovered devices using the correct public method
+                devices = self.network_discovery.discover_raspberry_pi_devices()
                 
                 # Filter for actual external Pi devices (not server device)
                 external_pi_devices = [
