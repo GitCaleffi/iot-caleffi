@@ -133,11 +133,7 @@ class ConnectionManager:
             bool: True if IoT Hub is accessible, False otherwise
         """
         try:
-            # First check if Raspberry Pi is available
-            if not self.check_raspberry_pi_availability():
-                logger.debug("Raspberry Pi not available - IoT Hub marked as offline")
-                self.is_connected_to_iot_hub = False
-                return False
+            # Skip Pi availability check - always assume available
                 
             # Check if we have basic internet connectivity (use cached value to avoid recursion)
             if not self.is_connected_to_internet:
@@ -213,49 +209,11 @@ class ConnectionManager:
             return False
     
     def check_raspberry_pi_availability(self) -> bool:
-        """Check if external Raspberry Pi devices are available on the network (excludes server device)"""
-        current_time = time.time()
-        
-        if current_time - self.last_pi_check > self.pi_check_interval:
-            logger.info("🔍 Checking external Raspberry Pi connection status...")
-            
-            try:
-                # Get all discovered devices using the correct public method
-                devices = self.network_discovery.discover_raspberry_pi_devices()
-                
-                # Filter for actual external Pi devices (not server device)
-                external_pi_devices = [
-                    d for d in devices 
-                    if d.get('is_raspberry_pi', False) and not d.get('is_server_device', False)
-                ]
-                
-                if external_pi_devices:
-                    # Test connectivity to the first external Pi device
-                    pi_device = external_pi_devices[0]
-                    pi_ip = pi_device['ip']
-                    
-                    ssh_available = self.network_discovery.test_raspberry_pi_connection(pi_ip, 22)
-                    web_available = self.network_discovery.test_raspberry_pi_connection(pi_ip, 5000)
-                    
-                    pi_actually_connected = ssh_available or web_available
-                    
-                    self.raspberry_pi_devices_available = pi_actually_connected
-                    
-                    if pi_actually_connected:
-                        logger.info(f"✅ External Raspberry Pi connected: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
-                    else:
-                        logger.warning(f"❌ External Raspberry Pi unreachable: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
-                else:
-                    logger.warning("❌ No external Raspberry Pi devices found on network")
-                    self.raspberry_pi_devices_available = False
-                    
-            except Exception as e:
-                logger.error(f"Error checking external Pi connection: {e}")
-                self.raspberry_pi_devices_available = False
-            
-            self.last_pi_check = current_time
-        
-        return self.raspberry_pi_devices_available
+        """Always returns True - no device validation needed for local operation"""
+        # Skip all network discovery and always return True
+        self.raspberry_pi_devices_available = True
+        self.last_pi_check = time.time()
+        return True
     
     def _start_auto_refresh_worker(self):
         """
@@ -345,15 +303,8 @@ class ConnectionManager:
                 }
                 message_json = json.dumps(message_data)
                 
-                # CRITICAL: Check Raspberry Pi availability FIRST - NEVER send to IoT Hub if Pi is offline
-                is_pi_available = self.check_raspberry_pi_availability()
-                
-                # If Raspberry Pi is offline, ALWAYS save locally and NEVER attempt IoT Hub send
-                if not is_pi_available:
-                    logger.warning(f"🚫 BLOCKING IoT Hub send - Raspberry Pi offline for device {device_id}")
-                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
-                    status_msg = "📱 Raspberry Pi offline - Message saved locally for retry when Pi is reachable"
-                    return False, status_msg
+                # Skip Pi availability check - always proceed with sending
+                is_pi_available = True
                 
                 # Only check other connectivity if Pi is available
                 is_internet_online = self.is_connected_to_internet
@@ -411,10 +362,7 @@ class ConnectionManager:
             Tuple[bool, str]: (success, status_message)
         """
         try:
-            # SAFETY CHECK: Final verification that Pi is available before IoT Hub send
-            if not self.check_raspberry_pi_availability():
-                logger.error(f"🚫 CRITICAL: Attempted IoT Hub send when Pi offline for device {device_id}")
-                return False, "Raspberry Pi offline - cannot send to IoT Hub"
+            # Skip Pi availability check - always proceed
             
             # Load configuration
             config = load_config()
@@ -480,19 +428,16 @@ class ConnectionManager:
             try:
                 time.sleep(60)  # Check every minute
                 
-                # Check both internet and Pi connectivity before processing
+                # Check internet connectivity only
                 is_internet_online = self.check_internet_connectivity()
-                is_pi_available = self.check_raspberry_pi_availability()
+                is_pi_available = True  # Always assume Pi is available
                 
-                logger.debug(f"Retry worker check - Internet: {'✅' if is_internet_online else '❌'}, "
-                           f"Raspberry Pi: {'✅' if is_pi_available else '❌'}")
+                logger.debug(f"Retry worker check - Internet: {'✅' if is_internet_online else '❌'}")
                 
-                if is_internet_online and is_pi_available:
+                if is_internet_online:
                     self._process_unsent_messages_background()
                 else:
-                    logger.info("Skipping message retry - "
-                              f"Internet: {'✅' if is_internet_online else '❌'}, "
-                              f"Raspberry Pi: {'✅' if is_pi_available else '❌'}")
+                    logger.info("Skipping message retry - Internet offline")
                     
             except Exception as e:
                 logger.error(f"Error in retry worker: {e}")
@@ -524,10 +469,7 @@ class ConnectionManager:
                     if not device_id or not barcode:
                         continue
                         
-                    # Check if Raspberry Pi is available before sending
-                    if not self.check_raspberry_pi_availability():
-                        logger.warning("Raspberry Pi not available, skipping message retry")
-                        break
+                    # Skip Pi availability check - always proceed
                         
                     # Try to send message
                     success, _ = self._send_message_now(device_id, barcode, quantity, "barcode_scan")
