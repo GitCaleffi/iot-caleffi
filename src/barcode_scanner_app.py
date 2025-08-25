@@ -128,40 +128,49 @@ def auto_register_device_to_server():
             "https://iot.caleffionline.it/api/pi-device-register"  # Live server fallback
         ]
         
-        logger.info(f"📤 Auto-registering device {device_id} to live server...")
+        logger.info(f"📤 Auto-registering device {device_id} to server...")
         
-        response = requests.post(
-            live_server_url,
-            json=registration_data,
-            headers={'Content-Type': 'application/json'},
-            timeout=10
-        )
+        # Try each URL until one works
+        for url in live_server_urls:
+            try:
+                logger.info(f"Trying registration URL: {url}")
+                response = requests.post(
+                    url,
+                    json=registration_data,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ Device auto-registered successfully: {device_id} via {url}")
+                    
+                    # Save to local database
+                    local_db.save_device_id(device_id)
+                    
+                    # Start heartbeat thread
+                    threading.Thread(
+                        target=send_heartbeat_to_server,
+                        args=(device_id, local_ip, url.replace('/api/pi-device-register', '/api/pi-device-heartbeat')),
+                        daemon=True
+                    ).start()
+                    
+                    return True
+                else:
+                    logger.warning(f"Registration failed for {url}: {response.status_code} - {response.text[:100]}")
+                    
+            except Exception as e:
+                logger.warning(f"Registration error for {url}: {e}")
+                continue
         
-        if response.status_code == 200:
-            logger.info(f"✅ Device auto-registered successfully: {device_id}")
-            
-            # Save to local database
-            local_db.save_device_id(device_id)
-            
-            # Start heartbeat thread
-            threading.Thread(
-                target=send_heartbeat_to_server,
-                args=(device_id, local_ip),
-                daemon=True
-            ).start()
-            
-            return True
-        else:
-            logger.error(f"❌ Auto-registration failed: {response.status_code} - {response.text}")
-            return False
+        logger.error(f"❌ Auto-registration failed for all endpoints")
+        return False
             
     except Exception as e:
         logger.error(f"❌ Auto-registration error: {e}")
         return False
 
-def send_heartbeat_to_server(device_id, ip_address):
+def send_heartbeat_to_server(device_id, ip_address, heartbeat_url):
     """Send periodic heartbeat to live server"""
-    live_server_url = "https://iot.caleffionline.it/api/pi-device-heartbeat"
     
     while True:
         try:
@@ -171,7 +180,7 @@ def send_heartbeat_to_server(device_id, ip_address):
             }
             
             response = requests.post(
-                live_server_url,
+                heartbeat_url,
                 json=heartbeat_data,
                 headers={'Content-Type': 'application/json'},
                 timeout=5
