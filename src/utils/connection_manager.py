@@ -213,43 +213,44 @@ class ConnectionManager:
             return False
     
     def check_raspberry_pi_availability(self) -> bool:
-        """
-        Check if any Raspberry Pi devices are available on the network.
-        Uses the same logic as the registration process for consistency.
-        
-        Returns:
-            bool: True if at least one Pi device is reachable
-        """
+        """Check if external Raspberry Pi devices are available on the network (excludes server device)"""
         current_time = time.time()
         
-        # Check if we need to refresh Pi availability status
         if current_time - self.last_pi_check > self.pi_check_interval:
-            logger.info("🔍 Checking Raspberry Pi connection status...")
+            logger.info("🔍 Checking external Raspberry Pi connection status...")
             
             try:
-                # Use the same logic as registration process - get primary Pi IP
-                pi_ip = self.network_discovery.get_primary_raspberry_pi_ip()
+                # Get all discovered devices
+                devices = self.network_discovery._discover_devices_alternative()
                 
-                if pi_ip:
-                    # Test connectivity using the same approach as registration
+                # Filter for actual external Pi devices (not server device)
+                external_pi_devices = [
+                    d for d in devices 
+                    if d.get('is_raspberry_pi', False) and not d.get('is_server_device', False)
+                ]
+                
+                if external_pi_devices:
+                    # Test connectivity to the first external Pi device
+                    pi_device = external_pi_devices[0]
+                    pi_ip = pi_device['ip']
+                    
                     ssh_available = self.network_discovery.test_raspberry_pi_connection(pi_ip, 22)
                     web_available = self.network_discovery.test_raspberry_pi_connection(pi_ip, 5000)
                     
-                    # Pi is only considered "connected" if at least SSH or Web service is available
                     pi_actually_connected = ssh_available or web_available
                     
                     self.raspberry_pi_devices_available = pi_actually_connected
                     
                     if pi_actually_connected:
-                        logger.info(f"✅ Raspberry Pi connected: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
+                        logger.info(f"✅ External Raspberry Pi connected: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
                     else:
-                        logger.warning(f"❌ Raspberry Pi unreachable: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
+                        logger.warning(f"❌ External Raspberry Pi unreachable: {pi_ip} (SSH: {ssh_available}, Web: {web_available})")
                 else:
-                    logger.warning("❌ Raspberry Pi not found on network")
+                    logger.warning("❌ No external Raspberry Pi devices found on network")
                     self.raspberry_pi_devices_available = False
                     
             except Exception as e:
-                logger.error(f"Error checking Pi connection: {e}")
+                logger.error(f"Error checking external Pi connection: {e}")
                 self.raspberry_pi_devices_available = False
             
             self.last_pi_check = current_time

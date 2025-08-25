@@ -960,10 +960,19 @@ Device is ready for barcode scanning operations! Scans will be sent when the Pi 
         # 3. Handle device registration if not already registered
         if not device_registered:
             logger.info(f"New device detected: {device_id}. Initiating automatic registration...")
-        
-        if not device_registered:
-            logger.info(f"New device detected: {device_id}. Initiating automatic registration...")
-            # ... registration code ...
+            
+            # Generate auto-registration token
+            auto_token = device_manager.generate_registration_token(device_id)
+            logger.info(f"Generated auto-registration token for device {device_id}: {auto_token}")
+            
+            # Create device info for registration
+            device_info = {
+                "device_id": device_id,
+                "device_type": "barcode_scanner",
+                "registration_method": "automatic",
+                "registration_time": datetime.now(timezone.utc).isoformat()
+            }
+            
             success, reg_message = device_manager.register_device(auto_token, device_id, device_info)
             
             # Check if registration was successful

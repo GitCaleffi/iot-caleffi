@@ -126,10 +126,11 @@ class NetworkDiscovery:
                     "ip": server_ip if server_ip else "127.0.0.1",  # Use actual server IP
                     "mac": local_mac,
                     "hostname": f"local-{device_type}",
-                    "is_raspberry_pi": True,  # Always True for live server deployment
+                    "is_raspberry_pi": False,  # Server device is NOT a Pi for connection purposes
                     "detection_reason": "local_mac_detection",
                     "discovery_method": "dynamic_mac",
-                    "actual_device_type": device_type
+                    "actual_device_type": device_type,
+                    "is_server_device": True  # Mark as server device
                 }
                 devices.append(device_info)
                 logger.info(f"🍓 Device found via MAC (using for Pi detection): {local_mac}")
@@ -139,9 +140,15 @@ class NetworkDiscovery:
         except Exception as e:
             logger.warning(f"Local MAC detection failed: {e}")
             
-        # Method 2: Use ip neighbor for network-wide MAC detection (no static IPs)
-        if not devices:
-            devices.extend(self._discover_via_ip_neighbor())
+        # Method 2: Use ip neighbor for network-wide MAC detection (scan for actual Pi devices)
+        # Always scan for external Pi devices, even if server device was detected
+        external_devices = self._discover_via_ip_neighbor()
+        devices.extend(external_devices)
+        
+        # Filter out server device IP from external devices to avoid duplicates
+        server_ip = self._get_server_ip()
+        if server_ip:
+            devices = [d for d in devices if not (d.get('ip') == server_ip and d.get('is_server_device', False))]
         
         return devices
     
