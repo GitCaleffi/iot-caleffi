@@ -244,7 +244,7 @@ class ConnectionManager:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""
         try:
             if not self.dynamic_registration_service or not self.dynamic_registration_service.registry_manager:
-                logger.debug("No IoT Hub registry manager available for Pi device check")
+                logger.info("No IoT Hub registry manager available for Pi device check")
                 return []
             
             registry_manager = self.dynamic_registration_service.registry_manager
@@ -263,29 +263,49 @@ class ConnectionManager:
             pi_config = config.get("raspberry_pi", {})
             specific_pi_devices = pi_config.get("device_ids", [])
             
+            logger.info(f"🔍 Checking IoT Hub for Pi devices. Configured devices: {specific_pi_devices}")
+            
             # Check specific Pi devices first
             for device_id in specific_pi_devices:
+                logger.info(f"🔍 Checking configured Pi device: {device_id}")
                 if self._check_device_connection_state(registry_manager, device_id):
+                    logger.info(f"✅ Found CONNECTED Pi device: {device_id}")
                     connected_pi_devices.append(device_id)
+                else:
+                    logger.info(f"❌ Pi device {device_id} not connected or not found")
             
-            # If no specific devices configured, scan for Pi pattern devices
-            if not specific_pi_devices:
-                # Query devices with Pi patterns (limited scan for performance)
+            # If no specific devices configured or none found, scan for Pi pattern devices
+            if not specific_pi_devices or not connected_pi_devices:
+                logger.info("🔍 Scanning IoT Hub for Pi devices with pattern matching...")
                 try:
                     # Get device list (limited to avoid timeout)
                     devices = registry_manager.get_devices(max_count=100)
+                    logger.info(f"📡 Found {len(devices)} total devices in IoT Hub")
                     
+                    pi_candidates = []
                     for device in devices:
-                        device_id = device.device_id.lower()
+                        device_id_lower = device.device_id.lower()
                         
                         # Check if device ID matches Pi patterns
-                        if any(pattern in device_id for pattern in pi_device_patterns):
+                        if any(pattern in device_id_lower for pattern in pi_device_patterns):
+                            pi_candidates.append(device.device_id)
+                            logger.info(f"🔍 Found Pi candidate device: {device.device_id}")
                             if self._check_device_connection_state(registry_manager, device.device_id):
+                                logger.info(f"✅ Pi candidate {device.device_id} is CONNECTED")
                                 connected_pi_devices.append(device.device_id)
+                            else:
+                                logger.info(f"❌ Pi candidate {device.device_id} is not connected")
+                    
+                    if not pi_candidates:
+                        logger.info("❌ No devices found matching Pi patterns in IoT Hub")
+                        # Log first few device IDs for debugging
+                        sample_devices = [d.device_id for d in devices[:10]]
+                        logger.info(f"📋 Sample device IDs in IoT Hub: {sample_devices}")
                                 
                 except Exception as e:
-                    logger.debug(f"Error scanning IoT Hub devices: {e}")
+                    logger.info(f"Error scanning IoT Hub devices: {e}")
             
+            logger.info(f"🏁 Final result: {len(connected_pi_devices)} connected Pi devices: {connected_pi_devices}")
             return connected_pi_devices
             
         except Exception as e:
