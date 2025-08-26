@@ -11,6 +11,7 @@ from iot.hub_client import HubClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.config import load_config
 from utils.network_discovery import NetworkDiscovery
+from utils.iot_hub_pi_detection import IoTHubPiDetection
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,32 @@ class ConnectionManager:
         self.lock = RLock()
         self.network_discovery = NetworkDiscovery()
         
+        # Initialize IoT Hub Pi detection
+        self.iot_hub_pi_detection = None
+        self._initialize_iot_hub_detection()
+        
         # Start background retry worker
         self._start_retry_thread()
         
         # Start auto-refresh worker for real-time status updates
         self._start_auto_refresh_worker()
+    
+    def _initialize_iot_hub_detection(self):
+        """Initialize IoT Hub Pi detection with owner connection string"""
+        try:
+            config = load_config()
+            iot_hub_config = config.get("iot_hub", {})
+            owner_connection_string = iot_hub_config.get("connection_string")
+            
+            if owner_connection_string:
+                self.iot_hub_pi_detection = IoTHubPiDetection(owner_connection_string)
+                logger.info("✅ IoT Hub Pi detection initialized")
+            else:
+                logger.warning("⚠️ No IoT Hub owner connection string found in config")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize IoT Hub Pi detection: {e}")
+            self.iot_hub_pi_detection = None
         
     def check_internet_connectivity(self) -> bool:
         """
@@ -210,8 +232,8 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        Check if Raspberry Pi devices are available via IoT Hub connectionState.
-        Uses IoT Hub device twins instead of LAN ping for reliable cloud detection.
+        Check if Raspberry Pi devices are available using IoT Hub Device Twin and connection state.
+        Uses both Device Twin reported properties and connection state for reliable detection.
         """
         current_time = time.time()
         
@@ -222,23 +244,63 @@ class ConnectionManager:
             return self.raspberry_pi_devices_available
         
         try:
-            # Use IoT Hub device connectionState instead of LAN ping
-            connected_pi_devices = self._check_iot_hub_pi_devices()
-            
-            if connected_pi_devices:
-                logger.debug(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
-                self.raspberry_pi_devices_available = True
-            else:
-                logger.debug("❌ No CONNECTED Pi devices found in IoT Hub")
-                self.raspberry_pi_devices_available = False
+            # Use new IoT Hub Pi detection with Device Twin and connection state
+            if self.iot_hub_pi_detection:
+                device_ids = self._get_configured_pi_device_ids()
+                any_available, detailed_status = self.iot_hub_pi_detection.check_pi_availability(device_ids)
                 
-            self.last_pi_check = current_time
-            return self.raspberry_pi_devices_available
-            
+                if any_available:
+                    available_devices = detailed_status["summary"]["available_devices"]
+                    logger.info(f"✅ Found {len(available_devices)} available Pi device(s) via IoT Hub: {available_devices}")
+                    self.raspberry_pi_devices_available = True
+                else:
+                    logger.info("❌ No available Pi devices found via IoT Hub Device Twin/connection state")
+                    self.raspberry_pi_devices_available = False
+                    
+                self.last_pi_check = current_time
+                return self.raspberry_pi_devices_available
+            else:
+                logger.warning("⚠️ IoT Hub Pi detection not available, falling back to LAN check")
+                return self._fallback_lan_pi_check()
+                
         except Exception as e:
-            logger.debug(f"Error checking Pi availability via IoT Hub: {e}")
+            logger.error(f"❌ Error checking Pi availability via IoT Hub: {e}")
             # Fallback to LAN check only if IoT Hub fails
             return self._fallback_lan_pi_check()
+    
+    def _get_configured_pi_device_ids(self) -> List[str]:
+        """Get list of configured Pi device IDs from config"""
+        try:
+            config = load_config()
+            pi_config = config.get("raspberry_pi", {})
+            device_ids = pi_config.get("device_ids", [])
+            
+            # Add default device IDs if none configured
+            if not device_ids:
+                device_ids = ["pi-5284d8ff", "live-server-pi", "raspberry-pi-main"]
+                logger.info(f"Using default Pi device IDs: {device_ids}")
+            else:
+                logger.info(f"Using configured Pi device IDs: {device_ids}")
+                
+            return device_ids
+            
+        except Exception as e:
+            logger.error(f"Error getting Pi device IDs from config: {e}")
+            return ["pi-5284d8ff", "live-server-pi", "raspberry-pi-main"]
+    
+    def get_primary_raspberry_pi_ip(self) -> Optional[str]:
+        """Get primary Pi IP address from IoT Hub Device Twin if available"""
+        if self.iot_hub_pi_detection:
+            device_ids = self._get_configured_pi_device_ids()
+            for device_id in device_ids:
+                ip_address = self.iot_hub_pi_detection.get_device_ip_from_twin(device_id)
+                if ip_address:
+                    logger.info(f"📍 Got Pi IP from IoT Hub Device Twin: {ip_address}")
+                    return ip_address
+        
+        # Fallback to network discovery
+        logger.info("📍 Falling back to network discovery for Pi IP")
+        return self.network_discovery.get_primary_raspberry_pi_ip()
     
     def _check_iot_hub_pi_devices(self) -> list:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""

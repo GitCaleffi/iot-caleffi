@@ -1,0 +1,21 @@
+[Unit]
+Description=Automatic Pi IoT Hub Heartbeat Service
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gt39112
+Group=gt39112
+WorkingDirectory=/var/www/html/abhimanyu/barcode_scanner_clean
+ExecStart=/usr/bin/python3 /var/www/html/abhimanyu/barcode_scanner_clean/auto_pi_heartbeat.py
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment=PYTHONPATH=/var/www/html/abhimanyu/barcode_scanner_clean/src
+
+[Install]
+WantedBy=multi-user.target

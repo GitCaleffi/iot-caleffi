@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
 Pi IoT Hub Heartbeat Client
-Sends periodic heartbeat messages to IoT Hub to maintain "Connected" status
+Uses Device Twin reported properties to report status and maintain "Connected" status
 """
 
 import time
 import json
 import logging
+import socket
+import subprocess
 from datetime import datetime
 from azure.iot.device import IoTHubDeviceClient, Message
 
@@ -21,24 +23,49 @@ logger = logging.getLogger(__name__)
 # Replace with actual device connection string from IoT Hub
 CONNECTION_STRING = "HostName=CaleffiIoT.azure-devices.net;DeviceId=pi-5284d8ff;SharedAccessKey=YOUR_DEVICE_KEY"
 
-def create_heartbeat_message():
-    """Create a heartbeat message with current status"""
-    message_data = {
-        "messageType": "heartbeat",
-        "deviceId": "pi-5284d8ff",
-        "status": "online",
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "systemInfo": {
-            "uptime": time.time(),
+def get_system_info():
+    """Get current system information"""
+    try:
+        # Get IP address
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        
+        # Get uptime
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
+        
+        return {
+            "hostname": hostname,
+            "ip_address": ip_address,
+            "uptime_seconds": uptime_seconds,
             "services": ["barcode_scanner", "iot_client"]
         }
+    except Exception as e:
+        logger.warning(f"Could not get system info: {e}")
+        return {"services": ["barcode_scanner", "iot_client"]}
+
+def create_reported_properties():
+    """Create Device Twin reported properties"""
+    system_info = get_system_info()
+    
+    reported_properties = {
+        "status": "online",
+        "last_seen": datetime.utcnow().isoformat() + "Z",
+        "device_info": {
+            "hostname": system_info.get("hostname", "unknown"),
+            "ip_address": system_info.get("ip_address", "unknown"),
+            "uptime_seconds": system_info.get("uptime_seconds", 0),
+            "services": system_info.get("services", [])
+        },
+        "heartbeat_version": "2.0"
     }
-    return json.dumps(message_data)
+    
+    return reported_properties
 
 def main():
-    """Main heartbeat loop"""
+    """Main heartbeat loop using Device Twin reported properties"""
     try:
-        logger.info("🚀 Starting Pi IoT Hub heartbeat client...")
+        logger.info("🚀 Starting Pi IoT Hub heartbeat client with Device Twin...")
         logger.info(f"📡 Device ID: pi-5284d8ff")
         
         # Create IoT Hub client
@@ -53,17 +80,13 @@ def main():
         
         while True:
             try:
-                # Create and send heartbeat message
-                heartbeat_data = create_heartbeat_message()
-                message = Message(heartbeat_data)
-                message.content_type = "application/json"
-                message.content_encoding = "utf-8"
-                
-                # Send message
-                client.send_message(message)
+                # Update Device Twin reported properties
+                reported_properties = create_reported_properties()
+                client.patch_twin_reported_properties(reported_properties)
                 heartbeat_count += 1
                 
-                logger.info(f"💓 Heartbeat #{heartbeat_count} sent to IoT Hub")
+                logger.info(f"💓 Device Twin heartbeat #{heartbeat_count} updated")
+                logger.info(f"📊 Status: {reported_properties['status']}, Last seen: {reported_properties['last_seen']}")
                 
                 # Wait 30 seconds before next heartbeat
                 time.sleep(30)
@@ -72,7 +95,7 @@ def main():
                 logger.info("🛑 Keyboard interrupt received, stopping...")
                 break
             except Exception as e:
-                logger.error(f"❌ Error sending heartbeat: {e}")
+                logger.error(f"❌ Error updating Device Twin: {e}")
                 time.sleep(10)  # Wait before retry
                 
     except Exception as e:
@@ -82,6 +105,17 @@ def main():
     
     finally:
         try:
+            # Set status to offline before disconnecting
+            try:
+                offline_properties = {
+                    "status": "offline",
+                    "last_seen": datetime.utcnow().isoformat() + "Z"
+                }
+                client.patch_twin_reported_properties(offline_properties)
+                logger.info("📴 Set status to offline in Device Twin")
+            except:
+                pass
+            
             client.disconnect()
             logger.info("🔌 Disconnected from IoT Hub")
         except:
