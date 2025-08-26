@@ -390,6 +390,28 @@ class LocalStorage:
         conn.close()
         logger.info(f"Unsent message saved for device {device_id}")
 
+    def create_available_devices_table(self):
+        """Create the available_devices table if it doesn't exist"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS available_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT UNIQUE,
+                device_name TEXT,
+                ip_address TEXT,
+                mac_address TEXT,
+                device_type TEXT,
+                status TEXT DEFAULT 'offline',
+                registered_at TEXT,
+                last_seen TEXT
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+
     def save_available_devices(self, device_ids):
         """Save available device IDs to the database"""
         conn = self._get_connection()
