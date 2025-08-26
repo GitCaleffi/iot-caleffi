@@ -11,7 +11,6 @@ import subprocess
 import uuid
 import requests
 import re
-import socket
 from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
@@ -885,15 +884,14 @@ def is_barcode_registered(barcode: str) -> bool:
         logger.error(f"Error checking barcode registration: {e}")
         return False
 
-def send_pi_status_to_servers(pi_connected, pi_devices=None):
+def send_pi_status_to_servers(pi_connected, pi_ip=None):
     """Send Pi connection status to IoT Hub and external API"""
     try:
-        # Create status message with IoT Hub device info
+        # Create status message
         status_message = {
             "messageType": "pi_connection_status",
             "pi_connected": pi_connected,
-            "connected_devices": pi_devices or [],
-            "detection_method": "iot_hub_device_twin",
+            "pi_ip": pi_ip,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_ip": "192.168.1.8",
             "source": "barcode_scanner_app"
@@ -967,13 +965,13 @@ def pi_status_monitor():
         try:
             connection_manager = get_connection_manager()
             if connection_manager:
-                # Check Pi availability via IoT Hub device twins
+                # Check Pi availability
                 pi_available = connection_manager.check_raspberry_pi_availability()
                 
-                # Get connected Pi devices from IoT Hub
-                connected_pi_devices = []
-                if hasattr(connection_manager, '_check_iot_hub_pi_devices'):
-                    connected_pi_devices = connection_manager._check_iot_hub_pi_devices()
+                # Get Pi IP from config
+                config = load_config()
+                pi_config = config.get('raspberry_pi', {}) if config else {}
+                configured_ip = pi_config.get('auto_detected_ip')
                 
                 # Only send if status changed or every 5 minutes
                 current_time = time.time()
@@ -982,8 +980,8 @@ def pi_status_monitor():
                               (current_time - pi_status_monitor.last_send_time) > 300)  # 5 minutes
                 
                 if status_changed or time_to_send:
-                    # Send status to servers with IoT Hub device info
-                    results = send_pi_status_to_servers(pi_available, connected_pi_devices)
+                    # Send status to servers
+                    results = send_pi_status_to_servers(pi_available, configured_ip)
                     
                     # Update tracking variables
                     last_pi_status = pi_available
@@ -992,7 +990,7 @@ def pi_status_monitor():
                     # Add to status queue for UI updates
                     status_info = {
                         "pi_connected": pi_available,
-                        "connected_devices": connected_pi_devices,
+                        "pi_ip": configured_ip,
                         "timestamp": datetime.now().isoformat(),
                         "iot_hub_sent": results["iot_hub_success"],
                         "api_sent": results["api_success"],
@@ -1005,7 +1003,7 @@ def pi_status_monitor():
                         pass  # Queue full, skip this update
                     
                     if status_changed:
-                        logger.info(f"📡 Pi connection status changed: {pi_available} (Devices: {connected_pi_devices})")
+                        logger.info(f"📡 Pi connection status changed: {pi_available} (IP: {configured_ip})")
             
         except Exception as e:
             logger.error(f"Pi status monitor error: {e}")
@@ -1025,15 +1023,11 @@ def get_pi_status_info():
                 break
         
         if latest_status:
-            connected_devices = latest_status.get('connected_devices', [])
-            device_list = ', '.join(connected_devices) if connected_devices else 'None'
-            
             status_text = f"""
-## 📡 Raspberry Pi Connection Status (IoT Hub Detection)
+## 📡 Raspberry Pi Connection Status
 
 **Connection Status:** {'✅ Connected' if latest_status['pi_connected'] else '❌ Disconnected'}
-**Connected Devices:** {device_list}
-**Detection Method:** IoT Hub Device Twin
+**Pi IP Address:** {latest_status['pi_ip'] or 'Not configured'}
 **Last Check:** {latest_status['timestamp']}
 
 ### Message Delivery Status:
@@ -1048,20 +1042,15 @@ def get_pi_status_info():
             connection_manager = get_connection_manager()
             if connection_manager:
                 pi_available = connection_manager.check_raspberry_pi_availability()
-                
-                # Get connected devices from IoT Hub
-                connected_pi_devices = []
-                if hasattr(connection_manager, '_check_iot_hub_pi_devices'):
-                    connected_pi_devices = connection_manager._check_iot_hub_pi_devices()
-                
-                device_list = ', '.join(connected_pi_devices) if connected_pi_devices else 'None'
+                config = load_config()
+                pi_config = config.get('raspberry_pi', {}) if config else {}
+                configured_ip = pi_config.get('auto_detected_ip')
                 
                 return f"""
-## 📡 Raspberry Pi Connection Status (IoT Hub Detection)
+## 📡 Raspberry Pi Connection Status
 
 **Connection Status:** {'✅ Connected' if pi_available else '❌ Disconnected'}
-**Connected Devices:** {device_list}
-**Detection Method:** IoT Hub Device Twin
+**Pi IP Address:** {configured_ip or 'Not configured'}
 **Last Check:** {datetime.now().isoformat()}
 
 *Status reporting active in background*
@@ -1861,105 +1850,6 @@ with gr.Blocks(title="Barcode Scanner") as app:
         inputs=[],
         outputs=[pi_status_display]
     )
-
-def start_auto_pi_heartbeat():
-    """Automatic Pi heartbeat service integrated into barcode scanner app"""
-    try:
-        from azure.iot.device import IoTHubDeviceClient
-        from utils.config import load_config
-        from utils.dynamic_registration_service import DynamicRegistrationService
-        
-        logger.info("🚀 Initializing integrated Pi heartbeat service...")
-        
-        # Load configuration
-        config = load_config()
-        
-        # Get device ID from server MAC address
-        mac_address = get_local_mac_address()
-        if mac_address:
-            mac_clean = mac_address.replace(":", "").replace("-", "").lower()
-            device_id = f"pi-{mac_clean[-8:]}"
-        else:
-            device_id = f"pi-{socket.gethostname()}"
-        
-        logger.info(f"📡 Using device ID: {device_id}")
-        
-        # Initialize dynamic registration service
-        iot_hub_config = config.get("iot_hub", {})
-        owner_connection_string = iot_hub_config.get("connection_string")
-        
-        if not owner_connection_string:
-            logger.error("❌ No IoT Hub owner connection string found in config")
-            return
-        
-        registration_service = DynamicRegistrationService(owner_connection_string)
-        logger.info("✅ Dynamic registration service initialized")
-        
-        # Register device and get connection string
-        connection_string = registration_service.register_device_with_azure(device_id)
-        if not connection_string:
-            logger.error(f"❌ Failed to get connection string for device {device_id}")
-            return
-        
-        logger.info(f"✅ Got connection string for device {device_id}")
-        
-        # Create IoT Hub client
-        client = IoTHubDeviceClient.create_from_connection_string(connection_string)
-        
-        # Connect to IoT Hub
-        logger.info("🔗 Connecting to IoT Hub...")
-        client.connect()
-        logger.info("✅ Connected to IoT Hub successfully")
-        
-        heartbeat_count = 0
-        heartbeat_interval = 30  # seconds
-        
-        while True:
-            try:
-                # Get system info
-                pi_config = config.get("raspberry_pi", {})
-                ip_address = pi_config.get("auto_detected_ip", "unknown")
-                
-                # Get uptime
-                uptime_seconds = 0
-                try:
-                    with open('/proc/uptime', 'r') as f:
-                        uptime_seconds = float(f.readline().split()[0])
-                except:
-                    uptime_seconds = time.time()
-                
-                # Create Device Twin reported properties
-                reported_properties = {
-                    "status": "online",
-                    "last_seen": datetime.utcnow().isoformat() + "Z",
-                    "device_info": {
-                        "hostname": socket.gethostname(),
-                        "ip_address": ip_address,
-                        "mac_address": mac_address,
-                        "uptime_seconds": uptime_seconds,
-                        "services": ["barcode_scanner", "iot_client", "auto_heartbeat", "live_server"]
-                    },
-                    "heartbeat_version": "integrated-1.0",
-                    "server_type": "live_server"
-                }
-                
-                # Update Device Twin
-                client.patch_twin_reported_properties(reported_properties)
-                heartbeat_count += 1
-                
-                logger.info(f"💓 Integrated heartbeat #{heartbeat_count} sent for {device_id}")
-                logger.debug(f"📊 Status: online, IP: {ip_address}")
-                
-                # Wait for next heartbeat
-                time.sleep(heartbeat_interval)
-                
-            except Exception as e:
-                logger.error(f"❌ Error in heartbeat loop: {e}")
-                time.sleep(60)  # Wait longer on error
-                
-    except Exception as e:
-        logger.error(f"❌ Failed to start integrated Pi heartbeat: {e}")
-        logger.info("⚠️ Continuing without integrated heartbeat service")
     
 # Initialize device and auto-register on startup
 logger.info("🚀 Initializing automatic device registration...")
@@ -1972,12 +1862,6 @@ logger.info("🚀 Starting Pi status monitoring...")
 pi_status_thread = threading.Thread(target=pi_status_monitor, daemon=True)
 pi_status_thread.start()
 logger.info("✅ Pi status monitoring active - will report to IoT Hub and API")
-
-# Start automatic Pi heartbeat service for live server
-logger.info("🚀 Starting automatic Pi heartbeat service...")
-heartbeat_thread = threading.Thread(target=start_auto_pi_heartbeat, daemon=True)
-heartbeat_thread.start()
-logger.info("✅ Automatic Pi heartbeat service started")
 
 if __name__ == "__main__":
     # Initialize connection manager without Pi detection
