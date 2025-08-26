@@ -211,44 +211,60 @@ class ConnectionManager:
     def check_raspberry_pi_availability(self) -> bool:
         """
         Check if external Raspberry Pi devices are available on the network.
-        Uses network discovery to detect actual Pi devices and test connectivity.
+        Uses REAL-TIME connectivity testing, not cached ARP entries.
         """
         current_time = time.time()
         
-        # Use cached result if recent check
-        if current_time - self.last_pi_check < self.pi_check_interval:
+        # Use shorter cache interval for more dynamic detection
+        cache_interval = 10  # Check every 10 seconds instead of 30
+        if current_time - self.last_pi_check < cache_interval:
             logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
             return self.raspberry_pi_devices_available
         
         try:
-            # Use network discovery to find actual Raspberry Pi devices
-            pi_devices = self.network_discovery.discover_raspberry_pi_devices()
+            # Load user's specific Pi IP from config
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
             
-            if not pi_devices:
-                logger.debug("❌ No external Raspberry Pi devices found on network")
-                self.raspberry_pi_devices_available = False
-                self.last_pi_check = current_time
-                return False
+            # Test user's specific Pi IP first, then fallback IPs
+            potential_pi_ips = []
+            if user_pi_ip:
+                potential_pi_ips.append(user_pi_ip)  # User's specific Pi
             
-            # Test connectivity to each discovered Pi device
+            # Add fallback IPs
+            potential_pi_ips.extend([
+                "192.168.1.18",  # Common Pi IP
+                "192.168.1.100", # Common Pi IP
+                "192.168.1.101", # Common Pi IP
+            ])
+            
             available_pis = []
-            for device in pi_devices:
-                ip = device.get("ip")
-                if ip:
-                    # Test actual connectivity using ping and port checks
-                    pi_device = self.network_discovery.discover_raspberry_pi_by_ip(ip)
-                    if pi_device:
-                        available_pis.append(pi_device)
-                        logger.debug(f"✅ Raspberry Pi {ip} is available and responsive")
-                    else:
-                        logger.debug(f"❌ Raspberry Pi {ip} found in ARP but not responsive")
             
-            if available_pis:
-                logger.debug(f"✅ Found {len(available_pis)} responsive Raspberry Pi device(s)")
-                self.raspberry_pi_devices_available = True
+            # Test each potential Pi IP with actual connectivity
+            for ip in potential_pi_ips:
+                if self._test_real_pi_connectivity(ip):
+                    available_pis.append(ip)
+                    logger.debug(f"✅ Raspberry Pi {ip} is ONLINE and responsive")
+                else:
+                    logger.debug(f"❌ Raspberry Pi {ip} is OFFLINE or not responsive")
+            
+            # If user has specific Pi IP configured, ONLY check that one
+            if user_pi_ip:
+                if user_pi_ip in available_pis:
+                    logger.debug(f"✅ User's specific Pi {user_pi_ip} is ONLINE")
+                    self.raspberry_pi_devices_available = True
+                else:
+                    logger.debug(f"❌ User's specific Pi {user_pi_ip} is OFFLINE")
+                    self.raspberry_pi_devices_available = False
             else:
-                logger.debug("❌ No responsive Raspberry Pi devices found (all offline)")
-                self.raspberry_pi_devices_available = False
+                # Fallback: check any Pi device if no specific IP configured
+                if available_pis:
+                    logger.debug(f"✅ Found {len(available_pis)} ONLINE Raspberry Pi device(s): {available_pis}")
+                    self.raspberry_pi_devices_available = True
+                else:
+                    logger.debug("❌ No ONLINE Raspberry Pi devices found - all offline or disconnected")
+                    self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
             return self.raspberry_pi_devices_available
@@ -258,6 +274,28 @@ class ConnectionManager:
             # On error, assume Pi is offline to be safe
             self.raspberry_pi_devices_available = False
             self.last_pi_check = current_time
+            return False
+    
+    def _test_real_pi_connectivity(self, ip: str) -> bool:
+        """Test real-time connectivity to a potential Pi device - SSH REQUIRED"""
+        import socket
+        
+        # STRICT: Only consider devices with SSH as true Raspberry Pi devices
+        # This prevents false positives from web servers, routers, etc.
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)  # 2 second timeout for real-time check
+            result = sock.connect_ex((ip, 22))  # SSH port only
+            sock.close()
+            
+            if result == 0:
+                logger.debug(f"✅ {ip}:22 (SSH) is responsive - confirmed Pi device")
+                return True
+            else:
+                logger.debug(f"❌ {ip}:22 (SSH) not responsive - not a Pi device")
+                return False
+        except Exception as e:
+            logger.debug(f"❌ {ip} SSH test failed: {e}")
             return False
     
     def _start_auto_refresh_worker(self):

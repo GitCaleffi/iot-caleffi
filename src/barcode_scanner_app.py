@@ -620,25 +620,18 @@ def blink_led(color):
 def generate_registration_token():
     """Prepare for device registration (no token required)"""
     
-    # Check Raspberry Pi connection first
+    # Check Raspberry Pi connection first using connection manager
     from utils.connection_manager import get_connection_manager
     connection_manager = get_connection_manager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
     if not pi_available:
-        logger.warning("Registration preparation blocked: Raspberry Pi not connected")
+        logger.warning("Device registration blocked: Raspberry Pi not connected")
         blink_led("red")
-        return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
-
-**Status:** Cannot prepare device registration
-**Reason:** Raspberry Pi device not reachable on network
-
-Please ensure the Raspberry Pi device is connected and reachable on the network before registration.
-
-🔴 Red LED indicates Pi connection failure"""
+        return "❌ **Operation Failed: Raspberry Pi Not Connected**\n\nPlease ensure the Raspberry Pi device is connected and reachable on the network before attempting device registration."
     
-    logger.info("🔍 Registration preparation - Pi connection verified")
-    
+    logger.info(f"✅ Raspberry Pi connected - proceeding with device registration")
+
     if not is_scanner_connected():
         return "⚠️ No barcode scanner detected. Please connect your device."
     
@@ -953,62 +946,39 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
         local_db.save_barcode_scan(device_id, barcode, timestamp)
         logger.info(f"💾 Saved barcode scan locally: {barcode}")
         
-        # Try to send to IoT Hub (only if Pi is connected)
-        try:
-            # Get or create IoT Hub connection
-            registration_service = get_dynamic_registration_service()
-            connection_string = registration_service.register_device_with_azure(device_id)
-            
-            if connection_string:
-                hub_client = HubClient(connection_string)
-                
-                # Send barcode message
-                message_data = {
-                    "deviceId": device_id,
-                    "barcode": barcode,
-                    "timestamp": timestamp.isoformat(),
-                    "quantity": 1
-                }
-                
-                hub_client.send_message(message_data, device_id)
-                logger.info(f"✅ Sent barcode to IoT Hub: {barcode}")
-                
-                # Mark as sent in local database
-                local_db.mark_sent_to_hub(device_id, barcode, timestamp)
-                
-                blink_led("green")
-                return f"""✅ **Barcode Scan Successful**
+        # Use connection manager for consistent Pi checking and message handling
+        from utils.connection_manager import get_connection_manager
+        connection_manager = get_connection_manager()
+        
+        # Use connection manager's send_message_with_retry which handles Pi checks automatically
+        success, status_message = connection_manager.send_message_with_retry(
+            device_id=device_id,
+            barcode=barcode,
+            quantity=1,
+            message_type="barcode_scan"
+        )
+        
+        if success:
+            blink_led("green")
+            return f"""✅ **Barcode Scan Successful**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
-**Status:** Sent to IoT Hub successfully
+**Status:** {status_message}
 **Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
 🟢 Green LED indicates successful operation"""
-            else:
-                logger.warning("⚠️ Could not get IoT Hub connection")
-                blink_led("yellow")
-                return f"""⚠️ **Barcode Saved Locally**
+        else:
+            # Message was saved locally due to Pi/connectivity issues
+            blink_led("red")
+            return f"""⚠️ **Warning: Message Saved Locally**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
-**Status:** Saved locally, will retry sending later
+**Status:** {status_message}
 **Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-🟡 Yellow LED indicates local save"""
-                
-        except Exception as hub_error:
-            logger.error(f"❌ IoT Hub error: {hub_error}")
-            blink_led("yellow")
-            return f"""⚠️ **Barcode Saved Locally**
-
-**Barcode:** {barcode}
-**Device ID:** {device_id}
-**Status:** IoT Hub unavailable, saved locally
-**Error:** {str(hub_error)[:100]}
-**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
-
-🟡 Yellow LED indicates local save"""
+🔴 Red LED indicates offline operation"""
                 
     except Exception as e:
         logger.error(f"❌ Barcode scan error: {e}")
@@ -1499,12 +1469,27 @@ def _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details):
                 'error': 'Failed to get device connection string'
             }
         
-        # Initialize IoT Hub client and send message
-        hub_client = HubClient(device_connection_string)
-        result = hub_client.send_message(message_data)
+        # Use connection manager to send registration message with Pi checks
+        from utils.connection_manager import get_connection_manager
+        connection_manager = get_connection_manager()
         
-        if result:
-            logger.info(f"✅ Pi status sent to IoT Hub for device {device_id}")
+        # Check Pi availability before sending registration confirmation
+        if not connection_manager.check_raspberry_pi_availability():
+            logger.warning(f"Registration confirmation blocked: Raspberry Pi not connected for device {device_id}")
+            # Save registration message locally for retry
+            local_db.save_unsent_message(device_id, json.dumps(message_data), datetime.now())
+            return "⚠️ **Registration saved locally - Pi offline**\n\nDevice registration will be confirmed when Raspberry Pi comes online."
+        
+        # Send registration confirmation via connection manager
+        success, status_msg = connection_manager.send_message_with_retry(
+            device_id=device_id,
+            barcode=json.dumps(message_data),
+            quantity=1,
+            message_type="device_registration"
+        )
+        
+        if success:
+            logger.info(f"✅ Registration confirmation sent to IoT Hub for device {device_id}")
             return {
                 'success': True,
                 'device_id': device_id,
