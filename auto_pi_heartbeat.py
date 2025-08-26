@@ -13,7 +13,9 @@ import json
 import logging
 import socket
 import threading
+import asyncio
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from azure.iot.device import IoTHubDeviceClient
 from utils.config import load_config
 from utils.dynamic_registration_service import get_dynamic_registration_service
@@ -41,9 +43,14 @@ class AutoPiHeartbeat:
         self.device_id = None
         self.connection_string = None
         self.running = False
-        self.heartbeat_interval = 30  # seconds
-        self.reconnect_interval = 60  # seconds
-        self.max_retries = 5
+        self.heartbeat_interval = 10  # seconds - faster heartbeat
+        self.reconnect_interval = 15  # seconds - faster reconnect
+        self.max_retries = 3  # fewer retries for faster response
+        self.connection_timeout = 10  # seconds - timeout for operations
+        self.executor = ThreadPoolExecutor(max_workers=2)
+        self._system_info_cache = None
+        self._cache_timestamp = 0
+        self._cache_duration = 30  # cache system info for 30 seconds
         
     def get_pi_device_id(self):
         """Get Pi device ID from config or generate one"""
@@ -66,17 +73,31 @@ class AutoPiHeartbeat:
         return f"pi-{hostname}"
     
     def get_system_info(self):
-        """Get current system information"""
+        """Get current system information with caching for performance"""
+        current_time = time.time()
+        
+        # Return cached data if still valid
+        if (self._system_info_cache and 
+            current_time - self._cache_timestamp < self._cache_duration):
+            return self._system_info_cache
+        
         try:
             pi_config = self.config.get("raspberry_pi", {})
             
-            # Use configured IP or detect current IP
+            # Use configured IP or detect current IP with timeout
             ip_address = pi_config.get("auto_detected_ip")
             if not ip_address:
-                hostname = socket.gethostname()
-                ip_address = socket.gethostbyname(hostname)
+                try:
+                    # Use timeout for DNS resolution
+                    socket.setdefaulttimeout(2)
+                    hostname = socket.gethostname()
+                    ip_address = socket.gethostbyname(hostname)
+                    socket.setdefaulttimeout(None)
+                except socket.timeout:
+                    ip_address = "unknown"
+                    socket.setdefaulttimeout(None)
             
-            # Get uptime
+            # Get uptime quickly
             uptime_seconds = 0
             try:
                 with open('/proc/uptime', 'r') as f:
@@ -84,16 +105,26 @@ class AutoPiHeartbeat:
             except:
                 uptime_seconds = time.time()
             
-            return {
+            system_info = {
                 "hostname": socket.gethostname(),
                 "ip_address": ip_address,
                 "uptime_seconds": uptime_seconds,
                 "mac_address": pi_config.get("mac_address", "unknown"),
                 "services": ["barcode_scanner", "iot_client", "auto_heartbeat"]
             }
+            
+            # Cache the result
+            self._system_info_cache = system_info
+            self._cache_timestamp = current_time
+            
+            return system_info
+            
         except Exception as e:
             logger.warning(f"Could not get system info: {e}")
-            return {"services": ["auto_heartbeat"]}
+            fallback = {"services": ["auto_heartbeat"]}
+            self._system_info_cache = fallback
+            self._cache_timestamp = current_time
+            return fallback
     
     def create_reported_properties(self):
         """Create Device Twin reported properties"""
@@ -114,27 +145,38 @@ class AutoPiHeartbeat:
         }
     
     def initialize_connection(self):
-        """Initialize IoT Hub connection using dynamic registration"""
+        """Initialize IoT Hub connection using dynamic registration with timeout"""
         try:
             self.device_id = self.get_pi_device_id()
             logger.info(f"🚀 Initializing auto heartbeat for device: {self.device_id}")
             
-            # Initialize dynamic registration service with config
+            # Use thread pool for timeout-controlled operations
+            future = self.executor.submit(self._initialize_connection_worker)
+            
             try:
-                from utils.dynamic_registration_service import DynamicRegistrationService
-                iot_hub_config = self.config.get("iot_hub", {})
-                owner_connection_string = iot_hub_config.get("connection_string")
-                
-                if not owner_connection_string:
-                    logger.error("❌ No IoT Hub owner connection string found in config")
-                    return False
-                
-                registration_service = DynamicRegistrationService(owner_connection_string)
-                logger.info("✅ Dynamic registration service initialized")
-                
-            except Exception as e:
-                logger.error(f"❌ Failed to initialize dynamic registration service: {e}")
+                return future.result(timeout=self.connection_timeout)
+            except TimeoutError:
+                logger.error(f"❌ Connection initialization timed out after {self.connection_timeout}s")
                 return False
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize connection: {e}")
+            return False
+    
+    def _initialize_connection_worker(self):
+        """Worker method for connection initialization"""
+        try:
+            # Initialize dynamic registration service with config
+            from utils.dynamic_registration_service import DynamicRegistrationService
+            iot_hub_config = self.config.get("iot_hub", {})
+            owner_connection_string = iot_hub_config.get("connection_string")
+            
+            if not owner_connection_string:
+                logger.error("❌ No IoT Hub owner connection string found in config")
+                return False
+            
+            registration_service = DynamicRegistrationService(owner_connection_string)
+            logger.info("✅ Dynamic registration service initialized")
             
             # Register device and get connection string
             self.connection_string = registration_service.register_device_with_azure(self.device_id)
@@ -155,15 +197,31 @@ class AutoPiHeartbeat:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Failed to initialize connection: {e}")
+            logger.error(f"❌ Connection worker failed: {e}")
             return False
     
     def send_heartbeat(self):
-        """Send heartbeat via Device Twin reported properties"""
+        """Send heartbeat via Device Twin reported properties with timeout"""
         try:
             if not self.client:
                 return False
             
+            # Use thread pool for timeout-controlled heartbeat
+            future = self.executor.submit(self._send_heartbeat_worker)
+            
+            try:
+                return future.result(timeout=5)  # 5 second timeout for heartbeat
+            except TimeoutError:
+                logger.warning(f"⚠️ Heartbeat timed out after 5s")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Error sending heartbeat: {e}")
+            return False
+    
+    def _send_heartbeat_worker(self):
+        """Worker method for sending heartbeat"""
+        try:
             reported_properties = self.create_reported_properties()
             self.client.patch_twin_reported_properties(reported_properties)
             
@@ -173,26 +231,43 @@ class AutoPiHeartbeat:
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error sending heartbeat: {e}")
+            logger.error(f"❌ Heartbeat worker failed: {e}")
             return False
     
     def disconnect(self):
-        """Gracefully disconnect from IoT Hub"""
+        """Gracefully disconnect from IoT Hub with timeout"""
         try:
             if self.client:
-                # Set status to offline before disconnecting
-                offline_properties = {
-                    "status": "offline",
-                    "last_seen": datetime.utcnow().isoformat() + "Z"
-                }
-                self.client.patch_twin_reported_properties(offline_properties)
-                logger.info("📴 Set status to offline in Device Twin")
+                # Use thread pool for timeout-controlled disconnect
+                future = self.executor.submit(self._disconnect_worker)
                 
-                self.client.disconnect()
-                logger.info("🔌 Disconnected from IoT Hub")
+                try:
+                    future.result(timeout=5)  # 5 second timeout for disconnect
+                except TimeoutError:
+                    logger.warning(f"⚠️ Disconnect timed out after 5s")
+                
+            # Cleanup executor
+            self.executor.shutdown(wait=False)
                 
         except Exception as e:
             logger.warning(f"⚠️ Error during disconnect: {e}")
+    
+    def _disconnect_worker(self):
+        """Worker method for disconnection"""
+        try:
+            # Set status to offline before disconnecting
+            offline_properties = {
+                "status": "offline",
+                "last_seen": datetime.utcnow().isoformat() + "Z"
+            }
+            self.client.patch_twin_reported_properties(offline_properties)
+            logger.info("📴 Set status to offline in Device Twin")
+            
+            self.client.disconnect()
+            logger.info("🔌 Disconnected from IoT Hub")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Disconnect worker failed: {e}")
     
     def run(self):
         """Main heartbeat loop with automatic reconnection"""
@@ -208,7 +283,11 @@ class AutoPiHeartbeat:
                 if not self.client:
                     if not self.initialize_connection():
                         logger.error(f"❌ Connection failed, retrying in {self.reconnect_interval} seconds...")
-                        time.sleep(self.reconnect_interval)
+                        # Use shorter sleep intervals for faster recovery
+                        for i in range(self.reconnect_interval):
+                            if not self.running:
+                                break
+                            time.sleep(1)
                         retry_count += 1
                         if retry_count >= self.max_retries:
                             logger.error(f"❌ Max retries ({self.max_retries}) reached, stopping service")
@@ -224,8 +303,11 @@ class AutoPiHeartbeat:
                     logger.warning("⚠️ Heartbeat failed, will retry connection")
                     self.client = None  # Force reconnection
                 
-                # Wait for next heartbeat
-                time.sleep(self.heartbeat_interval)
+                # Wait for next heartbeat with interruptible sleep
+                for i in range(self.heartbeat_interval):
+                    if not self.running:
+                        break
+                    time.sleep(1)
                 
             except KeyboardInterrupt:
                 logger.info("🛑 Keyboard interrupt received, stopping service...")

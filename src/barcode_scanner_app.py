@@ -11,6 +11,7 @@ import subprocess
 import uuid
 import requests
 import re
+import socket
 from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
@@ -1860,6 +1861,105 @@ with gr.Blocks(title="Barcode Scanner") as app:
         inputs=[],
         outputs=[pi_status_display]
     )
+
+def start_auto_pi_heartbeat():
+    """Automatic Pi heartbeat service integrated into barcode scanner app"""
+    try:
+        from azure.iot.device import IoTHubDeviceClient
+        from utils.config import load_config
+        from utils.dynamic_registration_service import DynamicRegistrationService
+        
+        logger.info("🚀 Initializing integrated Pi heartbeat service...")
+        
+        # Load configuration
+        config = load_config()
+        
+        # Get device ID from server MAC address
+        mac_address = get_local_mac_address()
+        if mac_address:
+            mac_clean = mac_address.replace(":", "").replace("-", "").lower()
+            device_id = f"pi-{mac_clean[-8:]}"
+        else:
+            device_id = f"pi-{socket.gethostname()}"
+        
+        logger.info(f"📡 Using device ID: {device_id}")
+        
+        # Initialize dynamic registration service
+        iot_hub_config = config.get("iot_hub", {})
+        owner_connection_string = iot_hub_config.get("connection_string")
+        
+        if not owner_connection_string:
+            logger.error("❌ No IoT Hub owner connection string found in config")
+            return
+        
+        registration_service = DynamicRegistrationService(owner_connection_string)
+        logger.info("✅ Dynamic registration service initialized")
+        
+        # Register device and get connection string
+        connection_string = registration_service.register_device_with_azure(device_id)
+        if not connection_string:
+            logger.error(f"❌ Failed to get connection string for device {device_id}")
+            return
+        
+        logger.info(f"✅ Got connection string for device {device_id}")
+        
+        # Create IoT Hub client
+        client = IoTHubDeviceClient.create_from_connection_string(connection_string)
+        
+        # Connect to IoT Hub
+        logger.info("🔗 Connecting to IoT Hub...")
+        client.connect()
+        logger.info("✅ Connected to IoT Hub successfully")
+        
+        heartbeat_count = 0
+        heartbeat_interval = 30  # seconds
+        
+        while True:
+            try:
+                # Get system info
+                pi_config = config.get("raspberry_pi", {})
+                ip_address = pi_config.get("auto_detected_ip", "unknown")
+                
+                # Get uptime
+                uptime_seconds = 0
+                try:
+                    with open('/proc/uptime', 'r') as f:
+                        uptime_seconds = float(f.readline().split()[0])
+                except:
+                    uptime_seconds = time.time()
+                
+                # Create Device Twin reported properties
+                reported_properties = {
+                    "status": "online",
+                    "last_seen": datetime.utcnow().isoformat() + "Z",
+                    "device_info": {
+                        "hostname": socket.gethostname(),
+                        "ip_address": ip_address,
+                        "mac_address": mac_address,
+                        "uptime_seconds": uptime_seconds,
+                        "services": ["barcode_scanner", "iot_client", "auto_heartbeat", "live_server"]
+                    },
+                    "heartbeat_version": "integrated-1.0",
+                    "server_type": "live_server"
+                }
+                
+                # Update Device Twin
+                client.patch_twin_reported_properties(reported_properties)
+                heartbeat_count += 1
+                
+                logger.info(f"💓 Integrated heartbeat #{heartbeat_count} sent for {device_id}")
+                logger.debug(f"📊 Status: online, IP: {ip_address}")
+                
+                # Wait for next heartbeat
+                time.sleep(heartbeat_interval)
+                
+            except Exception as e:
+                logger.error(f"❌ Error in heartbeat loop: {e}")
+                time.sleep(60)  # Wait longer on error
+                
+    except Exception as e:
+        logger.error(f"❌ Failed to start integrated Pi heartbeat: {e}")
+        logger.info("⚠️ Continuing without integrated heartbeat service")
     
 # Initialize device and auto-register on startup
 logger.info("🚀 Initializing automatic device registration...")
@@ -1872,6 +1972,12 @@ logger.info("🚀 Starting Pi status monitoring...")
 pi_status_thread = threading.Thread(target=pi_status_monitor, daemon=True)
 pi_status_thread.start()
 logger.info("✅ Pi status monitoring active - will report to IoT Hub and API")
+
+# Start automatic Pi heartbeat service for live server
+logger.info("🚀 Starting automatic Pi heartbeat service...")
+heartbeat_thread = threading.Thread(target=start_auto_pi_heartbeat, daemon=True)
+heartbeat_thread.start()
+logger.info("✅ Automatic Pi heartbeat service started")
 
 if __name__ == "__main__":
     # Initialize connection manager without Pi detection
