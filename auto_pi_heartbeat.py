@@ -43,37 +43,52 @@ class AutoPiHeartbeat:
         self.device_id = None
         self.connection_string = None
         self.running = False
-        self.heartbeat_interval = 10  # seconds - faster heartbeat
-        self.reconnect_interval = 15  # seconds - faster reconnect
-        self.max_retries = 3  # fewer retries for faster response
-        self.connection_timeout = 10  # seconds - timeout for operations
-        self.executor = ThreadPoolExecutor(max_workers=2)
+        self.heartbeat_interval = 5  # seconds - ultra fast heartbeat
+        self.reconnect_interval = 5  # seconds - ultra fast reconnect
+        self.max_retries = 2  # minimal retries for fastest response
+        self.connection_timeout = 5  # seconds - aggressive timeout
+        self.heartbeat_timeout = 3  # seconds - fast heartbeat timeout
+        self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="heartbeat")
+        
+        # Caching for performance
         self._system_info_cache = None
         self._cache_timestamp = 0
-        self._cache_duration = 30  # cache system info for 30 seconds
+        self._cache_duration = 15  # shorter cache for more responsive updates
+        self._device_id_cache = None
+        self._hostname_cache = None
+        self._reported_props_cache = None
+        self._reported_props_timestamp = 0
         
     def get_pi_device_id(self):
-        """Get Pi device ID from config or generate one"""
+        """Get Pi device ID from config or generate one (cached for performance)"""
+        # Return cached device ID if available
+        if self._device_id_cache:
+            return self._device_id_cache
+        
         pi_config = self.config.get("raspberry_pi", {})
         device_ids = pi_config.get("device_ids", [])
         
         if device_ids:
             # Use first configured device ID
-            return device_ids[0]
+            self._device_id_cache = device_ids[0]
+            return self._device_id_cache
         
         # Generate device ID from MAC address
         mac_address = pi_config.get("mac_address", "")
         if mac_address:
             # Extract last 8 characters of MAC for device ID
             mac_clean = mac_address.replace(":", "").replace("-", "").lower()
-            return f"pi-{mac_clean[-8:]}"
+            self._device_id_cache = f"pi-{mac_clean[-8:]}"
+            return self._device_id_cache
         
-        # Fallback to hostname-based ID
-        hostname = socket.gethostname()
-        return f"pi-{hostname}"
+        # Fallback to hostname-based ID (cached)
+        if not self._hostname_cache:
+            self._hostname_cache = socket.gethostname()
+        self._device_id_cache = f"pi-{self._hostname_cache}"
+        return self._device_id_cache
     
     def get_system_info(self):
-        """Get current system information with caching for performance"""
+        """Get current system information with aggressive caching for performance"""
         current_time = time.time()
         
         # Return cached data if still valid
@@ -81,56 +96,84 @@ class AutoPiHeartbeat:
             current_time - self._cache_timestamp < self._cache_duration):
             return self._system_info_cache
         
+        # Use thread pool for non-blocking system info gathering
         try:
-            pi_config = self.config.get("raspberry_pi", {})
-            
-            # Use configured IP or detect current IP with timeout
-            ip_address = pi_config.get("auto_detected_ip")
-            if not ip_address:
-                try:
-                    # Use timeout for DNS resolution
-                    socket.setdefaulttimeout(2)
-                    hostname = socket.gethostname()
-                    ip_address = socket.gethostbyname(hostname)
-                    socket.setdefaulttimeout(None)
-                except socket.timeout:
-                    ip_address = "unknown"
-                    socket.setdefaulttimeout(None)
-            
-            # Get uptime quickly
-            uptime_seconds = 0
-            try:
-                with open('/proc/uptime', 'r') as f:
-                    uptime_seconds = float(f.readline().split()[0])
-            except:
-                uptime_seconds = time.time()
-            
-            system_info = {
-                "hostname": socket.gethostname(),
-                "ip_address": ip_address,
-                "uptime_seconds": uptime_seconds,
-                "mac_address": pi_config.get("mac_address", "unknown"),
-                "services": ["barcode_scanner", "iot_client", "auto_heartbeat"]
-            }
+            future = self.executor.submit(self._get_system_info_worker)
+            system_info = future.result(timeout=2)  # 2 second timeout
             
             # Cache the result
             self._system_info_cache = system_info
             self._cache_timestamp = current_time
-            
             return system_info
             
-        except Exception as e:
-            logger.warning(f"Could not get system info: {e}")
-            fallback = {"services": ["auto_heartbeat"]}
+        except (TimeoutError, Exception) as e:
+            logger.warning(f"System info gathering failed/timed out: {e}")
+            # Return cached data if available, even if expired
+            if self._system_info_cache:
+                return self._system_info_cache
+            
+            # Ultimate fallback
+            fallback = {
+                "hostname": self._hostname_cache or "unknown",
+                "ip_address": "unknown",
+                "uptime_seconds": int(time.time()),
+                "mac_address": "unknown",
+                "services": ["auto_heartbeat"]
+            }
             self._system_info_cache = fallback
             self._cache_timestamp = current_time
             return fallback
     
-    def create_reported_properties(self):
-        """Create Device Twin reported properties"""
-        system_info = self.get_system_info()
+    def _get_system_info_worker(self):
+        """Worker method for gathering system information"""
+        pi_config = self.config.get("raspberry_pi", {})
+        
+        # Use cached hostname if available
+        if not self._hostname_cache:
+            self._hostname_cache = socket.gethostname()
+        
+        # Use configured IP or detect current IP with aggressive timeout
+        ip_address = pi_config.get("auto_detected_ip")
+        if not ip_address:
+            try:
+                # Ultra-fast DNS resolution with 1 second timeout
+                socket.setdefaulttimeout(1)
+                ip_address = socket.gethostbyname(self._hostname_cache)
+                socket.setdefaulttimeout(None)
+            except (socket.timeout, socket.gaierror):
+                ip_address = "unknown"
+                socket.setdefaulttimeout(None)
+        
+        # Get uptime with error handling
+        uptime_seconds = 0
+        try:
+            with open('/proc/uptime', 'r') as f:
+                uptime_seconds = float(f.readline().split()[0])
+        except (IOError, ValueError, IndexError):
+            uptime_seconds = int(time.time())
         
         return {
+            "hostname": self._hostname_cache,
+            "ip_address": ip_address,
+            "uptime_seconds": uptime_seconds,
+            "mac_address": pi_config.get("mac_address", "unknown"),
+            "services": ["barcode_scanner", "iot_client", "auto_heartbeat"]
+        }
+    
+    def create_reported_properties(self):
+        """Create Device Twin reported properties with caching"""
+        current_time = time.time()
+        
+        # Cache reported properties for 5 seconds to avoid repeated system info calls
+        if (self._reported_props_cache and 
+            current_time - self._reported_props_timestamp < 5):
+            # Update only timestamp for cached properties
+            self._reported_props_cache["last_seen"] = datetime.utcnow().isoformat() + "Z"
+            return self._reported_props_cache
+        
+        system_info = self.get_system_info()
+        
+        properties = {
             "status": "online",
             "last_seen": datetime.utcnow().isoformat() + "Z",
             "device_info": {
@@ -140,9 +183,15 @@ class AutoPiHeartbeat:
                 "uptime_seconds": system_info.get("uptime_seconds", 0),
                 "services": system_info.get("services", [])
             },
-            "heartbeat_version": "auto-2.0",
+            "heartbeat_version": "auto-2.1",
             "auto_maintenance": True
         }
+        
+        # Cache the properties
+        self._reported_props_cache = properties.copy()
+        self._reported_props_timestamp = current_time
+        
+        return properties
     
     def initialize_connection(self):
         """Initialize IoT Hub connection using dynamic registration with timeout"""
@@ -201,18 +250,18 @@ class AutoPiHeartbeat:
             return False
     
     def send_heartbeat(self):
-        """Send heartbeat via Device Twin reported properties with timeout"""
+        """Send heartbeat via Device Twin reported properties with aggressive timeout"""
         try:
             if not self.client:
                 return False
             
-            # Use thread pool for timeout-controlled heartbeat
+            # Use thread pool for timeout-controlled heartbeat with faster timeout
             future = self.executor.submit(self._send_heartbeat_worker)
             
             try:
-                return future.result(timeout=5)  # 5 second timeout for heartbeat
+                return future.result(timeout=self.heartbeat_timeout)  # 3 second timeout
             except TimeoutError:
-                logger.warning(f"⚠️ Heartbeat timed out after 5s")
+                logger.warning(f"⚠️ Heartbeat timed out after {self.heartbeat_timeout}s")
                 return False
                 
         except Exception as e:
@@ -270,44 +319,76 @@ class AutoPiHeartbeat:
             logger.warning(f"⚠️ Disconnect worker failed: {e}")
     
     def run(self):
-        """Main heartbeat loop with automatic reconnection"""
+        """Optimized main heartbeat loop with ultra-fast reconnection"""
         self.running = True
         heartbeat_count = 0
         retry_count = 0
+        consecutive_failures = 0
+        last_success_time = time.time()
         
-        logger.info("🚀 Starting automatic Pi heartbeat service...")
+        logger.info("🚀 Starting optimized Pi heartbeat service...")
         
         while self.running:
             try:
+                current_time = time.time()
+                
                 # Initialize connection if needed
                 if not self.client:
                     if not self.initialize_connection():
-                        logger.error(f"❌ Connection failed, retrying in {self.reconnect_interval} seconds...")
-                        # Use shorter sleep intervals for faster recovery
-                        for i in range(self.reconnect_interval):
+                        retry_count += 1
+                        consecutive_failures += 1
+                        
+                        # Exponential backoff for repeated failures
+                        backoff_time = min(self.reconnect_interval * (2 ** min(consecutive_failures - 1, 3)), 30)
+                        logger.error(f"❌ Connection failed (attempt {retry_count}), retrying in {backoff_time}s...")
+                        
+                        # Interruptible sleep with faster granularity
+                        for i in range(int(backoff_time * 2)):  # 0.5 second intervals
                             if not self.running:
                                 break
-                            time.sleep(1)
-                        retry_count += 1
+                            time.sleep(0.5)
+                        
                         if retry_count >= self.max_retries:
                             logger.error(f"❌ Max retries ({self.max_retries}) reached, stopping service")
                             break
                         continue
-                    retry_count = 0  # Reset retry count on successful connection
+                    
+                    # Reset counters on successful connection
+                    retry_count = 0
+                    consecutive_failures = 0
+                    last_success_time = current_time
+                    logger.info("✅ Connection established successfully")
                 
                 # Send heartbeat
+                heartbeat_start = time.time()
                 if self.send_heartbeat():
                     heartbeat_count += 1
-                    logger.info(f"✅ Heartbeat #{heartbeat_count} sent successfully")
+                    consecutive_failures = 0
+                    last_success_time = current_time
+                    heartbeat_duration = time.time() - heartbeat_start
+                    
+                    # Log only every 10th heartbeat to reduce log noise
+                    if heartbeat_count % 10 == 0:
+                        logger.info(f"✅ Heartbeat #{heartbeat_count} sent (took {heartbeat_duration:.2f}s)")
                 else:
-                    logger.warning("⚠️ Heartbeat failed, will retry connection")
-                    self.client = None  # Force reconnection
+                    consecutive_failures += 1
+                    logger.warning(f"⚠️ Heartbeat failed (failure #{consecutive_failures})")
+                    
+                    # Force reconnection after 3 consecutive failures
+                    if consecutive_failures >= 3:
+                        logger.warning("🔄 Forcing reconnection due to repeated failures")
+                        self.client = None
                 
-                # Wait for next heartbeat with interruptible sleep
-                for i in range(self.heartbeat_interval):
+                # Adaptive sleep interval based on recent performance
+                sleep_interval = self.heartbeat_interval
+                if consecutive_failures > 0:
+                    sleep_interval = max(1, self.heartbeat_interval // 2)  # Faster retry on failures
+                
+                # Ultra-responsive interruptible sleep
+                for i in range(sleep_interval * 4):  # 0.25 second intervals
                     if not self.running:
                         break
-                    time.sleep(1)
+                    time.sleep(0.25)
                 
             except KeyboardInterrupt:
                 logger.info("🛑 Keyboard interrupt received, stopping service...")
@@ -315,11 +396,17 @@ class AutoPiHeartbeat:
             except Exception as e:
                 logger.error(f"❌ Unexpected error in heartbeat loop: {e}")
                 self.client = None  # Force reconnection
-                time.sleep(self.reconnect_interval)
+                consecutive_failures += 1
+                
+                # Brief pause before retry
+                for i in range(self.reconnect_interval * 2):  # 0.5 second intervals
+                    if not self.running:
+                        break
+                    time.sleep(0.5)
         
         self.running = False
         self.disconnect()
-        logger.info("🏁 Automatic Pi heartbeat service stopped")
+        logger.info(f"🏁 Optimized Pi heartbeat service stopped (sent {heartbeat_count} heartbeats)")
 
 def main():
     """Main entry point"""
