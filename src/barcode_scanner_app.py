@@ -1241,6 +1241,7 @@ def get_registration_status():
 @require_pi_connection
 def process_unsent_messages(auto_retry=False):
     """Process any unsent messages in the local database and try to send them to IoT Hub
+    OPTIMIZED VERSION: Uses batch processing, connection caching, and reduced database calls
     
     Args:
         auto_retry (bool): If True, runs in background mode without returning status messages
@@ -1270,76 +1271,104 @@ def process_unsent_messages(auto_retry=False):
             logger.info(status_msg)
             return None if auto_retry else status_msg
             
-        # Load configuration
+        # Load configuration once
         config = load_config()
         if not config:
             return "Error: Failed to load configuration"
             
-        # Get dynamic registration service for generating device connection strings
-        # Get IoT Hub connection string for dynamic registration
-
         iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
-
         if not iot_hub_connection_string:
-
             return "Error: No IoT Hub connection string found in configuration"
 
-        
-
         registration_service = get_dynamic_registration_service(iot_hub_connection_string)
-
         if not registration_service:
-
             return "Error: Failed to initialize dynamic registration service"
         
-        # Process each unsent message
-        success_count = 0
-        fail_count = 0
+        # OPTIMIZATION 1: Group messages by device_id to reduce registration calls
+        messages_by_device = {}
+        test_message_ids = []
         
         for message in unsent_messages:
             device_id = message["device_id"]
             barcode = message["barcode"]
-            timestamp = message["timestamp"]
-            quantity = message.get("quantity", 1)
             
-            # Check if this is a test barcode - if so, skip sending to IoT Hub
+            # Check if this is a test barcode - collect IDs for batch marking
             if api_client.is_test_barcode(barcode):
                 logger.info(f"Skipping test barcode in unsent messages: {barcode} - BLOCKED from IoT Hub")
-                local_db.mark_sent_by_id(message.get("id"))
-                success_count += 1
+                test_message_ids.append(message.get("id"))
                 continue
             
-            # Generate device-specific connection string using dynamic registration
+            if device_id not in messages_by_device:
+                messages_by_device[device_id] = []
+            messages_by_device[device_id].append(message)
+        
+        # OPTIMIZATION 2: Batch mark test barcodes as sent
+        if test_message_ids:
+            local_db.mark_multiple_sent_by_ids(test_message_ids)
+            logger.info(f"Batch marked {len(test_message_ids)} test barcodes as sent")
+        
+        # OPTIMIZATION 3: Cache connection strings and HubClients per device
+        device_clients = {}
+        success_count = len(test_message_ids)  # Count test barcodes as successful
+        fail_count = 0
+        successful_message_ids = []
+        
+        # Process messages grouped by device
+        for device_id, device_messages in messages_by_device.items():
             try:
-                device_connection_string = registration_service.register_device_with_azure(device_id)
-                if not device_connection_string:
-                    logger.error(f"Failed to get connection string for device {device_id}")
-                    fail_count += 1
-                    continue
-            except Exception as reg_error:
-                logger.error(f"Registration error for device {device_id}: {reg_error}")
-                fail_count += 1
+                # Generate device connection string once per device
+                if device_id not in device_clients:
+                    device_connection_string = registration_service.register_device_with_azure(device_id)
+                    if not device_connection_string:
+                        logger.error(f"Failed to get connection string for device {device_id}")
+                        fail_count += len(device_messages)
+                        continue
+                    
+                    # Create and cache HubClient for this device
+                    device_clients[device_id] = HubClient(device_connection_string)
+                
+                message_client = device_clients[device_id]
+                
+                # OPTIMIZATION 4: Process messages in smaller batches to avoid timeouts
+                batch_size = 10  # Process 10 messages at a time per device
+                for i in range(0, len(device_messages), batch_size):
+                    batch = device_messages[i:i + batch_size]
+                    batch_successful_ids = []
+                    
+                    for message in batch:
+                        barcode = message["barcode"]
+                        quantity = message.get("quantity", 1)
+                        
+                        # Send message to IoT Hub
+                        success = message_client.send_message(barcode, device_id)
+                        
+                        if success:
+                            batch_successful_ids.append(message.get("id"))
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                    
+                    # OPTIMIZATION 5: Batch mark successful messages as sent
+                    if batch_successful_ids:
+                        local_db.mark_multiple_sent_by_ids(batch_successful_ids)
+                        successful_message_ids.extend(batch_successful_ids)
+                        logger.debug(f"Batch marked {len(batch_successful_ids)} messages as sent for device {device_id}")
+                
+            except Exception as device_error:
+                logger.error(f"Error processing messages for device {device_id}: {device_error}")
+                fail_count += len(device_messages)
                 continue
-                
-            message_client = HubClient(device_connection_string)
-            
-            message_payload = {
-                "scannedBarcode": barcode,
-                "deviceId": device_id,
-                "quantity": quantity,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-            
-            # Try to send the message with quantity
-            success = message_client.send_message(barcode, device_id)
-            
-            if success:
-                local_db.mark_sent_by_id(message.get("id"))
-                success_count += 1
-            else:
-                fail_count += 1
-                
-        result_msg = f"Processed {len(unsent_messages)} unsent messages. Success: {success_count}, Failed: {fail_count}"
+        
+        # Clean up HubClient connections
+        for client in device_clients.values():
+            try:
+                if hasattr(client, 'disconnect'):
+                    client.disconnect()
+            except Exception as cleanup_error:
+                logger.debug(f"Error cleaning up client connection: {cleanup_error}")
+        
+        total_processed = len(unsent_messages)
+        result_msg = f"Processed {total_processed} unsent messages. Success: {success_count}, Failed: {fail_count}"
         logger.info(result_msg)
         
         if not auto_retry:
