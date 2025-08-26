@@ -15,6 +15,11 @@ from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
 
+# Global variables for Pi status reporting
+pi_status_thread = None
+last_pi_status = None
+pi_status_queue = queue.Queue()
+
 def get_local_mac_address() -> str:
     """Get the MAC address of the local device dynamically."""
     # Method 1: Use ip link command (most reliable for servers)
@@ -879,6 +884,184 @@ def is_barcode_registered(barcode: str) -> bool:
         logger.error(f"Error checking barcode registration: {e}")
         return False
 
+def send_pi_status_to_servers(pi_connected, pi_ip=None):
+    """Send Pi connection status to IoT Hub and external API"""
+    try:
+        # Create status message
+        status_message = {
+            "messageType": "pi_connection_status",
+            "pi_connected": pi_connected,
+            "pi_ip": pi_ip,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "server_ip": "192.168.1.8",
+            "source": "barcode_scanner_app"
+        }
+        
+        results = {
+            "iot_hub_success": False,
+            "api_success": False,
+            "errors": []
+        }
+        
+        # Send to IoT Hub
+        try:
+            connection_manager = get_connection_manager()
+            if connection_manager:
+                # Use system device for status reporting
+                system_device_id = "live-server-pi-status"
+                
+                # Create a simple status message that won't trigger barcode validation
+                simple_message = f"PI_STATUS:{json.dumps(status_message)}"
+                
+                # Try to send via connection manager
+                success = connection_manager.send_message_with_retry(
+                    system_device_id, 
+                    simple_message
+                )
+                results["iot_hub_success"] = success
+                
+                if success:
+                    logger.info(f"📡 Pi status sent to IoT Hub: Connected={pi_connected}")
+                else:
+                    results["errors"].append("Failed to send Pi status to IoT Hub")
+        except Exception as e:
+            results["errors"].append(f"IoT Hub error: {str(e)}")
+            logger.error(f"IoT Hub Pi status error: {e}")
+        
+        # Send to external API
+        try:
+            # Send directly to Pi status endpoint
+            api_url = "https://api2.caleffionline.it/api/v1/raspberry/piStatus"
+            
+            response = requests.post(
+                api_url,
+                json=status_message,
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+            
+            results["api_success"] = response.status_code == 200
+            
+            if results["api_success"]:
+                logger.info(f"📡 Pi status sent to external API: Connected={pi_connected}")
+            else:
+                results["errors"].append(f"API returned status {response.status_code}")
+                
+        except Exception as e:
+            results["errors"].append(f"External API error: {str(e)}")
+            logger.error(f"External API Pi status error: {e}")
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error sending Pi status: {e}")
+        return {"iot_hub_success": False, "api_success": False, "errors": [str(e)]}
+
+def pi_status_monitor():
+    """Background thread to monitor and report Pi connection status"""
+    global last_pi_status
+    
+    while True:
+        try:
+            connection_manager = get_connection_manager()
+            if connection_manager:
+                # Check Pi availability
+                pi_available = connection_manager.check_raspberry_pi_availability()
+                
+                # Get Pi IP from config
+                config = load_config()
+                pi_config = config.get('raspberry_pi', {}) if config else {}
+                configured_ip = pi_config.get('auto_detected_ip')
+                
+                # Only send if status changed or every 5 minutes
+                current_time = time.time()
+                status_changed = (last_pi_status is None or last_pi_status != pi_available)
+                time_to_send = (not hasattr(pi_status_monitor, 'last_send_time') or 
+                              (current_time - pi_status_monitor.last_send_time) > 300)  # 5 minutes
+                
+                if status_changed or time_to_send:
+                    # Send status to servers
+                    results = send_pi_status_to_servers(pi_available, configured_ip)
+                    
+                    # Update tracking variables
+                    last_pi_status = pi_available
+                    pi_status_monitor.last_send_time = current_time
+                    
+                    # Add to status queue for UI updates
+                    status_info = {
+                        "pi_connected": pi_available,
+                        "pi_ip": configured_ip,
+                        "timestamp": datetime.now().isoformat(),
+                        "iot_hub_sent": results["iot_hub_success"],
+                        "api_sent": results["api_success"],
+                        "errors": results["errors"]
+                    }
+                    
+                    try:
+                        pi_status_queue.put_nowait(status_info)
+                    except queue.Full:
+                        pass  # Queue full, skip this update
+                    
+                    if status_changed:
+                        logger.info(f"📡 Pi connection status changed: {pi_available} (IP: {configured_ip})")
+            
+        except Exception as e:
+            logger.error(f"Pi status monitor error: {e}")
+        
+        # Check every 30 seconds
+        time.sleep(30)
+
+def get_pi_status_info():
+    """Get current Pi status information for UI display"""
+    try:
+        # Get latest status from queue
+        latest_status = None
+        while not pi_status_queue.empty():
+            try:
+                latest_status = pi_status_queue.get_nowait()
+            except queue.Empty:
+                break
+        
+        if latest_status:
+            status_text = f"""
+## 📡 Raspberry Pi Connection Status
+
+**Connection Status:** {'✅ Connected' if latest_status['pi_connected'] else '❌ Disconnected'}
+**Pi IP Address:** {latest_status['pi_ip'] or 'Not configured'}
+**Last Check:** {latest_status['timestamp']}
+
+### Message Delivery Status:
+- **IoT Hub:** {'✅ Sent' if latest_status['iot_hub_sent'] else '❌ Failed'}
+- **External API:** {'✅ Sent' if latest_status['api_sent'] else '❌ Failed'}
+
+{f"**Errors:** {', '.join(latest_status['errors'])}" if latest_status['errors'] else ""}
+"""
+            return status_text
+        else:
+            # Get current status without sending
+            connection_manager = get_connection_manager()
+            if connection_manager:
+                pi_available = connection_manager.check_raspberry_pi_availability()
+                config = load_config()
+                pi_config = config.get('raspberry_pi', {}) if config else {}
+                configured_ip = pi_config.get('auto_detected_ip')
+                
+                return f"""
+## 📡 Raspberry Pi Connection Status
+
+**Connection Status:** {'✅ Connected' if pi_available else '❌ Disconnected'}
+**Pi IP Address:** {configured_ip or 'Not configured'}
+**Last Check:** {datetime.now().isoformat()}
+
+*Status reporting active in background*
+"""
+            else:
+                return "## 📡 Pi Status: Connection manager not available"
+                
+    except Exception as e:
+        logger.error(f"Error getting Pi status info: {e}")
+        return f"## 📡 Pi Status: Error - {str(e)}"
+
 def process_barcode_scan(barcode, device_id=None):
     """Simplified barcode scanning with automatic device registration"""
     # Input validation
@@ -1621,8 +1804,10 @@ with gr.Blocks(title="Barcode Scanner") as app:
                 
             with gr.Row():
                 process_unsent_button = gr.Button("Process Unsent Messages")
+                pi_status_button = gr.Button("Check Pi Status", variant="secondary")
                 
             status_text = gr.Markdown("")
+            pi_status_display = gr.Markdown("")
             
             
     # Event handlers
@@ -1660,11 +1845,23 @@ with gr.Blocks(title="Barcode Scanner") as app:
         show_progress='full'
     )
     
+    pi_status_button.click(
+        fn=get_pi_status_info,
+        inputs=[],
+        outputs=[pi_status_display]
+    )
+    
 # Initialize device and auto-register on startup
 logger.info("🚀 Initializing automatic device registration...")
 check_raspberry_pi_connection()
 auto_register_device_to_server()
 logger.info(f"✅ Device ready for barcode scanning")
+
+# Start Pi status monitoring thread
+logger.info("🚀 Starting Pi status monitoring...")
+pi_status_thread = threading.Thread(target=pi_status_monitor, daemon=True)
+pi_status_thread.start()
+logger.info("✅ Pi status monitoring active - will report to IoT Hub and API")
 
 if __name__ == "__main__":
     # Initialize connection manager without Pi detection
