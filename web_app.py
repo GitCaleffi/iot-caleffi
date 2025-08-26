@@ -111,6 +111,8 @@ barcode_client = None
 storage = None
 config = None
 barcode_mapper = None
+pi_status_thread = None
+last_pi_status = None
 system_stats = {
     'total_scans': 0,
     'successful_scans': 0,
@@ -120,9 +122,84 @@ system_stats = {
     'system_status': 'initializing'
 }
 
+def pi_status_reporter():
+    """Background thread to automatically report Pi connection status"""
+    global last_pi_status, barcode_client, config
+    
+    while True:
+        try:
+            from src.utils.connection_manager import ConnectionManager
+            
+            # Check Pi status
+            conn_manager = ConnectionManager()
+            pi_available = conn_manager.check_raspberry_pi_availability()
+            
+            # Only send if status changed or every 5 minutes
+            current_time = time.time()
+            status_changed = (last_pi_status is None or last_pi_status != pi_available)
+            time_to_send = (not hasattr(pi_status_reporter, 'last_send_time') or 
+                          (current_time - pi_status_reporter.last_send_time) > 300)  # 5 minutes
+            
+            if status_changed or time_to_send:
+                # Get configured Pi IP
+                pi_config = config.get('raspberry_pi', {}) if config else {}
+                configured_ip = pi_config.get('auto_detected_ip')
+                
+                # Create status message
+                status_message = {
+                    "messageType": "pi_connection_status",
+                    "pi_connected": pi_available,
+                    "pi_ip": configured_ip,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "server_ip": "192.168.1.8",
+                    "status_changed": status_changed
+                }
+                
+                # Send to IoT Hub
+                try:
+                    if barcode_client and barcode_client.registration_service:
+                        system_device_id = "live-server-status-reporter"
+                        device_connection = barcode_client.registration_service.get_device_connection_for_barcode(system_device_id)
+                        
+                        if device_connection:
+                            from src.iot.hub_client import HubClient
+                            hub_client = HubClient(device_connection)
+                            hub_success = hub_client.send_message(json.dumps(status_message), system_device_id)
+                            
+                            if hub_success:
+                                logger.info(f"🔄 Auto Pi status sent to IoT Hub: Connected={pi_available}")
+                            else:
+                                logger.warning("Failed to auto-send Pi status to IoT Hub")
+                except Exception as e:
+                    logger.error(f"Auto Pi status IoT Hub error: {e}")
+                
+                # Send to external API
+                try:
+                    if barcode_client and barcode_client.api_client:
+                        api_url = "https://api2.caleffionline.it/api/v1/raspberry/piStatus"
+                        api_result = barcode_client.api_client.send_registration_barcode(api_url, status_message)
+                        
+                        if api_result and api_result.get("success", False):
+                            logger.info(f"🔄 Auto Pi status sent to API: Connected={pi_available}")
+                except Exception as e:
+                    logger.error(f"Auto Pi status API error: {e}")
+                
+                # Update tracking variables
+                last_pi_status = pi_available
+                pi_status_reporter.last_send_time = current_time
+                
+                if status_changed:
+                    logger.info(f"📡 Pi connection status changed: {pi_available} (IP: {configured_ip})")
+            
+        except Exception as e:
+            logger.error(f"Pi status reporter error: {e}")
+        
+        # Check every 30 seconds
+        time.sleep(30)
+
 def initialize_system():
     """Initialize the barcode scanner system"""
-    global barcode_client, storage, config, barcode_mapper
+    global barcode_client, storage, config, barcode_mapper, pi_status_thread
     
     try:
         logger.info("Initializing Commercial Barcode Scanner Web System...")
@@ -708,6 +785,159 @@ def api_get_stats():
     except Exception as e:
         logger.error(f"Error getting stats: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/pi-status')
+def api_pi_status():
+    """API endpoint to get current Raspberry Pi connection status"""
+    try:
+        from src.utils.connection_manager import ConnectionManager
+        
+        # Initialize connection manager to check Pi status
+        conn_manager = ConnectionManager()
+        pi_available = conn_manager.check_raspberry_pi_availability()
+        
+        # Get configured Pi IP from config
+        pi_config = config.get('raspberry_pi', {}) if config else {}
+        configured_ip = pi_config.get('auto_detected_ip')
+        
+        status_data = {
+            "pi_connected": pi_available,
+            "pi_ip": configured_ip,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "server_status": "online",
+            "connection_details": {
+                "ssh_accessible": False,
+                "web_accessible": False
+            }
+        }
+        
+        # Test specific connectivity if Pi IP is configured
+        if configured_ip and pi_available:
+            import socket
+            
+            # Test SSH port
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                ssh_result = sock.connect_ex((configured_ip, 22))
+                status_data["connection_details"]["ssh_accessible"] = (ssh_result == 0)
+                sock.close()
+            except:
+                status_data["connection_details"]["ssh_accessible"] = False
+            
+            # Test web port
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(3)
+                web_result = sock.connect_ex((configured_ip, 5000))
+                status_data["connection_details"]["web_accessible"] = (web_result == 0)
+                sock.close()
+            except:
+                status_data["connection_details"]["web_accessible"] = False
+        
+        logger.info(f"Pi Status Check: Connected={pi_available}, IP={configured_ip}")
+        return jsonify(status_data)
+        
+    except Exception as e:
+        logger.error(f"Error checking Pi status: {e}")
+        return jsonify({
+            "pi_connected": False,
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "server_status": "error"
+        }), 500
+
+@app.route('/api/send-pi-status', methods=['POST'])
+def api_send_pi_status():
+    """Send Pi connection status to IoT Hub and external API"""
+    try:
+        from src.utils.connection_manager import ConnectionManager
+        
+        # Get current Pi status
+        conn_manager = ConnectionManager()
+        pi_available = conn_manager.check_raspberry_pi_availability()
+        
+        # Get configured Pi IP from config
+        pi_config = config.get('raspberry_pi', {}) if config else {}
+        configured_ip = pi_config.get('auto_detected_ip')
+        
+        # Create status message
+        status_message = {
+            "messageType": "pi_connection_status",
+            "pi_connected": pi_available,
+            "pi_ip": configured_ip,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "server_ip": "192.168.1.8",  # Live server IP
+            "status_check_interval": "10_seconds"
+        }
+        
+        results = {
+            "status_data": status_message,
+            "iot_hub_success": False,
+            "api_success": False,
+            "errors": []
+        }
+        
+        # Send to IoT Hub
+        try:
+            if barcode_client and barcode_client.registration_service:
+                # Use a system device ID for status reporting
+                system_device_id = "live-server-status-reporter"
+                
+                # Get or create device connection for status reporting
+                device_connection = barcode_client.registration_service.get_device_connection_for_barcode(system_device_id)
+                
+                if device_connection:
+                    from src.iot.hub_client import HubClient
+                    hub_client = HubClient(device_connection)
+                    
+                    # Send status message to IoT Hub
+                    hub_success = hub_client.send_message(json.dumps(status_message), system_device_id)
+                    results["iot_hub_success"] = hub_success
+                    
+                    if hub_success:
+                        logger.info(f"Pi status sent to IoT Hub: Connected={pi_available}")
+                    else:
+                        results["errors"].append("Failed to send status to IoT Hub")
+                else:
+                    results["errors"].append("No IoT Hub device connection available")
+            else:
+                results["errors"].append("IoT Hub registration service not available")
+        except Exception as e:
+            results["errors"].append(f"IoT Hub error: {str(e)}")
+            logger.error(f"IoT Hub status send error: {e}")
+        
+        # Send to external API
+        try:
+            if barcode_client and barcode_client.api_client:
+                # Send status to external API endpoint
+                api_url = "https://api2.caleffionline.it/api/v1/raspberry/piStatus"
+                
+                api_result = barcode_client.api_client.send_registration_barcode(api_url, status_message)
+                results["api_success"] = api_result.get("success", False) if isinstance(api_result, dict) else bool(api_result)
+                
+                if results["api_success"]:
+                    logger.info(f"Pi status sent to external API: Connected={pi_available}")
+                else:
+                    results["errors"].append(f"API send failed: {api_result.get('message', 'Unknown error')}")
+            else:
+                results["errors"].append("External API client not available")
+        except Exception as e:
+            results["errors"].append(f"External API error: {str(e)}")
+            logger.error(f"External API status send error: {e}")
+        
+        # Return results
+        success = results["iot_hub_success"] or results["api_success"]
+        status_code = 200 if success else 500
+        
+        return jsonify(results), status_code
+        
+    except Exception as e:
+        logger.error(f"Error sending Pi status: {e}")
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }), 500
 
 @app.route('/api/pi-device-register', methods=['POST'])
 def pi_device_register():

@@ -210,8 +210,8 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        Check if external Raspberry Pi devices are available on the network.
-        Uses REAL-TIME connectivity testing, not cached ARP entries.
+        Check if Raspberry Pi devices are available via IoT Hub connectionState.
+        Uses IoT Hub device twins instead of LAN ping for reliable cloud detection.
         """
         current_time = time.time()
         
@@ -222,58 +222,119 @@ class ConnectionManager:
             return self.raspberry_pi_devices_available
         
         try:
-            # Load user's specific Pi IP from config
-            from utils.config import load_config
-            config = load_config()
-            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            # Use IoT Hub device connectionState instead of LAN ping
+            connected_pi_devices = self._check_iot_hub_pi_devices()
             
-            # Test user's specific Pi IP first, then fallback IPs
-            potential_pi_ips = []
-            if user_pi_ip:
-                potential_pi_ips.append(user_pi_ip)  # User's specific Pi
-            
-            # Add fallback IPs
-            potential_pi_ips.extend([
-                "192.168.1.18",  # Common Pi IP
-                "192.168.1.100", # Common Pi IP
-                "192.168.1.101", # Common Pi IP
-            ])
-            
-            available_pis = []
-            
-            # Test each potential Pi IP with actual connectivity
-            for ip in potential_pi_ips:
-                if self._test_real_pi_connectivity(ip):
-                    available_pis.append(ip)
-                    logger.debug(f"✅ Raspberry Pi {ip} is ONLINE and responsive")
-                else:
-                    logger.debug(f"❌ Raspberry Pi {ip} is OFFLINE or not responsive")
-            
-            # If user has specific Pi IP configured, ONLY check that one
-            if user_pi_ip:
-                if user_pi_ip in available_pis:
-                    logger.debug(f"✅ User's specific Pi {user_pi_ip} is ONLINE")
-                    self.raspberry_pi_devices_available = True
-                else:
-                    logger.debug(f"❌ User's specific Pi {user_pi_ip} is OFFLINE")
-                    self.raspberry_pi_devices_available = False
+            if connected_pi_devices:
+                logger.debug(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
+                self.raspberry_pi_devices_available = True
             else:
-                # Fallback: check any Pi device if no specific IP configured
-                if available_pis:
-                    logger.debug(f"✅ Found {len(available_pis)} ONLINE Raspberry Pi device(s): {available_pis}")
-                    self.raspberry_pi_devices_available = True
-                else:
-                    logger.debug("❌ No ONLINE Raspberry Pi devices found - all offline or disconnected")
-                    self.raspberry_pi_devices_available = False
+                logger.debug("❌ No CONNECTED Pi devices found in IoT Hub")
+                self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
             return self.raspberry_pi_devices_available
             
         except Exception as e:
-            logger.debug(f"Error checking Raspberry Pi availability: {e}")
-            # On error, assume Pi is offline to be safe
+            logger.debug(f"Error checking Pi availability via IoT Hub: {e}")
+            # Fallback to LAN check only if IoT Hub fails
+            return self._fallback_lan_pi_check()
+    
+    def _check_iot_hub_pi_devices(self) -> list:
+        """Check IoT Hub for connected Raspberry Pi devices using device twins"""
+        try:
+            if not self.dynamic_registration_service or not self.dynamic_registration_service.registry_manager:
+                logger.debug("No IoT Hub registry manager available for Pi device check")
+                return []
+            
+            registry_manager = self.dynamic_registration_service.registry_manager
+            connected_pi_devices = []
+            
+            # Get list of known Pi device patterns
+            pi_device_patterns = [
+                "pi-",           # Device IDs starting with pi-
+                "raspberry",     # Device IDs containing raspberry
+                "rpi-",          # Device IDs starting with rpi-
+            ]
+            
+            # Load config to get specific Pi device IDs if configured
+            from utils.config import load_config
+            config = load_config()
+            pi_config = config.get("raspberry_pi", {})
+            specific_pi_devices = pi_config.get("device_ids", [])
+            
+            # Check specific Pi devices first
+            for device_id in specific_pi_devices:
+                if self._check_device_connection_state(registry_manager, device_id):
+                    connected_pi_devices.append(device_id)
+            
+            # If no specific devices configured, scan for Pi pattern devices
+            if not specific_pi_devices:
+                # Query devices with Pi patterns (limited scan for performance)
+                try:
+                    # Get device list (limited to avoid timeout)
+                    devices = registry_manager.get_devices(max_count=100)
+                    
+                    for device in devices:
+                        device_id = device.device_id.lower()
+                        
+                        # Check if device ID matches Pi patterns
+                        if any(pattern in device_id for pattern in pi_device_patterns):
+                            if self._check_device_connection_state(registry_manager, device.device_id):
+                                connected_pi_devices.append(device.device_id)
+                                
+                except Exception as e:
+                    logger.debug(f"Error scanning IoT Hub devices: {e}")
+            
+            return connected_pi_devices
+            
+        except Exception as e:
+            logger.debug(f"Error checking IoT Hub Pi devices: {e}")
+            return []
+    
+    def _check_device_connection_state(self, registry_manager, device_id: str) -> bool:
+        """Check if a specific device is connected via IoT Hub device twin"""
+        try:
+            # Get device twin to check connection state
+            twin = registry_manager.get_twin(device_id)
+            
+            if twin and hasattr(twin, 'connection_state'):
+                is_connected = twin.connection_state == 'Connected'
+                logger.debug(f"Device {device_id} connectionState: {twin.connection_state}")
+                return is_connected
+            else:
+                # Fallback: check device status
+                device = registry_manager.get_device(device_id)
+                if device and hasattr(device, 'status'):
+                    is_enabled = device.status == 'enabled'
+                    logger.debug(f"Device {device_id} status: {device.status}")
+                    return is_enabled
+                    
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking device {device_id} connection state: {e}")
+            return False
+    
+    def _fallback_lan_pi_check(self) -> bool:
+        """Fallback LAN check if IoT Hub method fails"""
+        try:
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.debug(f"✅ Fallback LAN check: Pi {user_pi_ip} is responsive")
+                self.raspberry_pi_devices_available = True
+                return True
+            else:
+                logger.debug("❌ Fallback LAN check: No responsive Pi found")
+                self.raspberry_pi_devices_available = False
+                return False
+                
+        except Exception as e:
+            logger.debug(f"Fallback LAN check error: {e}")
             self.raspberry_pi_devices_available = False
-            self.last_pi_check = current_time
             return False
     
     def _test_real_pi_connectivity(self, ip: str) -> bool:

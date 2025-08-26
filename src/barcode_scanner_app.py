@@ -884,14 +884,15 @@ def is_barcode_registered(barcode: str) -> bool:
         logger.error(f"Error checking barcode registration: {e}")
         return False
 
-def send_pi_status_to_servers(pi_connected, pi_ip=None):
+def send_pi_status_to_servers(pi_connected, pi_devices=None):
     """Send Pi connection status to IoT Hub and external API"""
     try:
-        # Create status message
+        # Create status message with IoT Hub device info
         status_message = {
             "messageType": "pi_connection_status",
             "pi_connected": pi_connected,
-            "pi_ip": pi_ip,
+            "connected_devices": pi_devices or [],
+            "detection_method": "iot_hub_device_twin",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "server_ip": "192.168.1.8",
             "source": "barcode_scanner_app"
@@ -965,13 +966,13 @@ def pi_status_monitor():
         try:
             connection_manager = get_connection_manager()
             if connection_manager:
-                # Check Pi availability
+                # Check Pi availability via IoT Hub device twins
                 pi_available = connection_manager.check_raspberry_pi_availability()
                 
-                # Get Pi IP from config
-                config = load_config()
-                pi_config = config.get('raspberry_pi', {}) if config else {}
-                configured_ip = pi_config.get('auto_detected_ip')
+                # Get connected Pi devices from IoT Hub
+                connected_pi_devices = []
+                if hasattr(connection_manager, '_check_iot_hub_pi_devices'):
+                    connected_pi_devices = connection_manager._check_iot_hub_pi_devices()
                 
                 # Only send if status changed or every 5 minutes
                 current_time = time.time()
@@ -980,8 +981,8 @@ def pi_status_monitor():
                               (current_time - pi_status_monitor.last_send_time) > 300)  # 5 minutes
                 
                 if status_changed or time_to_send:
-                    # Send status to servers
-                    results = send_pi_status_to_servers(pi_available, configured_ip)
+                    # Send status to servers with IoT Hub device info
+                    results = send_pi_status_to_servers(pi_available, connected_pi_devices)
                     
                     # Update tracking variables
                     last_pi_status = pi_available
@@ -990,7 +991,7 @@ def pi_status_monitor():
                     # Add to status queue for UI updates
                     status_info = {
                         "pi_connected": pi_available,
-                        "pi_ip": configured_ip,
+                        "connected_devices": connected_pi_devices,
                         "timestamp": datetime.now().isoformat(),
                         "iot_hub_sent": results["iot_hub_success"],
                         "api_sent": results["api_success"],
@@ -1003,7 +1004,7 @@ def pi_status_monitor():
                         pass  # Queue full, skip this update
                     
                     if status_changed:
-                        logger.info(f"📡 Pi connection status changed: {pi_available} (IP: {configured_ip})")
+                        logger.info(f"📡 Pi connection status changed: {pi_available} (Devices: {connected_pi_devices})")
             
         except Exception as e:
             logger.error(f"Pi status monitor error: {e}")
@@ -1023,11 +1024,15 @@ def get_pi_status_info():
                 break
         
         if latest_status:
+            connected_devices = latest_status.get('connected_devices', [])
+            device_list = ', '.join(connected_devices) if connected_devices else 'None'
+            
             status_text = f"""
-## 📡 Raspberry Pi Connection Status
+## 📡 Raspberry Pi Connection Status (IoT Hub Detection)
 
 **Connection Status:** {'✅ Connected' if latest_status['pi_connected'] else '❌ Disconnected'}
-**Pi IP Address:** {latest_status['pi_ip'] or 'Not configured'}
+**Connected Devices:** {device_list}
+**Detection Method:** IoT Hub Device Twin
 **Last Check:** {latest_status['timestamp']}
 
 ### Message Delivery Status:
@@ -1042,15 +1047,20 @@ def get_pi_status_info():
             connection_manager = get_connection_manager()
             if connection_manager:
                 pi_available = connection_manager.check_raspberry_pi_availability()
-                config = load_config()
-                pi_config = config.get('raspberry_pi', {}) if config else {}
-                configured_ip = pi_config.get('auto_detected_ip')
+                
+                # Get connected devices from IoT Hub
+                connected_pi_devices = []
+                if hasattr(connection_manager, '_check_iot_hub_pi_devices'):
+                    connected_pi_devices = connection_manager._check_iot_hub_pi_devices()
+                
+                device_list = ', '.join(connected_pi_devices) if connected_pi_devices else 'None'
                 
                 return f"""
-## 📡 Raspberry Pi Connection Status
+## 📡 Raspberry Pi Connection Status (IoT Hub Detection)
 
 **Connection Status:** {'✅ Connected' if pi_available else '❌ Disconnected'}
-**Pi IP Address:** {configured_ip or 'Not configured'}
+**Connected Devices:** {device_list}
+**Detection Method:** IoT Hub Device Twin
 **Last Check:** {datetime.now().isoformat()}
 
 *Status reporting active in background*

@@ -6,6 +6,10 @@
     "device_connection_string": "",
     "auto_register_devices": true
   },
+  "frontend": {
+    "notification_url": "https://iot.caleffionline.it/api/registration-notification",
+    "timeout": 10
+  },
   "barcode_scanner": {
     "scanner_type": "Handreader",
     "scan_timeout": 5000,
@@ -35,6 +39,12 @@
   "raspberry_pi": {
     "auto_detected_ip": "192.168.1.18",
     "last_detection": "2025-08-22T08:22:17.689914+00:00",
-    "mac_address": "2c:cf:67:6c:45:f2"
+    "mac_address": "2c:cf:67:6c:45:f2",
+    "device_ids": [
+      "pi-c1323007",
+      "raspberry-pi-main",
+      "rpi-192168118"
+    ],
+    "use_iot_hub_detection": true
   }
 }
