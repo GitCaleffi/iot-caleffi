@@ -19,11 +19,14 @@ from utils.config import load_config
 from utils.dynamic_registration_service import get_dynamic_registration_service
 
 # Configure logging
+log_file = os.path.join(os.path.dirname(__file__), 'logs', 'pi_heartbeat.log')
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/pi_heartbeat.log'),
+        logging.FileHandler(log_file),
         logging.StreamHandler()
     ]
 )
@@ -116,10 +119,21 @@ class AutoPiHeartbeat:
             self.device_id = self.get_pi_device_id()
             logger.info(f"🚀 Initializing auto heartbeat for device: {self.device_id}")
             
-            # Use dynamic registration service to get device connection string
-            registration_service = get_dynamic_registration_service()
-            if not registration_service:
-                logger.error("❌ Dynamic registration service not available")
+            # Initialize dynamic registration service with config
+            try:
+                from utils.dynamic_registration_service import DynamicRegistrationService
+                iot_hub_config = self.config.get("iot_hub", {})
+                owner_connection_string = iot_hub_config.get("connection_string")
+                
+                if not owner_connection_string:
+                    logger.error("❌ No IoT Hub owner connection string found in config")
+                    return False
+                
+                registration_service = DynamicRegistrationService(owner_connection_string)
+                logger.info("✅ Dynamic registration service initialized")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize dynamic registration service: {e}")
                 return False
             
             # Register device and get connection string
