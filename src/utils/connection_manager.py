@@ -1005,36 +1005,32 @@ class ConnectionManager:
             }
             
     def update_connection_status(self, iot_hub_connected: bool, reason: str = ""):
-        """
-        Update the connection status and log changes with MQTT awareness.
-        
-        Args:
-            iot_hub_connected: Whether the IoT Hub is connected
-            reason: Reason for the status change (for logging)
-        """
         with self.lock:
-            # Only update if status actually changed
-            if hasattr(self, 'is_connected_to_iot_hub') and self.is_connected_to_iot_hub == iot_hub_connected:
+            now = time.time()
+
+            if iot_hub_connected:
+                # Add a debounce: only accept "connected" if stable for 5s
+                if not hasattr(self, "_pending_connect_since"):
+                    self._pending_connect_since = now
+                    logger.info("⚠️ IoT Hub reported connected, waiting for stability...")
+                    return
+                elif now - self._pending_connect_since < 5:
+                    logger.info("⚠️ IoT Hub connection still stabilizing...")
+                    return
+                else:
+                    logger.info("✅ IoT Hub connection stabilized")
+                    self._pending_connect_since = None
+            else:
+                self._pending_connect_since = None
+
+            if self.is_connected_to_iot_hub == iot_hub_connected:
                 return
-                
-            # Update the status
+
             self.is_connected_to_iot_hub = iot_hub_connected
-            self.last_connectivity_check = time.time()
-            
-            # Log the status change
+            self.last_connectivity_check = now
             status = "connected" if iot_hub_connected else "disconnected"
             logger.info(f"🔌 IoT Hub connection status changed to: {status}. Reason: {reason}")
-            
-            # If we have MQTT monitor, update its status as well
-            if hasattr(self, 'mqtt_monitor') and self.mqtt_monitor:
-                try:
-                    if iot_hub_connected:
-                        self.mqtt_monitor.last_status = True
-                    else:
-                        self.mqtt_monitor.last_status = False
-                except Exception as e:
-                    logger.warning(f"Failed to update MQTT monitor status: {e}")
-    
+
     def force_retry_unsent_messages(self) -> str:
         """
         Manually trigger retry of all unsent messages.
