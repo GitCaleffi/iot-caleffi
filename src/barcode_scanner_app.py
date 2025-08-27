@@ -33,8 +33,47 @@ def initialize_connection_manager():
     return connection_manager
 
 def get_local_mac_address() -> str:
-    """Get the MAC address of the local device dynamically."""
-    # Method 1: Use ip link command (most reliable for servers)
+    """
+    Get the MAC address of the local device dynamically.
+    Tries multiple methods to be compatible with different Linux systems.
+    
+    Returns:
+        str: MAC address in format 'xx:xx:xx:xx:xx:xx' or None if not found
+    """
+    import uuid
+    import fcntl
+    import struct
+    
+    def get_mac_from_socket(ifname: str) -> str:
+        """Get MAC address using socket ioctl"""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            info = fcntl.ioctl(
+                s.fileno(),
+                0x8927,  # SIOCGIFHWADDR
+                struct.pack('256s', bytes(ifname[:15], 'utf-8'))
+            )
+            return ':'.join(f"{b:02x}" for b in info[18:24])
+        except Exception:
+            return None
+    
+    # Method 1: Use netifaces (most reliable if installed)
+    try:
+        import netifaces
+        for iface in netifaces.interfaces():
+            if iface.startswith(('eth', 'en', 'wl', 'wlan')):
+                addrs = netifaces.ifaddresses(iface)
+                if netifaces.AF_LINK in addrs:
+                    mac = addrs[netifaces.AF_LINK][0].get('addr')
+                    if mac and mac != '00:00:00:00:00:00':
+                        logger.info(f"📍 Found MAC address via netifaces: {mac}")
+                        return mac.lower()
+    except ImportError:
+        logger.debug("netifaces not available, trying alternative methods")
+    except Exception as e:
+        logger.debug(f"netifaces method failed: {e}")
+
+    # Method 2: Use ip link (modern Linux)
     try:
         result = subprocess.run(
             ["ip", "link", "show"],
@@ -43,32 +82,52 @@ def get_local_mac_address() -> str:
             timeout=5
         )
         if result.returncode == 0:
-            mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
+            # Match MAC addresses in ip link output
+            mac_pattern = r'link/ether\s+([0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2})'
             matches = re.findall(mac_pattern, result.stdout.lower())
             for mac in matches:
                 if mac != "00:00:00:00:00:00":
                     logger.info(f"📍 Found MAC address via ip link: {mac}")
-                    return mac
+                    return mac.lower()
     except Exception as e:
-        logger.warning(f"ip link method failed: {e}")
+        logger.debug(f"ip link method failed: {e}")
 
-    # Method 2: Use ifconfig command (fallback)
+    # Method 3: Try reading from sysfs (direct kernel interface)
     try:
-        result = subprocess.run(
-            ["ifconfig"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
-            matches = re.findall(mac_pattern, result.stdout.lower())
-            for mac in matches:
-                if mac != "00:00:00:00:00:00":
-                    logger.info(f"📍 Found MAC address via ifconfig: {mac}")
-                    return mac
+        for iface in os.listdir('/sys/class/net/'):
+            if iface in ['lo', 'docker0', 'br-*']:
+                continue
+            
+            addr_file = f'/sys/class/net/{iface}/address'
+            if os.path.exists(addr_file):
+                with open(addr_file, 'r') as f:
+                    mac = f.read().strip()
+                    if mac and mac != '00:00:00:00:00:00':
+                        logger.info(f"📍 Found MAC address via sysfs: {mac}")
+                        return mac.lower()
     except Exception as e:
-        logger.warning(f"ifconfig method failed: {e}")
+        logger.debug(f"sysfs method failed: {e}")
+
+    # Method 4: Fallback to socket ioctl for common interface names
+    for ifname in ['eth0', 'wlan0', 'enp0s3', 'ens3']:
+        mac = get_mac_from_socket(ifname)
+        if mac and mac != '00:00:00:00:00:00':
+            logger.info(f"📍 Found MAC address via socket ioctl: {mac}")
+            return mac.lower()
+
+    # Last resort: Generate a persistent random MAC if running in a container/VM
+    try:
+        # Use machine-id to generate a persistent but unique MAC
+        with open('/etc/machine-id', 'r') as f:
+            machine_id = f.read().strip()
+            if machine_id:
+                # Generate a consistent MAC using machine-id
+                mac_bytes = (machine_id * 3).encode()[:6]
+                mac = ':'.join(f"{b:02x}" for b in mac_bytes)
+                logger.warning(f"⚠️  Using generated MAC from machine-id: {mac}")
+                return mac
+    except Exception as e:
+        logger.debug(f"Could not generate MAC from machine-id: {e}")
 
     logger.error("❌ Could not detect local device MAC address using any method")
     return None
