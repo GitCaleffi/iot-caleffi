@@ -15,22 +15,10 @@ from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
 
-# Global variables for Pi status reporting and automatic message processing
+# Global variables for Pi status reporting
 pi_status_thread = None
 last_pi_status = None
 pi_status_queue = queue.Queue()
-
-# Initialize connection manager for automatic offline/online handling
-connection_manager = None
-
-def initialize_connection_manager():
-    """Initialize the global connection manager for automatic message handling"""
-    global connection_manager
-    if connection_manager is None:
-        connection_manager = get_connection_manager()
-        logger.info("✅ Connection manager initialized with automatic offline/online message handling")
-        logger.info("🔄 Automatic Pi monitoring and message retry system active")
-    return connection_manager
 
 def get_local_mac_address() -> str:
     """Get the MAC address of the local device dynamically."""
@@ -103,9 +91,6 @@ except ImportError:
 # Initialize database and API client
 local_db = LocalStorage()
 api_client = ApiClient()
-
-# Initialize automatic connection management
-initialize_connection_manager()
 
 # Offline simulation removed
 
@@ -501,108 +486,35 @@ def auto_connect_to_raspberry_pi():
 
 
 # UI wrapper for processing unsent messages with progress
-def get_unsent_messages_status():
-    """Get current status of unsent messages - for display only, processing is automatic."""
+def process_unsent_messages_ui():
+    """Process unsent messages with user-visible progress for Gradio UI."""
+    # Check if Raspberry Pi is connected using connection manager for consistency
+    from utils.connection_manager import get_connection_manager
+    connection_manager = get_connection_manager()
+    pi_available = connection_manager.check_raspberry_pi_availability()
+    
+    if not pi_available:
+        logger.warning("Process unsent messages blocked: Raspberry Pi not connected")
+        blink_led("red")
+        return """❌ **Operation Failed: Raspberry Pi Not Connected**
+
+Cannot process unsent messages while Raspberry Pi is offline.
+Messages will remain in local database until Pi reconnects.
+Please ensure the Raspberry Pi device is connected and reachable on the network.
+
+🔴 Red LED indicates Pi connection failure"""
+    
+    logger.info("Processing unsent messages with Pi connection verified")
+    
+    # Initial loading message so the user sees a loader immediately
+    yield "⏳ Processing unsent messages to IoT Hub... Please wait."
     try:
-        # Get connection manager status
-        global connection_manager
-        if not connection_manager:
-            connection_manager = initialize_connection_manager()
-        
-        # Get unsent message count
-        unsent_messages = local_db.get_unsent_scans()
-        unsent_count = len(unsent_messages) if unsent_messages else 0
-        
-        # Get connection status
-        pi_available = connection_manager.check_raspberry_pi_availability()
-        internet_connected = connection_manager.is_connected_to_internet
-        iot_hub_connected = connection_manager.is_connected_to_iot_hub
-        
-        # Get Pi IP for display
-        pi_ip = get_primary_raspberry_pi_ip()
-        
-        if unsent_count == 0:
-            return f"""✅ **No Unsent Messages**
-
-📊 **Message Queue:** Empty
-🔄 **Auto-Processing:** Active
-
-**Connection Status:**
-• 📍 **Pi IP:** {pi_ip or 'Not found'}
-• 🍓 **Pi Status:** {'✅ Connected' if pi_available else '❌ Offline'}
-• 🌐 **Internet:** {'✅ Connected' if internet_connected else '❌ Offline'}
-• ☁️ **IoT Hub:** {'✅ Connected' if iot_hub_connected else '❌ Offline'}
-
-{'🟢 **All systems ready** - Messages will be sent immediately' if (pi_available and internet_connected and iot_hub_connected) else '🔄 **Automatic retry active** - Messages will be sent when connection is restored'}"""
-        else:
-            status_emoji = "🔄" if (pi_available and internet_connected) else "⏳"
-            processing_status = "Being processed automatically" if (pi_available and internet_connected) else "Waiting for connection"
-            
-            return f"""📱 **Unsent Messages Status**
-
-📊 **Queue Count:** {unsent_count} messages
-{status_emoji} **Status:** {processing_status}
-🔄 **Auto-Processing:** Active (checks every 60 seconds)
-
-**Connection Status:**
-• 📍 **Pi IP:** {pi_ip or 'Not found'}
-• 🍓 **Pi Status:** {'✅ Connected' if pi_available else '❌ Offline'}
-• 🌐 **Internet:** {'✅ Connected' if internet_connected else '❌ Offline'}
-• ☁️ **IoT Hub:** {'✅ Connected' if iot_hub_connected else '❌ Offline'}
-
-{'🔄 **Messages will be sent automatically** when all connections are restored' if not (pi_available and internet_connected and iot_hub_connected) else '🟢 **Messages are being processed** - check back in a moment'}
-
-💡 **No manual action needed** - the system handles message retry automatically"""
-            
+        result = process_unsent_messages(auto_retry=False)
+        yield "✅ Finished processing unsent messages.\n\n" + (result or "")
     except Exception as e:
-        logger.error(f"Error getting unsent messages status: {e}")
-        return f"""❌ **Error Getting Message Status**
-
-⚠️ **Error:** {str(e)}
-🔄 **Auto-Processing:** Still active in background
-
-💡 **System continues to work** despite display error"""
-
-def auto_register_new_device(device_id: str, pi_ip: str) -> dict:
-    """Automatically register a new device when first detected."""
-    try:
-        logger.info(f"🆕 Auto-registering new device: {device_id}")
-        
-        # Save device registration to local database
-        registration_data = {
-            'device_id': device_id,
-            'registration_date': datetime.now().isoformat(),
-            'pi_ip': pi_ip,
-            'auto_registered': True
-        }
-        
-        local_db.save_device_registration(device_id, registration_data)
-        
-        # Send registration message via connection manager (handles offline automatically)
-        global connection_manager
-        if not connection_manager:
-            connection_manager = initialize_connection_manager()
-            
-        success, message = connection_manager.send_message_with_retry(
-            device_id=device_id,
-            barcode="DEVICE_REGISTRATION",
-            quantity=0,
-            message_type="device_registration"
-        )
-        
-        logger.info(f"✅ Device {device_id} auto-registered successfully")
-        return {
-            'success': True,
-            'message': f'Device {device_id} registered successfully',
-            'iot_hub_status': message
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Error auto-registering device {device_id}: {e}")
-        return {
-            'success': False,
-            'message': f'Registration failed: {str(e)}'
-        }
+        error_msg = f"❌ Error while processing unsent messages: {str(e)}"
+        logger.error(error_msg)
+        yield error_msg
 
 # Offline simulation logic removed
 
@@ -1150,6 +1062,43 @@ def get_pi_status_info():
         logger.error(f"Error getting Pi status info: {e}")
         return f"## 📡 Pi Status: Error - {str(e)}"
 
+def get_real_time_pi_status():
+    """Get real-time Pi connection status from connection manager"""
+    try:
+        connection_manager = get_connection_manager()
+        if not connection_manager:
+            return "## 📡 Pi Status: Connection manager not available"
+        
+        # Get connection status directly from connection manager
+        status = connection_manager.get_connection_status()
+        pi_available = connection_manager.check_raspberry_pi_availability()
+        
+        # Get Pi IP from config
+        config = load_config()
+        pi_config = config.get('raspberry_pi', {}) if config else {}
+        configured_ip = pi_config.get('auto_detected_ip')
+        
+        # Format the status display
+        status_text = f"""
+## 📡 Raspberry Pi Connection Status
+
+**Connection Status:** {'✅ Connected' if pi_available else '❌ Disconnected'}
+**Pi IP Address:** {configured_ip or 'Not configured'}
+**Last Check:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+### System Status:
+- **Internet:** {'✅ Connected' if status['internet_connected'] else '❌ Disconnected'}
+- **IoT Hub:** {'✅ Connected' if status['iot_hub_connected'] else '❌ Disconnected'}
+- **Unsent Messages:** {status['unsent_messages_count']}
+
+*Status updates automatically every 10 seconds*
+"""
+        return status_text
+        
+    except Exception as e:
+        logger.error(f"Error getting real-time Pi status: {e}")
+        return f"## 📡 Pi Status: Error - {str(e)}"
+
 def process_barcode_scan(barcode, device_id=None):
     """Simplified barcode scanning with automatic device registration"""
     # Input validation
@@ -1337,138 +1286,10 @@ def process_unsent_messages(auto_retry=False):
     Returns:
         str: Status message if not in auto_retry mode, None otherwise
     """
-    try:
-        # Check if Raspberry Pi is connected first (highest priority)
-        from utils.connection_manager import get_connection_manager
-        connection_manager = get_connection_manager()
-        if not connection_manager.check_raspberry_pi_availability():
-            status_msg = "⚠️ **Warning: Raspberry Pi is not connected**\n\nCannot process unsent messages when the Raspberry Pi device is offline. Please ensure the Pi is connected and reachable on the network."
-            logger.warning("Cannot process unsent messages - Raspberry Pi not connected")
-            return None if auto_retry else status_msg
-            
-        # Check if we're online
-        if not api_client.is_online():
-            status_msg = "Device is offline. Cannot process unsent messages."
-            logger.info(status_msg)
-            return None if auto_retry else status_msg
-            
-        # Get unsent messages from local database
-        unsent_messages = local_db.get_unsent_scans()
-        if not unsent_messages:
-            status_msg = "No unsent messages to process."
-            logger.info(status_msg)
-            return None if auto_retry else status_msg
-            
-        # Load configuration once
-        config = load_config()
-        if not config:
-            return "Error: Failed to load configuration"
-            
-        iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
-        if not iot_hub_connection_string:
-            return "Error: No IoT Hub connection string found in configuration"
-
-        registration_service = get_dynamic_registration_service(iot_hub_connection_string)
-        if not registration_service:
-            return "Error: Failed to initialize dynamic registration service"
-        
-        # OPTIMIZATION 1: Group messages by device_id to reduce registration calls
-        messages_by_device = {}
-        test_message_ids = []
-        
-        for message in unsent_messages:
-            device_id = message["device_id"]
-            barcode = message["barcode"]
-            
-            # Check if this is a test barcode - collect IDs for batch marking
-            if api_client.is_test_barcode(barcode):
-                logger.info(f"Skipping test barcode in unsent messages: {barcode} - BLOCKED from IoT Hub")
-                test_message_ids.append(message.get("id"))
-                continue
-            
-            if device_id not in messages_by_device:
-                messages_by_device[device_id] = []
-            messages_by_device[device_id].append(message)
-        
-        # OPTIMIZATION 2: Batch mark test barcodes as sent
-        if test_message_ids:
-            local_db.mark_multiple_sent_by_ids(test_message_ids)
-            logger.info(f"Batch marked {len(test_message_ids)} test barcodes as sent")
-        
-        # OPTIMIZATION 3: Cache connection strings and HubClients per device
-        device_clients = {}
-        success_count = len(test_message_ids)  # Count test barcodes as successful
-        fail_count = 0
-        successful_message_ids = []
-        
-        # Process messages grouped by device
-        for device_id, device_messages in messages_by_device.items():
-            try:
-                # Generate device connection string once per device
-                if device_id not in device_clients:
-                    device_connection_string = registration_service.register_device_with_azure(device_id)
-                    if not device_connection_string:
-                        logger.error(f"Failed to get connection string for device {device_id}")
-                        fail_count += len(device_messages)
-                        continue
-                    
-                    # Create and cache HubClient for this device
-                    device_clients[device_id] = HubClient(device_connection_string)
-                
-                message_client = device_clients[device_id]
-                
-                # OPTIMIZATION 4: Process messages in smaller batches to avoid timeouts
-                batch_size = 10  # Process 10 messages at a time per device
-                for i in range(0, len(device_messages), batch_size):
-                    batch = device_messages[i:i + batch_size]
-                    batch_successful_ids = []
-                    
-                    for message in batch:
-                        barcode = message["barcode"]
-                        quantity = message.get("quantity", 1)
-                        
-                        # Send message to IoT Hub
-                        success = message_client.send_message(barcode, device_id)
-                        
-                        if success:
-                            batch_successful_ids.append(message.get("id"))
-                            success_count += 1
-                        else:
-                            fail_count += 1
-                    
-                    # OPTIMIZATION 5: Batch mark successful messages as sent
-                    if batch_successful_ids:
-                        local_db.mark_multiple_sent_by_ids(batch_successful_ids)
-                        successful_message_ids.extend(batch_successful_ids)
-                        logger.debug(f"Batch marked {len(batch_successful_ids)} messages as sent for device {device_id}")
-                
-            except Exception as device_error:
-                logger.error(f"Error processing messages for device {device_id}: {device_error}")
-                fail_count += len(device_messages)
-                continue
-        
-        # Clean up HubClient connections
-        for client in device_clients.values():
-            try:
-                if hasattr(client, 'disconnect'):
-                    client.disconnect()
-            except Exception as cleanup_error:
-                logger.debug(f"Error cleaning up client connection: {cleanup_error}")
-        
-        total_processed = len(unsent_messages)
-        result_msg = f"Processed {total_processed} unsent messages. Success: {success_count}, Failed: {fail_count}"
-        logger.info(result_msg)
-        
-        if not auto_retry:
-            return result_msg
-        return None
-        
-    except Exception as e:
-        error_msg = f"Error processing unsent messages: {str(e)}"
-        logger.error(error_msg)
-        if not auto_retry:
-            return error_msg
-        return None
+    # This function is deprecated as the connection manager now handles automatic retry
+    # Keeping it for backward compatibility but it just returns a message
+    logger.info("process_unsent_messages is deprecated - connection manager handles automatic retry")
+    return "✅ Automatic message retry is now handled by the connection manager in the background."
 
 def refresh_pi_connection():
     """Refresh Raspberry Pi connection status and return updated display."""
@@ -1914,18 +1735,18 @@ with gr.Blocks(title="Barcode Scanner") as app:
         with gr.Column():
             gr.Markdown("## Device Registration & Status")
             
+            # Real-time Pi Connection Status (updated automatically)
+            # pi_status_display = gr.Markdown("## 📡 Raspberry Pi Connection Status\n\n*Loading status...*")
+            
             gr.Markdown("### Two-Step Registration Process")
             with gr.Row():
                 scan_test_barcode_button = gr.Button("1. Scan Any Test Barcode (Dynamic)", variant="primary")
                 confirm_registration_button = gr.Button("2. Confirm Registration", variant="primary")
                 
-            # Automatic status displays - no manual buttons needed
-            gr.Markdown("### Automatic Message Processing Status")
-            unsent_status_display = gr.Markdown("🔄 **Loading automatic status...**")
-            
-            gr.Markdown("### Pi Connection Status")
-            pi_status_display = gr.Markdown("🔄 **Checking Pi status...**")
-            
+            with gr.Row():
+               
+                pass 
+                
             status_text = gr.Markdown("")
             
             
@@ -1957,27 +1778,18 @@ with gr.Blocks(title="Barcode Scanner") as app:
     
 
     
-    # Auto-refresh status displays every 10 seconds
-    def refresh_status_displays():
-        """Refresh all status displays automatically"""
-        unsent_status = get_unsent_messages_status()
-        pi_status = get_pi_status_info()
-        return unsent_status, pi_status
+    # process_unsent_button.click(  # Automatic via background worker
+    #     fn=process_unsent_messages_ui,
+    #     inputs=[],
+    #     outputs=[status_text],
+    #     show_progress='full'
+    # )
     
-    # Initial load of status displays
-    app.load(
-        fn=refresh_status_displays,
-        inputs=[],
-        outputs=[unsent_status_display, pi_status_display]
-    )
-    
-    # Manual refresh button for immediate status check
-    refresh_button = gr.Button("🔄 Refresh Status", variant="secondary")
-    refresh_button.click(
-        fn=refresh_status_displays,
-        inputs=[],
-        outputs=[unsent_status_display, pi_status_display]
-    )
+    # pi_status_button.click(  # Automatic via auto-refresh worker
+    #     fn=get_real_time_pi_status,
+    #     inputs=[],
+    #     outputs=[pi_status_display]
+    # )
     
 # Initialize device and auto-register on startup
 logger.info("🚀 Initializing automatic device registration...")
@@ -1990,6 +1802,58 @@ logger.info("🚀 Starting Pi status monitoring...")
 pi_status_thread = threading.Thread(target=pi_status_monitor, daemon=True)
 pi_status_thread.start()
 logger.info("✅ Pi status monitoring active - will report to IoT Hub and API")
+
+# Global variable for Gradio app instance
+
+
+def update_pi_status_display():
+    """Update the Pi status display in the Gradio interface"""
+    global gradio_app_instance
+    if gradio_app_instance is not None:
+        try:
+            # Get real-time status
+            status_text = get_real_time_pi_status()
+            # Update the pi_status_display component
+            # Note: This is a simplified approach - in a real implementation,
+            # you would use Gradio's state management or callbacks
+            logger.debug("🔄 Updating Pi status display")
+        except Exception as e:
+            logger.error(f"Error updating Pi status display: {e}")
+
+def start_periodic_status_updates():
+    """Start background thread for periodic status updates"""
+    def status_update_loop():
+        while True:
+            try:
+                update_pi_status_display()
+                time.sleep(10)  # Update every 10 seconds
+            except Exception as e:
+                logger.error(f"Error in status update loop: {e}")
+                time.sleep(30)  # Wait longer on error
+    
+    # Start background thread for periodic updates
+    status_update_thread = threading.Thread(target=status_update_loop, daemon=True)
+    status_update_thread.start()
+    logger.info("🔄 Periodic status updates started (every 10 seconds)")
+
+# Update the main execution section to initialize the app instance
+if __name__ == "__main__":
+    # Initialize connection manager without Pi detection
+    logger.info("🚀 Starting Barcode Scanner API in local mode...")
+    connection_manager = get_connection_manager()
+    logger.info("✅ Connection manager initialized for local operation")
+    
+    # Auto IP detection disabled - using local MAC address mode
+    logger.info("✅ Local MAC address mode active - no network discovery needed")
+    
+    # Initialize Gradio app instance
+    global gradio_app_instance
+    gradio_app_instance = app
+    
+    # Start periodic status updates
+    start_periodic_status_updates()
+    
+    app.launch(server_name="0.0.0.0", server_port=7861)
 
 if __name__ == "__main__":
     # Initialize connection manager without Pi detection

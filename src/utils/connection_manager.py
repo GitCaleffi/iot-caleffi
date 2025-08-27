@@ -11,7 +11,6 @@ from iot.hub_client import HubClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.config import load_config
 from utils.network_discovery import NetworkDiscovery
-from utils.iot_hub_pi_detection import IoTHubPiDetection
 
 logger = logging.getLogger(__name__)
 
@@ -30,45 +29,31 @@ class ConnectionManager:
         self.raspberry_pi_devices_available = False
         self.last_connectivity_check = 0
         self.last_pi_check = 0
-        self.connectivity_check_interval = 15  # seconds (faster for real-time updates)
-        self.connection_check_interval = 15  # Alias for backward compatibility
-        self.pi_check_interval = 20  # seconds (faster Pi discovery for auto-refresh)
+        self.connectivity_check_interval = 10  # seconds (faster for real-time updates)
+        self.connection_check_interval = 10  # Alias for backward compatibility
+        self.pi_check_interval = 15  # seconds (faster Pi discovery for auto-refresh)
         
-        # Auto-refresh settings
+        # Auto-refresh settings - optimized for performance
         self.auto_refresh_enabled = True
-        self.auto_refresh_interval = 10  # seconds
+        self.auto_refresh_interval = 30  # seconds (balanced for performance)
         self.auto_refresh_thread = None
         self.retry_thread = None
         self.retry_running = False
         self.lock = RLock()
         self.network_discovery = NetworkDiscovery()
         
-        # Initialize IoT Hub Pi detection
-        self.iot_hub_pi_detection = None
-        self._initialize_iot_hub_detection()
+        # Fast local cache for immediate responses
+        self.fast_pi_cache = {'available': False, 'last_check': 0, 'cache_duration': 5}
+        
+        # Initialize dynamic registration service for IoT Hub Pi detection
+        self.dynamic_registration_service = None
+        self._initialize_registration_service()
         
         # Start background retry worker
         self._start_retry_thread()
         
         # Start auto-refresh worker for real-time status updates
         self._start_auto_refresh_worker()
-    
-    def _initialize_iot_hub_detection(self):
-        """Initialize IoT Hub Pi detection with owner connection string"""
-        try:
-            config = load_config()
-            iot_hub_config = config.get("iot_hub", {})
-            owner_connection_string = iot_hub_config.get("connection_string")
-            
-            if owner_connection_string:
-                self.iot_hub_pi_detection = IoTHubPiDetection(owner_connection_string)
-                logger.info("✅ IoT Hub Pi detection initialized")
-            else:
-                logger.warning("⚠️ No IoT Hub owner connection string found in config")
-                
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize IoT Hub Pi detection: {e}")
-            self.iot_hub_pi_detection = None
         
     def check_internet_connectivity(self) -> bool:
         """
@@ -232,75 +217,45 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        Check if Raspberry Pi devices are available using IoT Hub Device Twin and connection state.
-        Uses both Device Twin reported properties and connection state for reliable detection.
+        Fast Pi availability check with optimized caching for performance.
+        Uses fast local cache first, then falls back to comprehensive check.
         """
         current_time = time.time()
         
-        # Use shorter cache interval for more dynamic detection
-        cache_interval = 10  # Check every 10 seconds instead of 30
+        # Fast cache check - immediate response for UI operations
+        if current_time - self.fast_pi_cache['last_check'] < self.fast_pi_cache['cache_duration']:
+            logger.debug(f"Using fast Pi cache: {self.fast_pi_cache['available']}")
+            return self.fast_pi_cache['available']
+        
+        # Medium cache check - avoid expensive operations
+        cache_interval = 30  # Longer cache for better performance
         if current_time - self.last_pi_check < cache_interval:
             logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
+            # Update fast cache
+            self.fast_pi_cache['available'] = self.raspberry_pi_devices_available
+            self.fast_pi_cache['last_check'] = current_time
             return self.raspberry_pi_devices_available
         
         try:
-            # Use new IoT Hub Pi detection with Device Twin and connection state
-            if self.iot_hub_pi_detection:
-                device_ids = self._get_configured_pi_device_ids()
-                any_available, detailed_status = self.iot_hub_pi_detection.check_pi_availability(device_ids)
-                
-                if any_available:
-                    available_devices = detailed_status["summary"]["available_devices"]
-                    logger.info(f"✅ Found {len(available_devices)} available Pi device(s) via IoT Hub: {available_devices}")
-                    self.raspberry_pi_devices_available = True
-                else:
-                    logger.info("❌ No available Pi devices found via IoT Hub Device Twin/connection state")
-                    self.raspberry_pi_devices_available = False
-                    
-                self.last_pi_check = current_time
-                return self.raspberry_pi_devices_available
+            # Use fast LAN detection first for immediate response
+            lan_pi_devices = self._fallback_lan_pi_check_list()
+            if lan_pi_devices:
+                logger.debug(f"✅ Fast LAN check found {len(lan_pi_devices)} responsive Pi device(s): {lan_pi_devices}")
+                self.raspberry_pi_devices_available = True
             else:
-                logger.warning("⚠️ IoT Hub Pi detection not available, falling back to LAN check")
-                return self._fallback_lan_pi_check()
+                logger.debug("❌ No responsive Pi devices found via fast LAN check")
+                self.raspberry_pi_devices_available = False
                 
+            self.last_pi_check = current_time
+            # Update fast cache with result
+            self.fast_pi_cache['available'] = self.raspberry_pi_devices_available
+            self.fast_pi_cache['last_check'] = current_time
+            return self.raspberry_pi_devices_available
+            
         except Exception as e:
-            logger.error(f"❌ Error checking Pi availability via IoT Hub: {e}")
+            logger.debug(f"Error checking Pi availability via IoT Hub: {e}")
             # Fallback to LAN check only if IoT Hub fails
             return self._fallback_lan_pi_check()
-    
-    def _get_configured_pi_device_ids(self) -> List[str]:
-        """Get list of configured Pi device IDs from config"""
-        try:
-            config = load_config()
-            pi_config = config.get("raspberry_pi", {})
-            device_ids = pi_config.get("device_ids", [])
-            
-            # Add default device IDs if none configured
-            if not device_ids:
-                device_ids = ["pi-5284d8ff", "live-server-pi", "raspberry-pi-main"]
-                logger.info(f"Using default Pi device IDs: {device_ids}")
-            else:
-                logger.info(f"Using configured Pi device IDs: {device_ids}")
-                
-            return device_ids
-            
-        except Exception as e:
-            logger.error(f"Error getting Pi device IDs from config: {e}")
-            return ["pi-5284d8ff", "live-server-pi", "raspberry-pi-main"]
-    
-    def get_primary_raspberry_pi_ip(self) -> Optional[str]:
-        """Get primary Pi IP address from IoT Hub Device Twin if available"""
-        if self.iot_hub_pi_detection:
-            device_ids = self._get_configured_pi_device_ids()
-            for device_id in device_ids:
-                ip_address = self.iot_hub_pi_detection.get_device_ip_from_twin(device_id)
-                if ip_address:
-                    logger.info(f"📍 Got Pi IP from IoT Hub Device Twin: {ip_address}")
-                    return ip_address
-        
-        # Fallback to network discovery
-        logger.info("📍 Falling back to network discovery for Pi IP")
-        return self.network_discovery.get_primary_raspberry_pi_ip()
     
     def _check_iot_hub_pi_devices(self) -> list:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""
@@ -312,60 +267,11 @@ class ConnectionManager:
             registry_manager = self.dynamic_registration_service.registry_manager
             connected_pi_devices = []
             
-            # Get list of known Pi device patterns
-            pi_device_patterns = [
-                "pi-",           # Device IDs starting with pi-
-                "raspberry",     # Device IDs containing raspberry
-                "rpi-",          # Device IDs starting with rpi-
-            ]
-            
-            # Load config to get specific Pi device IDs if configured
-            from utils.config import load_config
-            config = load_config()
-            pi_config = config.get("raspberry_pi", {})
-            specific_pi_devices = pi_config.get("device_ids", [])
-            
-            logger.info(f"🔍 Checking IoT Hub for Pi devices. Configured devices: {specific_pi_devices}")
-            
-            # Check specific Pi devices first
-            for device_id in specific_pi_devices:
-                logger.info(f"🔍 Checking configured Pi device: {device_id}")
-                if self._check_device_connection_state(registry_manager, device_id):
-                    logger.info(f"✅ Found CONNECTED Pi device: {device_id}")
-                    connected_pi_devices.append(device_id)
-                else:
-                    logger.info(f"❌ Pi device {device_id} not connected or not found")
-            
-            # If no specific devices configured or none found, scan for Pi pattern devices
-            if not specific_pi_devices or not connected_pi_devices:
-                logger.info("🔍 Scanning IoT Hub for Pi devices with pattern matching...")
-                try:
-                    # Get device list (limited to avoid timeout)
-                    devices = registry_manager.get_devices(max_count=100)
-                    logger.info(f"📡 Found {len(devices)} total devices in IoT Hub")
-                    
-                    pi_candidates = []
-                    for device in devices:
-                        device_id_lower = device.device_id.lower()
-                        
-                        # Check if device ID matches Pi patterns
-                        if any(pattern in device_id_lower for pattern in pi_device_patterns):
-                            pi_candidates.append(device.device_id)
-                            logger.info(f"🔍 Found Pi candidate device: {device.device_id}")
-                            if self._check_device_connection_state(registry_manager, device.device_id):
-                                logger.info(f"✅ Pi candidate {device.device_id} is CONNECTED")
-                                connected_pi_devices.append(device.device_id)
-                            else:
-                                logger.info(f"❌ Pi candidate {device.device_id} is not connected")
-                    
-                    if not pi_candidates:
-                        logger.info("❌ No devices found matching Pi patterns in IoT Hub")
-                        # Log first few device IDs for debugging
-                        sample_devices = [d.device_id for d in devices[:10]]
-                        logger.info(f"📋 Sample device IDs in IoT Hub: {sample_devices}")
-                                
-                except Exception as e:
-                    logger.info(f"Error scanning IoT Hub devices: {e}")
+            # Skip slow IoT Hub device scanning - use fast LAN detection instead
+            logger.debug("⚡ Skipping slow IoT Hub device scanning for performance")
+            logger.debug("🔄 Using fast LAN-based Pi detection...")
+            # Use fast LAN detection immediately
+            return self._fallback_lan_pi_check_list()
             
             logger.info(f"🏁 Final result: {len(connected_pi_devices)} connected Pi devices: {connected_pi_devices}")
             return connected_pi_devices
@@ -419,23 +325,42 @@ class ConnectionManager:
             self.raspberry_pi_devices_available = False
             return False
     
+    def _fallback_lan_pi_check_list(self) -> list:
+        """Fast fallback LAN check that returns list of connected Pi devices"""
+        try:
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.debug(f"✅ Fast LAN check: Pi at {user_pi_ip} is responsive")
+                # Generate device ID from IP for consistency
+                device_id = f"pi-lan-{user_pi_ip.replace('.', '')}"
+                return [device_id]
+            else:
+                logger.debug("❌ Fast LAN check: Configured Pi not responsive")
+                return []
+                
+        except Exception as e:
+            logger.debug(f"Fast LAN check error: {e}")
+            return []
+    
     def _test_real_pi_connectivity(self, ip: str) -> bool:
-        """Test real-time connectivity to a potential Pi device - SSH REQUIRED"""
+        """Fast connectivity test to Pi device - optimized for speed"""
         import socket
         
-        # STRICT: Only consider devices with SSH as true Raspberry Pi devices
-        # This prevents false positives from web servers, routers, etc.
+        # Fast SSH connectivity test with shorter timeout
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)  # 2 second timeout for real-time check
+            sock.settimeout(1)  # 1 second timeout for faster response
             result = sock.connect_ex((ip, 22))  # SSH port only
             sock.close()
             
             if result == 0:
-                logger.debug(f"✅ {ip}:22 (SSH) is responsive - confirmed Pi device")
+                logger.debug(f"✅ {ip}:22 (SSH) responsive")
                 return True
             else:
-                logger.debug(f"❌ {ip}:22 (SSH) not responsive - not a Pi device")
+                logger.debug(f"❌ {ip}:22 (SSH) not responsive")
                 return False
         except Exception as e:
             logger.debug(f"❌ {ip} SSH test failed: {e}")
@@ -465,6 +390,10 @@ class ConnectionManager:
                         self.check_internet_connectivity()
                         self.check_iot_hub_connectivity()
                         self.check_raspberry_pi_availability()
+                        
+                        # Re-initialize registration service if needed
+                        if not self.dynamic_registration_service:
+                            self._initialize_registration_service()
                         
                         # Log status changes for real-time monitoring
                         if (old_internet != self.is_connected_to_internet or 
@@ -653,6 +582,26 @@ class ConnectionManager:
         self.retry_thread.start()
         logger.info("Started automatic message retry thread")
     
+    def _initialize_registration_service(self):
+        """Initialize dynamic registration service for IoT Hub operations"""
+        try:
+            config = load_config()
+            if config:
+                iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
+                if iot_hub_connection_string:
+                    self.dynamic_registration_service = get_dynamic_registration_service(iot_hub_connection_string)
+                    if self.dynamic_registration_service:
+                        logger.info("✅ Dynamic registration service initialized for automatic Pi detection")
+                    else:
+                        logger.warning("⚠️ Failed to initialize dynamic registration service")
+                else:
+                    logger.warning("⚠️ No IoT Hub connection string found in config")
+            else:
+                logger.warning("⚠️ Config not loaded for registration service initialization")
+        except Exception as e:
+            logger.error(f"Error initializing registration service: {e}")
+            self.dynamic_registration_service = None
+    
     def _retry_worker(self):
         """
         Background worker that periodically tries to send unsent messages.
@@ -660,7 +609,7 @@ class ConnectionManager:
         """
         while self.retry_running:
             try:
-                time.sleep(60)  # Check every minute
+                time.sleep(30)  # Check every 30 seconds for faster retry
                 
                 # Check both internet and Pi connectivity
                 is_internet_online = self.check_internet_connectivity()
