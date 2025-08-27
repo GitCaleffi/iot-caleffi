@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Pi IoT Hub Heartbeat Client
-Uses Device Twin reported properties to report status and maintain "Connected" status
-"""
-
 import time
 import json
 import logging
