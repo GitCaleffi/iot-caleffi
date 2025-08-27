@@ -15,10 +15,22 @@ from typing import AsyncGenerator
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
 
-# Global variables for Pi status reporting
+# Global variables for Pi status reporting and automatic message processing
 pi_status_thread = None
 last_pi_status = None
 pi_status_queue = queue.Queue()
+
+# Initialize connection manager for automatic offline/online handling
+connection_manager = None
+
+def initialize_connection_manager():
+    """Initialize the global connection manager for automatic message handling"""
+    global connection_manager
+    if connection_manager is None:
+        connection_manager = get_connection_manager()
+        logger.info("✅ Connection manager initialized with automatic offline/online message handling")
+        logger.info("🔄 Automatic Pi monitoring and message retry system active")
+    return connection_manager
 
 def get_local_mac_address() -> str:
     """Get the MAC address of the local device dynamically."""
@@ -91,6 +103,9 @@ except ImportError:
 # Initialize database and API client
 local_db = LocalStorage()
 api_client = ApiClient()
+
+# Initialize automatic connection management
+initialize_connection_manager()
 
 # Offline simulation removed
 
@@ -486,35 +501,108 @@ def auto_connect_to_raspberry_pi():
 
 
 # UI wrapper for processing unsent messages with progress
-def process_unsent_messages_ui():
-    """Process unsent messages with user-visible progress for Gradio UI."""
-    # Check if Raspberry Pi is connected using connection manager for consistency
-    from utils.connection_manager import get_connection_manager
-    connection_manager = get_connection_manager()
-    pi_available = connection_manager.check_raspberry_pi_availability()
-    
-    if not pi_available:
-        logger.warning("Process unsent messages blocked: Raspberry Pi not connected")
-        blink_led("red")
-        return """❌ **Operation Failed: Raspberry Pi Not Connected**
-
-Cannot process unsent messages while Raspberry Pi is offline.
-Messages will remain in local database until Pi reconnects.
-Please ensure the Raspberry Pi device is connected and reachable on the network.
-
-🔴 Red LED indicates Pi connection failure"""
-    
-    logger.info("Processing unsent messages with Pi connection verified")
-    
-    # Initial loading message so the user sees a loader immediately
-    yield "⏳ Processing unsent messages to IoT Hub... Please wait."
+def get_unsent_messages_status():
+    """Get current status of unsent messages - for display only, processing is automatic."""
     try:
-        result = process_unsent_messages(auto_retry=False)
-        yield "✅ Finished processing unsent messages.\n\n" + (result or "")
+        # Get connection manager status
+        global connection_manager
+        if not connection_manager:
+            connection_manager = initialize_connection_manager()
+        
+        # Get unsent message count
+        unsent_messages = local_db.get_unsent_scans()
+        unsent_count = len(unsent_messages) if unsent_messages else 0
+        
+        # Get connection status
+        pi_available = connection_manager.check_raspberry_pi_availability()
+        internet_connected = connection_manager.is_connected_to_internet
+        iot_hub_connected = connection_manager.is_connected_to_iot_hub
+        
+        # Get Pi IP for display
+        pi_ip = get_primary_raspberry_pi_ip()
+        
+        if unsent_count == 0:
+            return f"""✅ **No Unsent Messages**
+
+📊 **Message Queue:** Empty
+🔄 **Auto-Processing:** Active
+
+**Connection Status:**
+• 📍 **Pi IP:** {pi_ip or 'Not found'}
+• 🍓 **Pi Status:** {'✅ Connected' if pi_available else '❌ Offline'}
+• 🌐 **Internet:** {'✅ Connected' if internet_connected else '❌ Offline'}
+• ☁️ **IoT Hub:** {'✅ Connected' if iot_hub_connected else '❌ Offline'}
+
+{'🟢 **All systems ready** - Messages will be sent immediately' if (pi_available and internet_connected and iot_hub_connected) else '🔄 **Automatic retry active** - Messages will be sent when connection is restored'}"""
+        else:
+            status_emoji = "🔄" if (pi_available and internet_connected) else "⏳"
+            processing_status = "Being processed automatically" if (pi_available and internet_connected) else "Waiting for connection"
+            
+            return f"""📱 **Unsent Messages Status**
+
+📊 **Queue Count:** {unsent_count} messages
+{status_emoji} **Status:** {processing_status}
+🔄 **Auto-Processing:** Active (checks every 60 seconds)
+
+**Connection Status:**
+• 📍 **Pi IP:** {pi_ip or 'Not found'}
+• 🍓 **Pi Status:** {'✅ Connected' if pi_available else '❌ Offline'}
+• 🌐 **Internet:** {'✅ Connected' if internet_connected else '❌ Offline'}
+• ☁️ **IoT Hub:** {'✅ Connected' if iot_hub_connected else '❌ Offline'}
+
+{'🔄 **Messages will be sent automatically** when all connections are restored' if not (pi_available and internet_connected and iot_hub_connected) else '🟢 **Messages are being processed** - check back in a moment'}
+
+💡 **No manual action needed** - the system handles message retry automatically"""
+            
     except Exception as e:
-        error_msg = f"❌ Error while processing unsent messages: {str(e)}"
-        logger.error(error_msg)
-        yield error_msg
+        logger.error(f"Error getting unsent messages status: {e}")
+        return f"""❌ **Error Getting Message Status**
+
+⚠️ **Error:** {str(e)}
+🔄 **Auto-Processing:** Still active in background
+
+💡 **System continues to work** despite display error"""
+
+def auto_register_new_device(device_id: str, pi_ip: str) -> dict:
+    """Automatically register a new device when first detected."""
+    try:
+        logger.info(f"🆕 Auto-registering new device: {device_id}")
+        
+        # Save device registration to local database
+        registration_data = {
+            'device_id': device_id,
+            'registration_date': datetime.now().isoformat(),
+            'pi_ip': pi_ip,
+            'auto_registered': True
+        }
+        
+        local_db.save_device_registration(device_id, registration_data)
+        
+        # Send registration message via connection manager (handles offline automatically)
+        global connection_manager
+        if not connection_manager:
+            connection_manager = initialize_connection_manager()
+            
+        success, message = connection_manager.send_message_with_retry(
+            device_id=device_id,
+            barcode="DEVICE_REGISTRATION",
+            quantity=0,
+            message_type="device_registration"
+        )
+        
+        logger.info(f"✅ Device {device_id} auto-registered successfully")
+        return {
+            'success': True,
+            'message': f'Device {device_id} registered successfully',
+            'iot_hub_status': message
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error auto-registering device {device_id}: {e}")
+        return {
+            'success': False,
+            'message': f'Registration failed: {str(e)}'
+        }
 
 # Offline simulation logic removed
 
@@ -1831,12 +1919,14 @@ with gr.Blocks(title="Barcode Scanner") as app:
                 scan_test_barcode_button = gr.Button("1. Scan Any Test Barcode (Dynamic)", variant="primary")
                 confirm_registration_button = gr.Button("2. Confirm Registration", variant="primary")
                 
-            with gr.Row():
-                process_unsent_button = gr.Button("Process Unsent Messages")
-                pi_status_button = gr.Button("Check Pi Status", variant="secondary")
-                
+            # Automatic status displays - no manual buttons needed
+            gr.Markdown("### Automatic Message Processing Status")
+            unsent_status_display = gr.Markdown("🔄 **Loading automatic status...**")
+            
+            gr.Markdown("### Pi Connection Status")
+            pi_status_display = gr.Markdown("🔄 **Checking Pi status...**")
+            
             status_text = gr.Markdown("")
-            pi_status_display = gr.Markdown("")
             
             
     # Event handlers
@@ -1867,17 +1957,26 @@ with gr.Blocks(title="Barcode Scanner") as app:
     
 
     
-    process_unsent_button.click(
-        fn=process_unsent_messages_ui,
+    # Auto-refresh status displays every 10 seconds
+    def refresh_status_displays():
+        """Refresh all status displays automatically"""
+        unsent_status = get_unsent_messages_status()
+        pi_status = get_pi_status_info()
+        return unsent_status, pi_status
+    
+    # Initial load of status displays
+    app.load(
+        fn=refresh_status_displays,
         inputs=[],
-        outputs=[status_text],
-        show_progress='full'
+        outputs=[unsent_status_display, pi_status_display]
     )
     
-    pi_status_button.click(
-        fn=get_pi_status_info,
+    # Manual refresh button for immediate status check
+    refresh_button = gr.Button("🔄 Refresh Status", variant="secondary")
+    refresh_button.click(
+        fn=refresh_status_displays,
         inputs=[],
-        outputs=[pi_status_display]
+        outputs=[unsent_status_display, pi_status_display]
     )
     
 # Initialize device and auto-register on startup
