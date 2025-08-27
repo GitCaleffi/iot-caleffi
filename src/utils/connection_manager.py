@@ -228,7 +228,7 @@ class ConnectionManager:
             return self.fast_pi_cache['available']
         
         # Medium cache check - avoid expensive operations
-        cache_interval = 30  # Longer cache for better performance
+        cache_interval = 15  # Balanced for server deployment with device twins
         if current_time - self.last_pi_check < cache_interval:
             logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
             # Update fast cache
@@ -237,14 +237,22 @@ class ConnectionManager:
             return self.raspberry_pi_devices_available
         
         try:
-            # Use fast LAN detection first for immediate response
-            lan_pi_devices = self._fallback_lan_pi_check_list()
-            if lan_pi_devices:
-                logger.debug(f"✅ Fast LAN check found {len(lan_pi_devices)} responsive Pi device(s): {lan_pi_devices}")
+            # Use IoT Hub device connectionState first for server deployment
+            connected_pi_devices = self._check_iot_hub_pi_devices()
+            
+            if connected_pi_devices:
+                logger.debug(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
                 self.raspberry_pi_devices_available = True
             else:
-                logger.debug("❌ No responsive Pi devices found via fast LAN check")
-                self.raspberry_pi_devices_available = False
+                logger.debug("❌ No CONNECTED Pi devices found in IoT Hub, trying LAN fallback...")
+                # Fallback to LAN check if no IoT Hub devices found
+                lan_pi_devices = self._fallback_lan_pi_check_list()
+                if lan_pi_devices:
+                    logger.info(f"✅ LAN fallback found {len(lan_pi_devices)} responsive Pi device(s): {lan_pi_devices}")
+                    self.raspberry_pi_devices_available = True
+                else:
+                    logger.debug("❌ No responsive Pi devices found via LAN either")
+                    self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
             # Update fast cache with result
@@ -267,11 +275,64 @@ class ConnectionManager:
             registry_manager = self.dynamic_registration_service.registry_manager
             connected_pi_devices = []
             
-            # Skip slow IoT Hub device scanning - use fast LAN detection instead
-            logger.debug("⚡ Skipping slow IoT Hub device scanning for performance")
-            logger.debug("🔄 Using fast LAN-based Pi detection...")
-            # Use fast LAN detection immediately
-            return self._fallback_lan_pi_check_list()
+            # Get list of known Pi device patterns
+            pi_device_patterns = [
+                "pi-",           # Device IDs starting with pi-
+                "raspberry",     # Device IDs containing raspberry
+                "rpi-",          # Device IDs starting with rpi-
+            ]
+            
+            # Load config to get specific Pi device IDs if configured
+            from utils.config import load_config
+            config = load_config()
+            pi_config = config.get("raspberry_pi", {})
+            specific_pi_devices = pi_config.get("device_ids", [])
+            
+            logger.debug(f"🔍 Checking IoT Hub for Pi devices. Configured devices: {specific_pi_devices}")
+            
+            # Check specific Pi devices first
+            for device_id in specific_pi_devices:
+                logger.debug(f"🔍 Checking configured Pi device: {device_id}")
+                if self._check_device_connection_state(registry_manager, device_id):
+                    logger.info(f"✅ Found CONNECTED Pi device: {device_id}")
+                    connected_pi_devices.append(device_id)
+                else:
+                    logger.debug(f"❌ Pi device {device_id} not connected or not found")
+            
+            # If no specific devices configured or none found, scan for Pi pattern devices
+            if not specific_pi_devices or not connected_pi_devices:
+                logger.debug("🔍 Scanning IoT Hub for Pi devices with pattern matching...")
+                try:
+                    # Get device list (without max_count parameter that's causing issues)
+                    devices = registry_manager.get_devices()
+                    logger.debug(f"📡 Found {len(devices)} total devices in IoT Hub")
+                    
+                    pi_candidates = []
+                    # Limit processing to first 50 devices to avoid timeout
+                    for device in devices[:50]:
+                        device_id_lower = device.device_id.lower()
+                        
+                        # Check if device ID matches Pi patterns
+                        if any(pattern in device_id_lower for pattern in pi_device_patterns):
+                            pi_candidates.append(device.device_id)
+                            logger.debug(f"🔍 Found Pi candidate device: {device.device_id}")
+                            if self._check_device_connection_state(registry_manager, device.device_id):
+                                logger.info(f"✅ Pi candidate {device.device_id} is CONNECTED")
+                                connected_pi_devices.append(device.device_id)
+                            else:
+                                logger.debug(f"❌ Pi candidate {device.device_id} is not connected")
+                    
+                    if not pi_candidates:
+                        logger.debug("❌ No devices found matching Pi patterns in IoT Hub")
+                        # Log first few device IDs for debugging
+                        sample_devices = [d.device_id for d in devices[:5]]
+                        logger.debug(f"📋 Sample device IDs in IoT Hub: {sample_devices}")
+                                
+                except Exception as e:
+                    logger.debug(f"Error scanning IoT Hub devices: {e}")
+                    logger.debug("🔄 Falling back to LAN-based Pi detection...")
+                    # Fallback to LAN detection immediately if IoT Hub scan fails
+                    return self._fallback_lan_pi_check_list()
             
             logger.info(f"🏁 Final result: {len(connected_pi_devices)} connected Pi devices: {connected_pi_devices}")
             return connected_pi_devices
