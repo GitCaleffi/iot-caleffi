@@ -302,12 +302,13 @@ class ConnectionManager:
             if not specific_pi_devices or not connected_pi_devices:
                 logger.info("🔍 Scanning IoT Hub for Pi devices with pattern matching...")
                 try:
-                    # Get device list (limited to avoid timeout)
-                    devices = registry_manager.get_devices(max_count=100)
+                    # Get device list (without max_count parameter that's causing issues)
+                    devices = registry_manager.get_devices()
                     logger.info(f"📡 Found {len(devices)} total devices in IoT Hub")
                     
                     pi_candidates = []
-                    for device in devices:
+                    # Limit processing to first 50 devices to avoid timeout
+                    for device in devices[:50]:
                         device_id_lower = device.device_id.lower()
                         
                         # Check if device ID matches Pi patterns
@@ -328,6 +329,9 @@ class ConnectionManager:
                                 
                 except Exception as e:
                     logger.info(f"Error scanning IoT Hub devices: {e}")
+                    # Fallback to LAN detection if IoT Hub scan fails
+                    logger.info("🔄 Falling back to LAN-based Pi detection...")
+                    return self._fallback_lan_pi_check_list()
             
             logger.info(f"🏁 Final result: {len(connected_pi_devices)} connected Pi devices: {connected_pi_devices}")
             return connected_pi_devices
@@ -344,20 +348,81 @@ class ConnectionManager:
             
             if twin and hasattr(twin, 'connection_state'):
                 is_connected = twin.connection_state == 'Connected'
-                logger.debug(f"Device {device_id} connectionState: {twin.connection_state}")
+                logger.info(f"Device {device_id} connectionState: {twin.connection_state}")
+                
+                # If device is not connected via IoT Hub, check if it's reachable via LAN
+                if not is_connected:
+                    logger.info(f"Device {device_id} not connected to IoT Hub, checking LAN connectivity...")
+                    # Try to extract IP from device twin properties or use network discovery
+                    lan_connected = self._check_device_lan_connectivity(device_id)
+                    if lan_connected:
+                        logger.info(f"✅ Device {device_id} found via LAN - considering as connected")
+                        return True
+                    else:
+                        logger.info(f"❌ Device {device_id} not reachable via LAN either")
+                        return False
+                        
                 return is_connected
             else:
-                # Fallback: check device status
+                # Fallback: check device status and LAN connectivity
                 device = registry_manager.get_device(device_id)
                 if device and hasattr(device, 'status'):
                     is_enabled = device.status == 'enabled'
-                    logger.debug(f"Device {device_id} status: {device.status}")
-                    return is_enabled
+                    logger.info(f"Device {device_id} status: {device.status}")
+                    
+                    # Even if enabled, check LAN connectivity for Pi devices
+                    if is_enabled:
+                        lan_connected = self._check_device_lan_connectivity(device_id)
+                        if lan_connected:
+                            logger.info(f"✅ Device {device_id} enabled and reachable via LAN")
+                            return True
+                    
+                    return False
                     
             return False
             
         except Exception as e:
-            logger.debug(f"Error checking device {device_id} connection state: {e}")
+            logger.info(f"Error checking device {device_id} connection state: {e}")
+            # Fallback to LAN check on error
+            return self._check_device_lan_connectivity(device_id)
+    
+    def _check_device_lan_connectivity(self, device_id: str) -> bool:
+        """Check if a Pi device is reachable via LAN using network discovery"""
+        try:
+            # First try configured Pi IP if available
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.info(f"✅ Device {device_id} found at configured IP {user_pi_ip}")
+                return True
+            
+            # Try network discovery to find Pi devices
+            discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
+            
+            for device in discovered_devices:
+                if self._test_real_pi_connectivity(device['ip']):
+                    logger.info(f"✅ Device {device_id} found via discovery at {device['ip']}")
+                    return True
+            
+            # Try common Pi hostnames
+            common_hostnames = ["raspberrypi.local", "raspberry.local", "pi.local"]
+            for hostname in common_hostnames:
+                try:
+                    import socket
+                    ip = socket.gethostbyname(hostname)
+                    if self._test_real_pi_connectivity(ip):
+                        logger.info(f"✅ Device {device_id} found via hostname {hostname} at {ip}")
+                        return True
+                except:
+                    continue
+            
+            logger.debug(f"❌ Device {device_id} not found via LAN")
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking LAN connectivity for {device_id}: {e}")
             return False
     
     def _fallback_lan_pi_check(self) -> bool:
@@ -380,6 +445,26 @@ class ConnectionManager:
             logger.debug(f"Fallback LAN check error: {e}")
             self.raspberry_pi_devices_available = False
             return False
+    
+    def _fallback_lan_pi_check_list(self) -> list:
+        """Fast fallback LAN check that returns list of connected Pi devices"""
+        try:
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.debug(f"✅ Fast LAN check: Pi at {user_pi_ip} is responsive")
+                # Generate device ID from IP for consistency
+                device_id = f"pi-lan-{user_pi_ip.replace('.', '')}"
+                return [device_id]
+            else:
+                logger.debug("❌ Fast LAN check: Configured Pi not responsive")
+                return []
+                
+        except Exception as e:
+            logger.debug(f"Fast LAN check error: {e}")
+            return []
     
     def _fallback_lan_pi_check_list(self) -> list:
         """Fast fallback LAN check that returns list of connected Pi devices"""

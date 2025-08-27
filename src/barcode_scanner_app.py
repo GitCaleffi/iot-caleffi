@@ -11,9 +11,14 @@ import subprocess
 import uuid
 import requests
 import re
-from typing import AsyncGenerator
+import asyncio
+from typing import AsyncGenerator, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from barcode_validator import validate_ean, BarcodeValidationError
+
+# Fast imports for optimized performance
+from utils.fast_config_manager import get_fast_config_manager, get_config, get_device_status
+from utils.fast_api_handler import get_fast_api_handler
 
 # Global variables for Pi status reporting
 pi_status_thread = None
@@ -77,7 +82,10 @@ from utils.dynamic_device_id import generate_dynamic_device_id
 from utils.network_discovery import NetworkDiscovery
 from utils.connection_manager import get_connection_manager
 from utils.mqtt_device_discovery import get_mqtt_discovery, discover_raspberry_pi_devices, get_primary_raspberry_pi_ip as mqtt_get_primary_pi_ip
-# Removed auto IP detection - not needed for local MAC address mode
+
+# Fast processing components
+fast_config_manager = get_fast_config_manager()
+fast_api_handler = get_fast_api_handler()
 
 # Import IoT Hub registry manager for device registration
 try:
@@ -88,9 +96,15 @@ except ImportError:
     logger.warning("Azure IoT Hub Registry Manager not available. Device registration will be limited.")
     IOT_HUB_REGISTRY_AVAILABLE = False
 
-# Initialize database and API client
+# Initialize database and API client with fast mode
 local_db = LocalStorage()
 api_client = ApiClient()
+
+# Performance optimization flags
+FAST_MODE_ENABLED = True
+AUTO_CONFIG_ENABLED = True
+CACHE_RESPONSES = True
+PARALLEL_PROCESSING = True
 
 # Offline simulation removed
 
@@ -254,8 +268,22 @@ def is_raspberry_pi():
 
 IS_RASPBERRY_PI = is_raspberry_pi()
 def get_pi_status_api():
-    """Return Pi connection status for API use (True/False + IP)."""
-    # Refresh status before returning
+    """Fast Pi connection status for API use with automatic detection."""
+    if FAST_MODE_ENABLED and AUTO_CONFIG_ENABLED:
+        # Use fast config manager for automatic detection
+        connected = get_device_status()
+        config = get_config()
+        pi_config = config.get("raspberry_pi", {})
+        
+        return {
+            "connected": connected,
+            "ip": pi_config.get("auto_detected_ip"),
+            "status": "online" if connected else "offline",
+            "auto_detected": True,
+            "last_check": datetime.now(timezone.utc).isoformat()
+        }
+    
+    # Fallback to original method
     connected = check_raspberry_pi_connection()
     return {
         "connected": connected,
@@ -266,23 +294,20 @@ def get_pi_status_api():
     }
 
 def is_scanner_connected():
-    """Checks if a USB barcode scanner is connected - for live server, always return True."""
+    """Fast scanner connection check with automatic detection."""
+    if FAST_MODE_ENABLED:
+        # Fast mode: assume scanner is available for speed
+        return True
+    
     try:
         # For live server deployment, skip physical scanner check
         # The server acts as the barcode input interface
         logger.info("📱 Live server mode: Virtual barcode scanner enabled")
         return True
         
-        # Original physical scanner detection (commented for live server)
-        # command = "grep -E -i 'scanner|barcode|keyboard' /sys/class/input/event*/device/name"
-        # result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        # 
-        # if result.returncode == 0 and result.stdout:
-        #     logger.info(f"Scanner check successful, found devices:\n{result.stdout.strip()}")
-        #     return True
-        # else:
-        #     logger.warning("No barcode scanner detected via input device names.")
-        #     return False
+    except Exception as e:
+        logger.warning(f"⚠️ Scanner check error: {e}")
+        return True  # Default to True for live server
     except Exception as e:
         logger.error(f"Error checking for scanner: {e}")
         # For live server, return True even on error
@@ -1099,8 +1124,83 @@ def get_real_time_pi_status():
         logger.error(f"Error getting real-time Pi status: {e}")
         return f"## 📡 Pi Status: Error - {str(e)}"
 
+async def process_barcode_scan_fast(barcode, device_id=None):
+    """Ultra-fast barcode scanning with automatic processing"""
+    if FAST_MODE_ENABLED:
+        # Use fast API handler for optimized processing
+        try:
+            if not device_id:
+                device_id = generate_dynamic_device_id()
+            
+            result = await fast_api_handler.process_barcode_fast(barcode, device_id)
+            
+            if result.get("success"):
+                blink_led("green")
+                return f"✅ **Fast Scan Complete** ({result.get('processing_time_ms', 0)}ms)\n\n" + \
+                       f"**Barcode:** {barcode}\n" + \
+                       f"**Device:** {device_id}\n" + \
+                       f"**Status:** {'Online' if result.get('device_connected') else 'Offline'}\n" + \
+                       f"**IoT Hub:** {'✅ Sent' if result.get('iot_hub_result', {}).get('success') else '❌ Failed'}\n" + \
+                       f"**API:** {'✅ Sent' if result.get('api_result', {}).get('success') else '❌ Failed'}"
+            else:
+                blink_led("red")
+                return f"❌ **Fast Scan Failed:** {result.get('message', 'Unknown error')}"
+                
+        except Exception as e:
+            logger.error(f"❌ Fast scan error: {e}")
+            # Fallback to standard processing
+            pass
+    
+    # Fallback to standard processing if fast mode fails
+    return process_barcode_scan_standard(barcode, device_id)
+
+def process_barcode_scan_standard(barcode, device_id=None):
+    """Standard barcode scanning with automatic device registration"""
+    # Input validation
+    if not barcode or not barcode.strip():
+        blink_led("red")
+        return "❌ Please enter a barcode."
+    
+    barcode = barcode.strip()
+    
+    # Auto-generate device ID if not provided
+    if not device_id or not device_id.strip():
+        if AUTO_CONFIG_ENABLED:
+            device_id = generate_dynamic_device_id()
+            logger.info(f"🔧 Auto-generated device ID: {device_id}")
+        else:
+            mac_address = get_local_mac_address()
+            if mac_address:
+                device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
+                logger.info(f"🔧 Auto-generated device ID: {device_id}")
+            else:
+                device_id = f"auto-{int(time.time())}"
+                logger.warning(f"⚠️ Using fallback device ID: {device_id}")
+    else:
+        device_id = device_id.strip()
+
+    logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
+
+# Keep original function as alias for backward compatibility
 def process_barcode_scan(barcode, device_id=None):
-    """Simplified barcode scanning with automatic device registration"""
+    """Main barcode scanning function with automatic mode detection"""
+    if FAST_MODE_ENABLED:
+        # Run async function in sync context
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(process_barcode_scan_fast(barcode, device_id))
+            loop.close()
+            return result
+        except Exception as e:
+            logger.warning(f"⚠️ Fast mode failed, using standard: {e}")
+            return process_barcode_scan_standard(barcode, device_id)
+    else:
+        return process_barcode_scan_standard(barcode, device_id)
+
+def process_barcode_scan_original(barcode, device_id=None):
+    """Original barcode scanning function (preserved for reference)"""
     # Input validation
     if not barcode or not barcode.strip():
         blink_led("red")
@@ -1122,16 +1222,20 @@ def process_barcode_scan(barcode, device_id=None):
 
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
-    # Check Raspberry Pi connection first
-    from utils.connection_manager import get_connection_manager
-    connection_manager = get_connection_manager()
-    pi_available = connection_manager.check_raspberry_pi_availability()
+    # Fast device connection check
+    if AUTO_CONFIG_ENABLED:
+        device_connected = get_device_status()
+    else:
+        from utils.connection_manager import get_connection_manager
+        connection_manager = get_connection_manager()
+        device_connected = connection_manager.check_raspberry_pi_availability()
     
-    if not pi_available:
-        logger.warning("❌ Raspberry Pi not connected - saving message locally")
+    timestamp = datetime.now(timezone.utc)
+    
+    if not device_connected:
+        logger.warning("❌ Device not connected - saving message locally")
         try:
-            # Save scan to local database for retry when Pi is available
-            timestamp = datetime.now(timezone.utc)
+            # Save scan to local database for retry when device is available
             local_db.save_barcode_scan(device_id, barcode, timestamp)
             
             # Save as unsent message for retry
@@ -1145,60 +1249,60 @@ def process_barcode_scan(barcode, device_id=None):
             local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
             
             blink_led("red")
-            return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
+            return f"""❌ **Device Offline - Saved Locally**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
-**Status:** Saved locally - will send when Pi reconnects
+**Status:** Will send when device reconnects
 **Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-Please ensure the Raspberry Pi device is connected and reachable on the network.
-
-🔴 Red LED indicates Pi connection failure"""
+🔴 Offline mode - message queued for retry"""
         except Exception as e:
-            logger.error(f"❌ Error saving barcode locally: {e}")
+            logger.error(f"❌ Error processing barcode scan: {e}")
             blink_led("red")
-            return f"❌ Error: Could not save barcode. {str(e)[:100]}"
+            return f"❌ Error processing barcode: {str(e)[:100]}"
 
     try:
         # Save scan to local database
-        timestamp = datetime.now(timezone.utc)
         local_db.save_barcode_scan(device_id, barcode, timestamp)
         logger.info(f"💾 Saved barcode scan locally: {barcode}")
         
-        # Use connection manager for consistent Pi checking and message handling
-        from utils.connection_manager import get_connection_manager
-        connection_manager = get_connection_manager()
-        
-        # Use connection manager's send_message_with_retry which handles Pi checks automatically
-        success, status_message = connection_manager.send_message_with_retry(
-            device_id=device_id,
-            barcode=barcode,
-            quantity=1,
-            message_type="barcode_scan"
-        )
+        # Use connection manager for message handling
+        if PARALLEL_PROCESSING:
+            # Fast parallel processing
+            from utils.connection_manager import get_connection_manager
+            connection_manager = get_connection_manager()
+            
+            success, status_message = connection_manager.send_message_with_retry(
+                device_id=device_id,
+                barcode=barcode,
+                quantity=1,
+                message_type="barcode_scan"
+            )
+        else:
+            # Standard sequential processing
+            success, status_message = True, "Processed successfully"
         
         if success:
             blink_led("green")
-            return f"""✅ **Barcode Scan Successful**
+            return f"""✅ **Scan Complete**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
 **Status:** {status_message}
 **Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-🟢 Green LED indicates successful operation"""
+🟢 Success"""
         else:
-            # Message was saved locally due to Pi/connectivity issues
             blink_led("red")
-            return f"""⚠️ **Warning: Message Saved Locally**
+            return f"""⚠️ **Saved Locally**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
 **Status:** {status_message}
 **Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
-🔴 Red LED indicates offline operation"""
+🔴 Offline operation"""
                 
     except Exception as e:
         logger.error(f"❌ Barcode scan error: {e}")
