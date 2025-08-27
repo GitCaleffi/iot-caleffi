@@ -156,8 +156,13 @@ class ConnectionManager:
             self.last_connection_check = current_time
             return False
     
-    def check_iot_hub_connectivity(self) -> bool:
-        """Check if we can connect to IoT Hub"""
+    def check_iot_hub_connectivity(self, *args, **kwargs) -> bool:
+        """Check if we can connect to IoT Hub
+        
+        Args:
+            *args: For backward compatibility with calls that pass extra arguments
+            **kwargs: For backward compatibility with calls that pass keyword arguments
+        """
         # First check MQTT connection status if available
         mqtt_monitor = get_mqtt_monitor()
         if mqtt_monitor and mqtt_monitor.last_status is not None:
