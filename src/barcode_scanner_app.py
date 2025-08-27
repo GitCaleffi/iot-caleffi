@@ -87,6 +87,15 @@ from utils.mqtt_device_discovery import get_mqtt_discovery, discover_raspberry_p
 fast_config_manager = get_fast_config_manager()
 fast_api_handler = get_fast_api_handler()
 
+# Auto retry and connection recovery
+from utils.auto_retry_manager import get_auto_retry_manager, start_auto_retry
+from utils.connection_recovery import get_connection_recovery
+
+# Start automatic systems
+auto_retry_manager = get_auto_retry_manager()
+connection_recovery = get_connection_recovery()
+start_auto_retry()  # Start automatic message retry monitoring
+
 # Import IoT Hub registry manager for device registration
 try:
     from azure.iot.hub import IoTHubRegistryManager
@@ -1155,7 +1164,7 @@ async def process_barcode_scan_fast(barcode, device_id=None):
     return process_barcode_scan_standard(barcode, device_id)
 
 def process_barcode_scan_standard(barcode, device_id=None):
-    """Standard barcode scanning with automatic device registration"""
+    """Standard barcode scanning with automatic device registration and retry"""
     # Input validation
     if not barcode or not barcode.strip():
         blink_led("red")
@@ -1180,6 +1189,11 @@ def process_barcode_scan_standard(barcode, device_id=None):
         device_id = device_id.strip()
 
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
+    
+    # Check if auto retry manager is monitoring
+    if not auto_retry_manager.get_status().get("monitoring_active", False):
+        logger.warning("⚠️ Auto retry manager not active, starting...")
+        start_auto_retry()
 
 # Keep original function as alias for backward compatibility
 def process_barcode_scan(barcode, device_id=None):
@@ -1238,7 +1252,7 @@ def process_barcode_scan_original(barcode, device_id=None):
             # Save scan to local database for retry when device is available
             local_db.save_barcode_scan(device_id, barcode, timestamp)
             
-            # Save as unsent message for retry
+            # Save as unsent message for automatic retry
             message_data = {
                 "deviceId": device_id,
                 "barcode": barcode,
@@ -1247,6 +1261,9 @@ def process_barcode_scan_original(barcode, device_id=None):
                 "messageType": "barcode_scan"
             }
             local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
+            
+            # Auto retry manager will automatically process this when device reconnects
+            logger.info(f"🔄 Message queued for automatic retry when device reconnects")
             
             blink_led("red")
             return f"""❌ **Device Offline - Saved Locally**
@@ -1267,32 +1284,48 @@ def process_barcode_scan_original(barcode, device_id=None):
         local_db.save_barcode_scan(device_id, barcode, timestamp)
         logger.info(f"💾 Saved barcode scan locally: {barcode}")
         
-        # Use connection manager for message handling
+        # Use stable connection recovery for reliable message sending
         if PARALLEL_PROCESSING:
-            # Fast parallel processing
-            from utils.connection_manager import get_connection_manager
-            connection_manager = get_connection_manager()
+            # Try stable connection first for better reliability
+            message_data = {
+                "barcode": barcode,
+                "device_id": device_id,
+                "quantity": 1,
+                "message_type": "barcode_scan",
+                "timestamp": timestamp.isoformat()
+            }
             
-            success, status_message = connection_manager.send_message_with_retry(
-                device_id=device_id,
-                barcode=barcode,
-                quantity=1,
-                message_type="barcode_scan"
-            )
+            message_json = json.dumps(message_data)
+            stable_success = connection_recovery.send_message_stable(device_id, message_json)
+            
+            if stable_success:
+                success, status_message = True, "Sent via stable IoT Hub connection"
+            else:
+                # Fallback to connection manager
+                from utils.connection_manager import get_connection_manager
+                connection_manager = get_connection_manager()
+                
+                success, status_message = connection_manager.send_message_with_retry(
+                    device_id=device_id,
+                    barcode=barcode,
+                    quantity=1,
+                    message_type="barcode_scan"
+                )
         else:
             # Standard sequential processing
             success, status_message = True, "Processed successfully"
         
         if success:
             blink_led("green")
-            return f"""✅ **Scan Complete**
+            return f"""✅ **Scan Complete - Auto Retry Active**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
 **Status:** {status_message}
 **Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+**Auto Retry:** ✅ Monitoring for reconnections
 
-🟢 Success"""
+🟢 Success - Messages will auto-retry if connection lost"""
         else:
             blink_led("red")
             return f"""⚠️ **Saved Locally**

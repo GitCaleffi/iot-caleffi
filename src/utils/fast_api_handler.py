@@ -11,11 +11,13 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from datetime import datetime, timezone
 
-from .fast_config_manager import get_fast_config_manager, get_config, get_device_status
+from utils.fast_config_manager import get_fast_config_manager, get_config, get_device_status
 from database.local_storage import LocalStorage
 from api.api_client import ApiClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.connection_manager import get_connection_manager
+from utils.auto_retry_manager import get_auto_retry_manager
+from utils.connection_recovery import get_connection_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,8 @@ class FastAPIHandler:
         self.local_db = LocalStorage()
         self.api_client = ApiClient()
         self.connection_manager = get_connection_manager()
+        self.auto_retry_manager = get_auto_retry_manager()
+        self.connection_recovery = get_connection_recovery()
         
         # Performance optimizations
         self.executor = ThreadPoolExecutor(max_workers=10)
@@ -34,8 +38,12 @@ class FastAPIHandler:
         self.response_cache = {}
         self.cache_ttl = 30  # 30 seconds cache for responses
         
+        # Connection state tracking
+        self.last_connection_state = None
+        
         # Auto-initialization
         self._initialize_fast_mode()
+        self._setup_connection_monitoring()
     
     def _initialize_fast_mode(self):
         """Initialize fast mode with automatic settings"""
@@ -55,6 +63,74 @@ class FastAPIHandler:
                 
         except Exception as e:
             logger.warning(f"⚠️ Fast mode initialization warning: {e}")
+    
+    def _setup_connection_monitoring(self):
+        """Setup connection monitoring for automatic API reload"""
+        try:
+            # Add callback for connection state changes
+            self.auto_retry_manager.add_connection_callback(self._on_connection_change)
+            self.connection_recovery.add_connection_callback(self._on_device_recovery)
+            
+            logger.info("📡 Connection monitoring setup complete")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Connection monitoring setup warning: {e}")
+    
+    def _on_connection_change(self, connected: bool):
+        """Handle connection state changes"""
+        try:
+            if connected and self.last_connection_state == False:
+                logger.info("🔄 Device reconnected - triggering API reload")
+                self._reload_api_on_reconnect()
+            
+            self.last_connection_state = connected
+            
+        except Exception as e:
+            logger.error(f"❌ Connection change handler error: {e}")
+    
+    def _on_device_recovery(self, device_id: str, recovered: bool):
+        """Handle device recovery events"""
+        try:
+            if recovered:
+                logger.info(f"🔄 Device {device_id} recovered - optimizing API performance")
+                # Clear cache to ensure fresh data
+                self._clear_device_cache(device_id)
+                # Trigger immediate message processing
+                self.auto_retry_manager._process_unsent_messages(immediate=True)
+                
+        except Exception as e:
+            logger.error(f"❌ Device recovery handler error: {e}")
+    
+    def _reload_api_on_reconnect(self):
+        """Optimize API performance when device reconnects"""
+        try:
+            # Clear response cache for fresh data
+            with self.cache_lock:
+                self.response_cache.clear()
+            
+            # Preload configuration
+            self.config_manager.get_config(force_reload=True)
+            
+            # Trigger unsent message processing
+            self.auto_retry_manager._process_unsent_messages(immediate=True)
+            
+            logger.info("⚡ API reloaded and optimized for reconnected device")
+            
+        except Exception as e:
+            logger.error(f"❌ API reload error: {e}")
+    
+    def _clear_device_cache(self, device_id: str):
+        """Clear cache entries for specific device"""
+        try:
+            with self.cache_lock:
+                keys_to_remove = [key for key in self.response_cache.keys() if device_id in key]
+                for key in keys_to_remove:
+                    del self.response_cache[key]
+            
+            logger.info(f"🗑️ Cleared cache for device {device_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Cache clear error: {e}")
     
     async def process_barcode_fast(self, barcode: str, device_id: str = None) -> Dict[str, Any]:
         """Ultra-fast barcode processing with automatic device detection"""
@@ -169,9 +245,9 @@ class FastAPIHandler:
             return {"success": False, "error": str(e)}
     
     def _send_to_iot_hub_sync(self, barcode: str, device_id: str) -> Dict[str, Any]:
-        """Synchronous IoT Hub sending"""
+        """Synchronous IoT Hub sending with stable connection"""
         try:
-            # Use connection manager for automatic retry logic
+            # Use stable connection recovery for reliable sending
             message_data = {
                 "barcode": barcode,
                 "device_id": device_id,
@@ -180,14 +256,22 @@ class FastAPIHandler:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            result = self.connection_manager.send_message_with_retry(
+            # Try stable connection first
+            message_json = json.dumps(message_data)
+            stable_success = self.connection_recovery.send_message_stable(device_id, message_json)
+            
+            if stable_success:
+                return {"success": True, "result": "Sent via stable connection"}
+            
+            # Fallback to connection manager
+            success, status_message = self.connection_manager.send_message_with_retry(
                 device_id=device_id,
                 barcode=barcode,
                 quantity=1,
                 message_type="barcode_scan"
             )
             
-            return {"success": True, "result": result}
+            return {"success": success, "result": status_message}
             
         except Exception as e:
             logger.error(f"❌ IoT Hub send error: {e}")
@@ -203,13 +287,13 @@ class FastAPIHandler:
             return {"success": False, "error": str(e)}
     
     async def _save_for_retry(self, barcode: str, device_id: str) -> Dict[str, Any]:
-        """Save message for retry when device comes online"""
+        """Save message for automatic retry when device comes online"""
         try:
             message_data = {
                 "barcode": barcode,
                 "device_id": device_id,
                 "quantity": 1,
-                "message_type": "barcode_scan",
+                "messageType": "barcode_scan",
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
@@ -219,7 +303,10 @@ class FastAPIHandler:
                 timestamp=datetime.now(timezone.utc)
             )
             
-            return {"success": True, "message": "Saved for retry when device online"}
+            # Auto retry manager will automatically process this when device reconnects
+            logger.info(f"💾 Message saved for automatic retry: {barcode}")
+            
+            return {"success": True, "message": "Saved for automatic retry when device reconnects"}
             
         except Exception as e:
             logger.error(f"❌ Save for retry error: {e}")
@@ -283,6 +370,9 @@ class FastAPIHandler:
                 "auto_registration": config.get("commercial_deployment", {}).get("auto_registration", True),
                 "iot_hub_available": True,  # Always assume available for speed
                 "api_available": True,      # Always assume available for speed
+                "auto_retry_active": self.auto_retry_manager.get_status().get("monitoring_active", False),
+                "unsent_messages_count": self.auto_retry_manager.get_status().get("unsent_messages_count", 0),
+                "connection_recovery_active": True,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             

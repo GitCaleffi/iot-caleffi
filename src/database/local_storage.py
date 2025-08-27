@@ -529,6 +529,13 @@ class LocalStorage:
             'device_ready': has_available_devices and test_barcode_scanned
         }
 
+    def get_unsent_messages(self, limit=None):
+        """Alias for get_unsent_scans() for compatibility"""
+        messages = self.get_unsent_scans()
+        if limit:
+            return messages[:limit]
+        return messages
+
     def close(self):
         """Close database connection - no longer needed with per-operation connections"""
         pass
