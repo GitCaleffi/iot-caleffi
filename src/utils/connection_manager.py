@@ -4,16 +4,13 @@ import subprocess
 import time
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple
 from threading import RLock
 from database.local_storage import LocalStorage
 from iot.hub_client import HubClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.config import load_config
 from utils.network_discovery import NetworkDiscovery
-from .network_discovery import NetworkDiscovery
-from .config import load_config
-from .mqtt_connection_monitor import init_mqtt_monitor, get_mqtt_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -32,23 +29,21 @@ class ConnectionManager:
         self.raspberry_pi_devices_available = False
         self.last_connectivity_check = 0
         self.last_pi_check = 0
-        self.connectivity_check_interval = 15 
-        self.connection_check_interval = 15 
-        self.pi_check_interval = 20  
+        self.connectivity_check_interval = 10  # seconds (faster for real-time updates)
+        self.connection_check_interval = 10  # Alias for backward compatibility
+        self.pi_check_interval = 15  # seconds (faster Pi discovery for auto-refresh)
         
-        # Auto-refresh settings
+        # Auto-refresh settings - optimized for performance
         self.auto_refresh_enabled = True
-        self.auto_refresh_interval = 5  # seconds - faster for real-time disconnection detection
+        self.auto_refresh_interval = 30  # seconds (balanced for performance)
         self.auto_refresh_thread = None
         self.retry_thread = None
         self.retry_running = False
         self.lock = RLock()
         self.network_discovery = NetworkDiscovery()
         
-        # Track last known MQTT state
-        self.last_mqtt_status = None
-        self.mqtt_connection_time = None
-        self.mqtt_disconnect_reason = None
+        # Fast local cache for immediate responses
+        self.fast_pi_cache = {'available': False, 'last_check': 0, 'cache_duration': 5}
         
         # Initialize dynamic registration service for IoT Hub Pi detection
         self.dynamic_registration_service = None
@@ -57,31 +52,8 @@ class ConnectionManager:
         # Start background retry worker
         self._start_retry_thread()
         
-        # Initialize MQTT monitoring (must be before auto-refresh worker)
-        self.mqtt_monitor = init_mqtt_monitor(self)
-        
         # Start auto-refresh worker for real-time status updates
         self._start_auto_refresh_worker()
-        
-    def _initialize_registration_service(self):
-        """Initialize dynamic registration service for IoT Hub operations"""
-        try:
-            config = load_config()
-            if config:
-                iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
-                if iot_hub_connection_string:
-                    self.dynamic_registration_service = get_dynamic_registration_service(iot_hub_connection_string)
-                    if self.dynamic_registration_service:
-                        logger.info("✅ Dynamic registration service initialized for automatic Pi detection")
-                    else:
-                        logger.warning("⚠️ Failed to initialize dynamic registration service")
-                else:
-                    logger.warning("⚠️ No IoT Hub connection string found in config")
-            else:
-                logger.warning("⚠️ Config not loaded for registration service initialization")
-        except Exception as e:
-            logger.error(f"Error initializing registration service: {e}")
-            self.dynamic_registration_service = None
         
     def check_internet_connectivity(self) -> bool:
         """
@@ -95,8 +67,7 @@ class ConnectionManager:
         
         # Use cached result if recent check
         if current_time - self.last_connection_check < self.connection_check_interval:
-            status = "ONLINE" if self.is_connected_to_internet else "OFFLINE"
-            logger.debug(f"📡 Using cached internet status: {status} (checked {current_time - self.last_connection_check:.1f}s ago)")
+            logger.debug(f"Using cached connectivity result: {self.is_connected_to_internet}")
             return self.is_connected_to_internet
             
         logger.debug("Performing fresh internet connectivity check...")
@@ -157,30 +128,17 @@ class ConnectionManager:
             self.last_connection_check = current_time
             return False
     
-    def check_iot_hub_connectivity(self, *args, **kwargs) -> bool:
-        """Check if we can connect to IoT Hub
+    def check_iot_hub_connectivity(self, device_id: str = None) -> bool:
+        """
+        Check if IoT Hub is accessible and device can connect.
+        Uses multiple verification methods to ensure true connectivity.
         
         Args:
-            *args: For backward compatibility with calls that pass extra arguments
-            **kwargs: For backward compatibility with calls that pass keyword arguments
+            device_id: Optional device ID to test specific device connection
+            
+        Returns:
+            bool: True if IoT Hub is accessible, False otherwise
         """
-        # First check MQTT connection status if available
-        mqtt_monitor = get_mqtt_monitor()
-        if mqtt_monitor:
-            status = "CONNECTED ✅" if mqtt_monitor.last_status else "DISCONNECTED ❌"
-            logger.debug(f"🔌 MQTT Monitor Status: {status}")
-            if mqtt_monitor.connected:
-                logger.debug(f"   - Broker: {mqtt_monitor.broker_host}:{mqtt_monitor.broker_port}")
-                logger.debug(f"   - Device ID: {mqtt_monitor.device_id or 'Not set'}")
-            else:
-                logger.debug("   - Not connected to MQTT broker")
-                if mqtt_monitor.initialization_error:
-                    logger.debug(f"   - Initialization error: {mqtt_monitor.initialization_error}")
-            
-            if mqtt_monitor.last_status is not None:
-                return mqtt_monitor.last_status
-            
-        # Fall back to direct IoT Hub check if MQTT not available
         try:
             # Skip Pi availability check - always assume available
                 
@@ -218,10 +176,13 @@ class ConnectionManager:
                 parts = dict(part.split('=', 1) for part in iot_hub_connection_string.split(';'))
                 hostname = parts.get('HostName')
                 
-                # Test IoT Hub connectivity by connecting to port 443 (HTTPS)
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(5)  # 5 second timeout for IoT Hub
-                    result = s.connect_ex((hostname, 443))
+                if hostname:
+                    # Test socket connection to IoT Hub hostname
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(5)  # 5 second timeout
+                    result = sock.connect_ex((hostname, 443))  # HTTPS port
+                    sock.close()
+                    
                     if result != 0:
                         logger.info(f"Socket connection to {hostname}:443 failed - IoT Hub offline")
                         self.is_connected_to_iot_hub = False
@@ -254,116 +215,55 @@ class ConnectionManager:
             self.is_connected_to_iot_hub = False
             return False
     
-    def check_raspberry_pi_availability(self, force_check=False) -> bool:
+    def check_raspberry_pi_availability(self) -> bool:
         """
-        Check if Raspberry Pi devices are available via LAN first, then IoT Hub.
-        Prioritizes local network detection to handle NAT/firewall scenarios.
+        Fast Pi availability check with optimized caching for performance.
+        Uses fast local cache first, then falls back to comprehensive check.
         """
         current_time = time.time()
         
-        # Use shorter cache interval for more dynamic detection
-        cache_interval = 5  # Reduced to 5 seconds for faster disconnection detection
-        if not force_check and current_time - self.last_pi_check < cache_interval:
-            status = "AVAILABLE ✅" if self.raspberry_pi_devices_available else "UNAVAILABLE ❌"
-            time_since_check = current_time - self.last_pi_check
-            logger.debug(f"🍓 Using cached Pi status: {status} (checked {time_since_check:.1f}s ago)")
+        # Fast cache check - immediate response for UI operations
+        if current_time - self.fast_pi_cache['last_check'] < self.fast_pi_cache['cache_duration']:
+            logger.debug(f"Using fast Pi cache: {self.fast_pi_cache['available']}")
+            return self.fast_pi_cache['available']
+        
+        # Medium cache check - avoid expensive operations
+        cache_interval = 15  # Balanced for server deployment with device twins
+        if current_time - self.last_pi_check < cache_interval:
+            logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
+            # Update fast cache
+            self.fast_pi_cache['available'] = self.raspberry_pi_devices_available
+            self.fast_pi_cache['last_check'] = current_time
             return self.raspberry_pi_devices_available
         
         try:
-            # Store previous state to detect changes
-            previous_state = self.raspberry_pi_devices_available
-            
-            # PRIORITY 1: Check LAN connectivity first (handles NAT/firewall cases)
-            lan_available = self._fallback_lan_pi_check()
-            if lan_available:
-                logger.debug("✅ Pi found via LAN - using local network detection")
-                self.raspberry_pi_devices_available = True
-                self.last_pi_check = current_time
-                
-                # Detect state change from offline to online
-                if not previous_state and self.raspberry_pi_devices_available:
-                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
-                    self._send_pi_status_update(True)
-                
-                return True
-            
-            # PRIORITY 2: Check IoT Hub as secondary method
+            # Use IoT Hub device connectionState first for server deployment
             connected_pi_devices = self._check_iot_hub_pi_devices()
             
             if connected_pi_devices:
                 logger.debug(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
                 self.raspberry_pi_devices_available = True
-                
-                # Detect state change from offline to online
-                if not previous_state and self.raspberry_pi_devices_available:
-                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
-                    self._send_pi_status_update(True)
             else:
-                logger.debug("❌ No Pi devices found via LAN or IoT Hub")
-                self.raspberry_pi_devices_available = False
-                
-                # Detect state change from online to offline
-                if previous_state and not self.raspberry_pi_devices_available:
-                    logger.info("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be queued locally")
-                    self._send_pi_status_update(False)
+                logger.debug("❌ No CONNECTED Pi devices found in IoT Hub, trying LAN fallback...")
+                # Fallback to LAN check if no IoT Hub devices found
+                lan_pi_devices = self._fallback_lan_pi_check_list()
+                if lan_pi_devices:
+                    logger.info(f"✅ LAN fallback found {len(lan_pi_devices)} responsive Pi device(s): {lan_pi_devices}")
+                    self.raspberry_pi_devices_available = True
+                else:
+                    logger.debug("❌ No responsive Pi devices found via LAN either")
+                    self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
+            # Update fast cache with result
+            self.fast_pi_cache['available'] = self.raspberry_pi_devices_available
+            self.fast_pi_cache['last_check'] = current_time
             return self.raspberry_pi_devices_available
             
         except Exception as e:
-            logger.debug(f"Error checking Pi availability: {e}")
-            # Detect state change from online to offline on error
-            if self.raspberry_pi_devices_available:
-                logger.info("🍓 ❌ Raspberry Pi went OFFLINE due to error - Messages will be queued locally")
-                self._send_pi_status_update(False)
-            self.raspberry_pi_devices_available = False
-            return False
-    
-    def _send_pi_status_update(self, is_connected: bool):
-        """Send Pi connection status update to IoT Hub via device twin"""
-        try:
-            from utils.config import load_config
-            config = load_config()
-            pi_config = config.get("raspberry_pi", {})
-            pi_ip = pi_config.get("auto_detected_ip", "")
-            
-            # Create status message for IoT Hub
-            status_message = {
-                "messageType": "pi_status",
-                "deviceId": "live-server-pi-status",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "connected": is_connected,
-                "ip_address": pi_ip,
-                "detection_method": "LAN" if pi_ip else "IoT_Hub"
-            }
-            
-            # Send to IoT Hub if available
-            if self.is_connected_to_iot_hub:
-                hub_client = HubClient()
-                success = hub_client.send_message(status_message)
-                if success:
-                    logger.info(f"📡 Pi status sent to IoT Hub: Connected={is_connected}")
-                else:
-                    logger.warning(f"⚠️ Failed to send Pi status to IoT Hub")
-                    # Save locally for retry
-                    self.local_db.save_unsent_message(
-                        "live-server-pi-status", 
-                        json.dumps(status_message),
-                        datetime.now(timezone.utc)
-                    )
-            else:
-                # Save locally for retry when IoT Hub comes back online
-                self.local_db.save_unsent_message(
-                    "live-server-pi-status", 
-                    json.dumps(status_message),
-                    datetime.now(timezone.utc)
-                )
-                logger.info("Raspberry Pi offline - saving message locally for device live-server-pi-status")
-            
-            logger.info(f"📡 Pi connection status changed: {is_connected} (IP: {pi_ip})")
-            
-        except Exception as e:
-            logger.error(f"Error sending Pi status update: {e}")
+            logger.debug(f"Error checking Pi availability via IoT Hub: {e}")
+            # Fallback to LAN check only if IoT Hub fails
+            return self._fallback_lan_pi_check()
     
     def _check_iot_hub_pi_devices(self) -> list:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""
@@ -392,20 +292,20 @@ class ConnectionManager:
             
             # Check specific Pi devices first
             for device_id in specific_pi_devices:
-                logger.info(f"🔍 Checking configured Pi device: {device_id}")
+                logger.debug(f"🔍 Checking configured Pi device: {device_id}")
                 if self._check_device_connection_state(registry_manager, device_id):
                     logger.info(f"✅ Found CONNECTED Pi device: {device_id}")
                     connected_pi_devices.append(device_id)
                 else:
-                    logger.info(f"❌ Pi device {device_id} not connected or not found")
+                    logger.debug(f"❌ Pi device {device_id} not connected or not found")
             
             # If no specific devices configured or none found, scan for Pi pattern devices
             if not specific_pi_devices or not connected_pi_devices:
-                logger.info("🔍 Scanning IoT Hub for Pi devices with pattern matching...")
+                logger.debug("🔍 Scanning IoT Hub for Pi devices with pattern matching...")
                 try:
                     # Get device list (without max_count parameter that's causing issues)
                     devices = registry_manager.get_devices()
-                    logger.info(f"📡 Found {len(devices)} total devices in IoT Hub")
+                    logger.debug(f"📡 Found {len(devices)} total devices in IoT Hub")
                     
                     pi_candidates = []
                     # Limit processing to first 50 devices to avoid timeout
@@ -415,23 +315,23 @@ class ConnectionManager:
                         # Check if device ID matches Pi patterns
                         if any(pattern in device_id_lower for pattern in pi_device_patterns):
                             pi_candidates.append(device.device_id)
-                            logger.info(f"🔍 Found Pi candidate device: {device.device_id}")
+                            logger.debug(f"🔍 Found Pi candidate device: {device.device_id}")
                             if self._check_device_connection_state(registry_manager, device.device_id):
                                 logger.info(f"✅ Pi candidate {device.device_id} is CONNECTED")
                                 connected_pi_devices.append(device.device_id)
                             else:
-                                logger.info(f"❌ Pi candidate {device.device_id} is not connected")
+                                logger.debug(f"❌ Pi candidate {device.device_id} is not connected")
                     
                     if not pi_candidates:
-                        logger.info("❌ No devices found matching Pi patterns in IoT Hub")
+                        logger.debug("❌ No devices found matching Pi patterns in IoT Hub")
                         # Log first few device IDs for debugging
-                        sample_devices = [d.device_id for d in devices[:10]]
-                        logger.info(f"📋 Sample device IDs in IoT Hub: {sample_devices}")
+                        sample_devices = [d.device_id for d in devices[:5]]
+                        logger.debug(f"📋 Sample device IDs in IoT Hub: {sample_devices}")
                                 
                 except Exception as e:
-                    logger.info(f"Error scanning IoT Hub devices: {e}")
-                    # Fallback to LAN detection if IoT Hub scan fails
-                    logger.info("🔄 Falling back to LAN-based Pi detection...")
+                    logger.debug(f"Error scanning IoT Hub devices: {e}")
+                    logger.debug("🔄 Falling back to LAN-based Pi detection...")
+                    # Fallback to LAN detection immediately if IoT Hub scan fails
                     return self._fallback_lan_pi_check_list()
             
             logger.info(f"🏁 Final result: {len(connected_pi_devices)} connected Pi devices: {connected_pi_devices}")
@@ -449,150 +349,41 @@ class ConnectionManager:
             
             if twin and hasattr(twin, 'connection_state'):
                 is_connected = twin.connection_state == 'Connected'
-                logger.info(f"Device {device_id} connectionState: {twin.connection_state}")
-                
-                # If device is not connected via IoT Hub, check if it's reachable via LAN
-                if not is_connected:
-                    logger.info(f"Device {device_id} not connected to IoT Hub, checking LAN connectivity...")
-                    # Try to extract IP from device twin properties or use network discovery
-                    lan_connected = self._check_device_lan_connectivity(device_id)
-                    if lan_connected:
-                        logger.info(f"✅ Device {device_id} found via LAN - considering as connected")
-                        return True
-                    else:
-                        logger.info(f"❌ Device {device_id} not reachable via LAN either")
-                        return False
-                        
+                logger.debug(f"Device {device_id} connectionState: {twin.connection_state}")
                 return is_connected
             else:
-                # Fallback: check device status and LAN connectivity
+                # Fallback: check device status
                 device = registry_manager.get_device(device_id)
                 if device and hasattr(device, 'status'):
                     is_enabled = device.status == 'enabled'
-                    logger.info(f"Device {device_id} status: {device.status}")
-                    
-                    # Even if enabled, check LAN connectivity for Pi devices
-                    if is_enabled:
-                        lan_connected = self._check_device_lan_connectivity(device_id)
-                        if lan_connected:
-                            logger.info(f"✅ Device {device_id} enabled and reachable via LAN")
-                            return True
-                    
-                    return False
+                    logger.debug(f"Device {device_id} status: {device.status}")
+                    return is_enabled
                     
             return False
             
         except Exception as e:
-            logger.info(f"Error checking device {device_id} connection state: {e}")
-            # Fallback to LAN check on error
-            return self._check_device_lan_connectivity(device_id)
-    
-    def _check_device_lan_connectivity(self, device_id: str) -> bool:
-        """Check if a Pi device is reachable via LAN using network discovery"""
-        try:
-            # First try configured Pi IP if available (highest priority)
-            from utils.config import load_config
-            config = load_config()
-            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
-            
-            if user_pi_ip:
-                logger.info(f"Testing configured Pi IP: {user_pi_ip}")
-                # For configured IP, be more permissive - if it's in config, assume it's the Pi
-                if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
-                    logger.info(f"✅ Device {device_id} confirmed at configured IP {user_pi_ip}")
-                    return True
-                else:
-                    logger.info(f"⚠️ Configured Pi {user_pi_ip} not responsive, but trusting config for device {device_id}")
-                    # Even if not responsive, if it's configured, consider it available
-                    return self._is_configured_pi_ip(user_pi_ip)
-            
-            # Try network discovery to find Pi devices
-            discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
-            
-            for device in discovered_devices:
-                if self._test_real_pi_connectivity(device['ip']):
-                    logger.info(f"✅ Device {device_id} found via discovery at {device['ip']}")
-                    return True
-            
-            # Try common Pi hostnames
-            common_hostnames = ["raspberrypi.local", "raspberry.local", "pi.local"]
-            for hostname in common_hostnames:
-                try:
-                    import socket
-                    ip = socket.gethostbyname(hostname)
-                    if self._test_real_pi_connectivity(ip):
-                        logger.info(f"✅ Device {device_id} found via hostname {hostname} at {ip}")
-                        return True
-                except:
-                    continue
-            
-            logger.debug(f"❌ Device {device_id} not found via LAN")
-            return False
-            
-        except Exception as e:
-            logger.debug(f"Error checking LAN connectivity for {device_id}: {e}")
+            logger.debug(f"Error checking device {device_id} connection state: {e}")
             return False
     
     def _fallback_lan_pi_check(self) -> bool:
-        """Primary LAN check for Pi devices (handles NAT/firewall scenarios)"""
+        """Fallback LAN check if IoT Hub method fails"""
         try:
             from utils.config import load_config
             config = load_config()
             user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
             
-            logger.info(f"🔍 Checking LAN connectivity for Pi devices...")
-            
-            # Method 1: Check MQTT connection first (fastest)
-            if self.mqtt_monitor:
-                if self.mqtt_monitor.connected:
-                    logger.info(f"✅ MQTT connection active")
-                    return True
-                else:
-                    logger.info(f"⚠️ MQTT connection not active, checking direct connection...")
-            
-            # Method 2: Check configured Pi IP
-            if user_pi_ip:
-                logger.info(f"Testing direct connection to Pi at {user_pi_ip}...")
-                # Try direct connection check
-                if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
-                    logger.info(f"✅ Direct connection check passed for device {user_pi_ip}")
-                    return True
-                logger.info(f"⚠️ Direct connection check failed for device {user_pi_ip}")
-            
-            # Method 2: Network discovery scan
-            logger.info("🔍 Scanning network for Pi devices...")
-            discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
-            
-            if discovered_devices:
-                logger.info(f"Found {len(discovered_devices)} Pi device(s) via network scan")
-                for device in discovered_devices:
-                    logger.info(f"Testing discovered Pi: {device['ip']} (MAC: {device.get('mac', 'unknown')})")
-                    if self._test_real_pi_connectivity(device['ip']):
-                        logger.info(f"✅ LAN check: Discovered Pi {device['ip']} is responsive")
-                        return True
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.debug(f"✅ Fallback LAN check: Pi {user_pi_ip} is responsive")
+                self.raspberry_pi_devices_available = True
+                return True
             else:
-                logger.info("❌ No Pi devices found via network discovery")
-            
-            # Method 3: Common hostnames
-            logger.info("🔍 Checking common Pi hostnames...")
-            common_hostnames = ["raspberrypi.local", "raspberry.local", "pi.local"]
-            for hostname in common_hostnames:
-                try:
-                    import socket
-                    ip = socket.gethostbyname(hostname)
-                    logger.info(f"Testing hostname {hostname} -> {ip}")
-                    if self._test_real_pi_connectivity(ip):
-                        logger.info(f"✅ LAN check: Pi found via hostname {hostname} at {ip}")
-                        return True
-                except Exception as e:
-                    logger.debug(f"Hostname {hostname} resolution failed: {e}")
-                    continue
-            
-            logger.info("❌ LAN check: No responsive Pi found via any method")
-            return False
+                logger.debug("❌ Fallback LAN check: No responsive Pi found")
+                self.raspberry_pi_devices_available = False
+                return False
                 
         except Exception as e:
-            logger.error(f"LAN check error: {e}")
+            logger.debug(f"Fallback LAN check error: {e}")
+            self.raspberry_pi_devices_available = False
             return False
     
     def _fallback_lan_pi_check_list(self) -> list:
@@ -616,100 +407,113 @@ class ConnectionManager:
             return []
     
     def _test_real_pi_connectivity(self, ip: str) -> bool:
-        """Test real-time connectivity to a potential Pi device - Multiple methods"""
+        """Fast connectivity test to Pi device - optimized for speed"""
         import socket
         
-        # Try multiple methods to detect Pi devices for better compatibility
-        # This prevents false negatives in environments where SSH might not be accessible
+        # Fast SSH connectivity test with shorter timeout
         try:
-            # Method 1: Check if IP is the configured Pi IP (highest priority)
-            from utils.config import load_config
-            config = load_config()
-            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
-            if user_pi_ip and ip == user_pi_ip:
-                logger.debug(f"✅ {ip} matches configured Pi IP - confirmed Pi device")
-                return True
-                
-            # Method 2: Check SSH port (traditional method)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(2)  # 2 second timeout for real-time check
-            result = sock.connect_ex((ip, 22))  # SSH port
+            sock.settimeout(1)  # 1 second timeout for faster response
+            result = sock.connect_ex((ip, 22))  # SSH port only
             sock.close()
             
             if result == 0:
-                logger.debug(f"✅ {ip}:22 (SSH) is responsive - confirmed Pi device")
+                logger.debug(f"✅ {ip}:22 (SSH) responsive")
                 return True
-                
-            # Method 3: Check common Pi web ports (5000, 80, 443)
-            common_ports = [5000, 80, 443]
-            for port in common_ports:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(1)
-                    result = sock.connect_ex((ip, port))
-                    sock.close()
-                    if result == 0:
-                        logger.debug(f"✅ {ip}:{port} is responsive - likely Pi device")
-                        return True
-                except:
-                    continue
-                
-            # Method 4: Ping test as fallback
-            try:
-                import subprocess
-                result = subprocess.run(
-                    ["ping", "-c", "1", "-W", "1", ip],
-                    capture_output=True,
-                    timeout=2
-                )
-                if result.returncode == 0:
-                    logger.debug(f"✅ {ip} responds to ping - likely Pi device")
-                    return True
-            except:
-                pass
-                
-            logger.debug(f"❌ {ip} not responsive on any tested method - not confirmed as Pi device")
-            return False
+            else:
+                logger.debug(f"❌ {ip}:22 (SSH) not responsive")
+                return False
         except Exception as e:
-            logger.debug(f"❌ {ip} connectivity test failed: {e}")
-            return False
-    
-    def _is_configured_pi_ip(self, ip: str) -> bool:
-        """Check if the given IP matches the configured Pi IP"""
-        try:
-            from utils.config import load_config
-            config = load_config()
-            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
-            return user_pi_ip and ip == user_pi_ip
-        except Exception as e:
-            logger.debug(f"Error checking configured Pi IP: {e}")
+            logger.debug(f"❌ {ip} SSH test failed: {e}")
             return False
     
     def _start_auto_refresh_worker(self):
-        """Start a background thread to periodically refresh connection status"""
-        if self.auto_refresh_thread and self.auto_refresh_thread.is_alive():
+        """
+        Start background thread for auto-refreshing connection status.
+        This provides real-time updates of Pi connectivity status.
+        """
+        if not self.auto_refresh_enabled:
             return
             
-        def worker():
-            # Initialize last status tracking
-            self.last_internet_status = False
-            try:
-                # Check internet and IoT Hub connectivity
-                if not self.check_internet_connectivity():
-                    logger.warning("🌐 No internet connection - message will be queued")
-                    raise ConnectionError("No internet connection")
-
-                # Double-check IoT Hub connection status
-                if not self.is_connected_to_iot_hub:
-                    logger.warning("🔌 IoT Hub connection not active - message will be queued")
-                    raise ConnectionError("IoT Hub connection not active")
-
-                # Check Pi status if we have internet and IoT Hub is up
-                if self.check_internet_connectivity() and self.is_connected_to_iot_hub:
-                    self.check_raspberry_pi_availability()
+        def auto_refresh_loop():
+            """Background loop to continuously refresh connection status"""
+            logger.info(f"🔄 Auto-refresh worker started (checking every {self.auto_refresh_interval} seconds)")
+            
+            while self.auto_refresh_enabled:
+                try:
+                    with self.lock:
+                        # Force refresh of all connection statuses
+                        old_internet = self.is_connected_to_internet
+                        old_iot_hub = self.is_connected_to_iot_hub
+                        old_pi = self.raspberry_pi_devices_available
+                        
+                        # Check all connectivity components
+                        self.check_internet_connectivity()
+                        self.check_iot_hub_connectivity()
+                        self.check_raspberry_pi_availability()
+                        
+                        # Re-initialize registration service if needed
+                        if not self.dynamic_registration_service:
+                            self._initialize_registration_service()
+                        
+                        # Log status changes for real-time monitoring
+                        if (old_internet != self.is_connected_to_internet or 
+                            old_iot_hub != self.is_connected_to_iot_hub or 
+                            old_pi != self.raspberry_pi_devices_available):
+                            
+                            internet_status = "✅" if self.is_connected_to_internet else "❌"
+                            iot_hub_status = "✅" if self.is_connected_to_iot_hub else "❌"
+                            pi_status = "✅" if self.raspberry_pi_devices_available else "❌"
+                            
+                            logger.info(f"🔄 Connection status changed - Internet: {internet_status}, IoT Hub: {iot_hub_status}, Pi: {pi_status}")
+                            
+                            # Special logging for Pi status changes
+                            if old_pi != self.raspberry_pi_devices_available:
+                                if self.raspberry_pi_devices_available:
+                                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
+                                else:
+                                    logger.info("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be saved locally")
                     
-                # Prepare message data
+                    # Wait before next refresh
+                    time.sleep(self.auto_refresh_interval)
+                    
+                except Exception as e:
+                    logger.error(f"Error in auto-refresh worker: {e}")
+                    time.sleep(30)  # Wait longer on error
+        
+        # Start background thread
+        self.auto_refresh_thread = threading.Thread(target=auto_refresh_loop, daemon=True)
+        self.auto_refresh_thread.start()
+        logger.info("🔄 Auto-refresh connection monitoring started")
+    
+    def stop_auto_refresh(self):
+        """Stop the auto-refresh worker"""
+        self.auto_refresh_enabled = False
+        if self.auto_refresh_thread:
+            logger.info("🔄 Auto-refresh worker stopped")
+    
+    def send_message_with_retry(self, device_id: str, barcode: str, quantity: int = 1, 
+                           message_type: str = "barcode_scan") -> Tuple[bool, str]:
+        """
+        Send message to IoT Hub with automatic offline queuing.
+        Includes Raspberry Pi network detection to prevent sending when Pi is offline.
+        
+        Args:
+            device_id: Device ID
+            barcode: Scanned barcode
+            quantity: Quantity (default 1)
+            message_type: Type of message (barcode_scan, device_registration, etc.)
+            
+        Returns:
+            Tuple[bool, str]: (success, status_message)
+        """
+        with self.lock:
+            try:
+                # Create consistent message data for storage
+                timestamp = datetime.now()
                 message_data = {
+                    "barcode": barcode,
+                    "quantity": quantity,
                     "message_type": message_type,
                     "timestamp": timestamp.isoformat()
                 }
@@ -770,109 +574,58 @@ class ConnectionManager:
                 error_msg = f"❌ Error sending message: {str(e)} - Message saved for retry"
                 return False, error_msg
     
-    def _verify_pi_connection(self) -> Tuple[bool, str]:
-        """
-        Verify Raspberry Pi connection using multiple methods.
-        
-        Returns:
-            Tuple[bool, str]: (is_connected, status_message)
-        """
-        try:
-            # 1. Check MQTT connection (fastest method)
-            if self.mqtt_monitor and self.mqtt_monitor.connected:
-                logger.info("✅ Pi connection verified via active MQTT connection")
-                return True, "Pi connected via MQTT"
-            
-            # 2. Check LAN connectivity
-            from utils.config import load_config
-            config = load_config()
-            pi_config = config.get("raspberry_pi", {})
-            user_pi_ip = pi_config.get("auto_detected_ip")
-            
-            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
-                logger.info(f"✅ Pi connection verified at configured IP: {user_pi_ip}")
-                return True, f"Pi connected at {user_pi_ip}"
-            
-            # 3. Try network discovery
-            discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
-            if discovered_devices:
-                logger.info(f"✅ Found {len(discovered_devices)} Pi device(s) via network scan")
-                return True, f"Found {len(discovered_devices)} Pi device(s) on network"
-            
-            # 4. Check IoT Hub device twin status
-            if self.dynamic_registration_service:
-                device_twin = self.dynamic_registration_service.get_device_twin("raspberry-pi")
-                if device_twin and device_twin.get("connectionState") == "Connected":
-                    logger.info("✅ Pi connection verified via IoT Hub device twin")
-                    return True, "Pi connected via IoT Hub"
-            
-            logger.warning("❌ Could not verify Pi connection through any method")
-            return False, "Raspberry Pi not found on network or IoT Hub"
-            
-        except Exception as e:
-            logger.error(f"Error verifying Pi connection: {e}")
-            return False, f"Connection check error: {str(e)}"
-    
     def _send_message_now(self, device_id: str, barcode: str, quantity: int, 
                          message_type: str) -> Tuple[bool, str]:
         """
         Internal method to send message immediately to IoT Hub.
-        Performs comprehensive Pi availability check before sending.
+        SAFETY CHECK: Verifies Pi is available before sending.
         
         Returns:
             Tuple[bool, str]: (success, status_message)
         """
         try:
-            # 1. Verify Pi is actually connected
-            pi_connected, pi_status = self._verify_pi_connection()
-            if not pi_connected:
-                logger.warning(f"❌ Message send blocked: {pi_status}")
-                return False, f"🍓 Raspberry Pi offline - {pi_status}"
+            # Check Pi availability before sending
+            if not self.check_raspberry_pi_availability():
+                return False, "🍓 Raspberry Pi offline - Cannot send message"
             
-            # 2. Load configuration
+            # Load configuration
             config = load_config()
             if not config:
                 return False, "Configuration not loaded"
-            
-            # 3. Get IoT Hub connection
+                
+            # Get IoT Hub connection string
             iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
             if not iot_hub_connection_string:
                 return False, "No IoT Hub connection string configured"
-            
-            # 4. Get device-specific connection string
+                
+            # Get device-specific connection string
             registration_service = get_dynamic_registration_service(iot_hub_connection_string)
             if not registration_service:
                 return False, "Failed to initialize registration service"
-            
+                
             device_connection_string = registration_service.register_device_with_azure(device_id)
             if not device_connection_string:
                 return False, f"Failed to get connection string for device {device_id}"
-            
-            # 5. Create Hub client and send message
+                
+            # Create Hub client and send message
             hub_client = HubClient(device_connection_string)
             
-            # Prepare message with additional metadata
+            # Prepare message payload
             message_payload = {
                 "scannedBarcode": barcode,
                 "deviceId": device_id,
                 "quantity": quantity,
                 "messageType": message_type,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "connectionStatus": pi_status,
-                "source": "barcode_scanner"
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            # 6. Send message with error handling
-            logger.info(f"📤 Sending message to IoT Hub: {barcode}")
+            # Send message
             success = hub_client.send_message(barcode, device_id)
             
             if success:
-                logger.info(f"✅ Successfully sent message to IoT Hub: {barcode}")
                 return True, "✅ Message sent to IoT Hub successfully"
             else:
-                error_msg = "⚠️ Failed to send message to IoT Hub"
-                logger.warning(f"{error_msg}: {barcode}")
-                return False, error_msg
+                return False, "⚠️ Failed to send message to IoT Hub"
                 
         except Exception as e:
             logger.error(f"Error in _send_message_now: {e}")
@@ -989,50 +742,25 @@ class ConnectionManager:
             logger.error(f"Error processing unsent messages in background: {e}")
             return 0
     
-    def get_connection_status(self) -> Dict[str, Any]:
+    def get_connection_status(self) -> Dict:
         """
-        Get the current connection status
+        Get current connection status information.
         
         Returns:
-            Dict containing connection status information
+            Dict: Connection status details
         """
-        with self.lock:
-            return {
-                'internet_connected': self.is_connected_to_internet,
-                'iot_hub_connected': self.is_connected_to_iot_hub,
-                'pi_connected': self.raspberry_pi_devices_available,
-                'last_check': self.last_connectivity_check,
-                'mqtt_status': self.last_mqtt_status if hasattr(self, 'last_mqtt_status') else None,
-                'mqtt_connection_time': self.mqtt_connection_time if hasattr(self, 'mqtt_connection_time') else None
-            }
-            
-    def update_connection_status(self, iot_hub_connected: bool, reason: str = ""):
-        with self.lock:
-            now = time.time()
-
-            if iot_hub_connected:
-                # Add a debounce: only accept "connected" if stable for 5s
-                if not hasattr(self, "_pending_connect_since"):
-                    self._pending_connect_since = now
-                    logger.info("⚠️ IoT Hub reported connected, waiting for stability...")
-                    return
-                elif now - self._pending_connect_since < 5:
-                    logger.info("⚠️ IoT Hub connection still stabilizing...")
-                    return
-                else:
-                    logger.info("✅ IoT Hub connection stabilized")
-                    self._pending_connect_since = None
-            else:
-                self._pending_connect_since = None
-
-            if self.is_connected_to_iot_hub == iot_hub_connected:
-                return
-
-            self.is_connected_to_iot_hub = iot_hub_connected
-            self.last_connectivity_check = now
-            status = "connected" if iot_hub_connected else "disconnected"
-            logger.info(f"🔌 IoT Hub connection status changed to: {status}. Reason: {reason}")
-
+        # Get unsent message count
+        unsent_messages = self.local_db.get_unsent_scans()
+        unsent_count = len(unsent_messages) if unsent_messages else 0
+        
+        return {
+            "internet_connected": self.is_connected_to_internet,
+            "iot_hub_connected": self.is_connected_to_iot_hub,
+            "last_check": datetime.fromtimestamp(self.last_connection_check).isoformat() if self.last_connection_check > 0 else None,
+            "unsent_messages_count": unsent_count,
+            "retry_thread_running": self.retry_running and self.retry_thread and self.retry_thread.is_alive()
+        }
+    
     def force_retry_unsent_messages(self) -> str:
         """
         Manually trigger retry of all unsent messages.
@@ -1071,67 +799,6 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"Error in force retry: {e}")
             return f"❌ Error retrying messages: {str(e)}"
-    
-    def send_message_with_retry(self, device_id: str, barcode: str, quantity: int = 1, message_type: str = "barcode_scan") -> Tuple[bool, str]:
-        """
-        Send a message to IoT Hub with automatic retry and offline queuing.
-        
-        Args:
-            device_id: The device ID sending the message
-            barcode: The barcode data to send
-            quantity: Quantity of items (default: 1)
-            message_type: Type of message (default: "barcode_scan")
-            
-        Returns:
-            Tuple[bool, str]: (success, status_message)
-        """
-        with self.lock:
-            try:
-                timestamp = datetime.now(timezone.utc)
-                
-                # Prepare message data
-                message_data = {
-                    "device_id": device_id,
-                    "barcode": barcode,
-                    "quantity": quantity,
-                    "message_type": message_type,
-                    "timestamp": timestamp.isoformat()
-                }
-                message_json = json.dumps(message_data)
-                
-                # Check if Pi is available before sending
-                if not self.check_raspberry_pi_availability():
-                    logger.info(f"Raspberry Pi offline - saving message locally for device {device_id}")
-                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
-                    return False, "⚠️ Raspberry Pi offline - message queued for later delivery"
-                
-                # Check internet and IoT Hub connectivity
-                if not self.check_internet_connectivity():
-                    logger.info(f"No internet connection - saving message locally for device {device_id}")
-                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
-                    return False, "⚠️ No internet connection - message queued for later delivery"
-                
-                if not self.is_connected_to_iot_hub:
-                    logger.info(f"IoT Hub not connected - saving message locally for device {device_id}")
-                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
-                    return False, "⚠️ IoT Hub not connected - message queued for later delivery"
-                
-                # Try to send the message
-                hub_client = HubClient()
-                success = hub_client.send_message(message_data)
-                
-                if success:
-                    logger.info(f"✅ Successfully sent message to IoT Hub for device {device_id}")
-                    return True, "✅ Message sent successfully"
-                else:
-                    logger.warning(f"Failed to send message to IoT Hub for device {device_id} - saving locally")
-                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
-                    return False, "⚠️ Failed to send message - saved for retry"
-                    
-            except Exception as e:
-                error_msg = f"Error in send_message_with_retry: {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                return False, f"❌ {error_msg}"
     
     def stop_retry_thread(self):
         """
