@@ -101,7 +101,7 @@ class ConnectionManager:
         logger.debug("Performing fresh internet connectivity check...")
         
         try:
-            # Method 1: Python socket connection
+            # Method 1: Python socket connection (works on live servers)
             import socket
             logger.debug("Trying Method 1: Python socket connection to Google DNS")
             
@@ -156,58 +156,6 @@ class ConnectionManager:
             self.last_connection_check = current_time
             return False
     
-    def is_online(self) -> bool:
-        """
-        Check if the device has active network connectivity.
-        Returns immediately if LAN is disconnected.
-        """
-        try:
-            import socket
-            import fcntl
-            import struct
-            
-            def get_interface_status(ifname):
-                try:
-                    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    # Get interface flags
-                    ifname = ifname.encode('utf-8')
-                    flags = struct.unpack('H', fcntl.ioctl(
-                        s.fileno(),
-                        0x8913,  # SIOCGIFFLAGS
-                        struct.pack('256s', ifname[:15])
-                    )[16:18])[0]
-                    # Check if interface is up and not loopback
-                    return bool(flags & 0x1)  # IFF_UP flag
-                except (IOError, OSError):
-                    return False
-                
-            # Check all non-loopback interfaces
-            import netifaces
-            interfaces = netifaces.interfaces()
-            
-            # Filter out loopback and docker interfaces
-            valid_ifaces = [
-                iface for iface in interfaces 
-                if not iface.startswith(('lo', 'docker', 'br-', 'veth'))
-            ]
-            
-            # If no valid interfaces, we're offline
-            if not valid_ifaces:
-                return False
-                
-            # Check if any interface is up and has a valid IP
-            for iface in valid_ifaces:
-                if get_interface_status(iface):
-                    addrs = netifaces.ifaddresses(iface)
-                    if netifaces.AF_INET in addrs and addrs[netifaces.AF_INET]:
-                        return True
-                        
-            return False
-            
-        except Exception as e:
-            logger.warning(f"Network check error: {e}")
-            return False
-    
     def check_iot_hub_connectivity(self, *args, **kwargs) -> bool:
         """Check if we can connect to IoT Hub
         
@@ -225,7 +173,7 @@ class ConnectionManager:
             # Skip Pi availability check - always assume available
                 
             # Check if we have basic internet connectivity (use cached value to avoid recursion)
-            if not self.is_online():
+            if not self.is_connected_to_internet:
                 logger.debug("No internet connectivity - IoT Hub marked as offline")
                 self.is_connected_to_iot_hub = False
                 return False
@@ -296,17 +244,13 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self, force_check=False) -> bool:
         """
-        Check if Raspberry Pi devices are available via LAN.
-        Returns immediately if LAN is down.
+        Check if Raspberry Pi devices are available via LAN first, then IoT Hub.
+        Prioritizes local network detection to handle NAT/firewall scenarios.
         """
-        # First check if we have network connectivity at all
-        if not self.is_online():
-            return False
-            
         current_time = time.time()
         
-        # No caching for LAN status - we want immediate detection
-        cache_interval = 0  # No caching for immediate detection
+        # Use shorter cache interval for more dynamic detection
+        cache_interval = 5  # Reduced to 5 seconds for faster disconnection detection
         if not force_check and current_time - self.last_pi_check < cache_interval:
             logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
             return self.raspberry_pi_devices_available
