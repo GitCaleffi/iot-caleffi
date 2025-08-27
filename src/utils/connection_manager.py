@@ -217,8 +217,8 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        Fast Pi availability check with optimized caching for performance.
-        Uses fast local cache first, then falls back to comprehensive check.
+        Simple LAN-based Pi availability check using older working logic.
+        Reverted from IoT Hub device twin checking due to live server issues.
         """
         current_time = time.time()
         
@@ -228,7 +228,7 @@ class ConnectionManager:
             return self.fast_pi_cache['available']
         
         # Medium cache check - avoid expensive operations
-        cache_interval = 15  # Balanced for server deployment with device twins
+        cache_interval = 15  # Balanced for server deployment
         if current_time - self.last_pi_check < cache_interval:
             logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
             # Update fast cache
@@ -237,21 +237,37 @@ class ConnectionManager:
             return self.raspberry_pi_devices_available
         
         try:
-            # Use IoT Hub device connectionState first for server deployment
-            connected_pi_devices = self._check_iot_hub_pi_devices()
+            # Use simple LAN-based detection (older working logic)
+            logger.debug("🔍 Checking Pi availability via LAN detection...")
             
-            if connected_pi_devices:
-                logger.debug(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
+            # Check configured Pi IP first
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.info(f"✅ Found responsive Pi device at {user_pi_ip}")
                 self.raspberry_pi_devices_available = True
             else:
-                logger.debug("❌ No CONNECTED Pi devices found in IoT Hub, trying LAN fallback...")
-                # Fallback to LAN check if no IoT Hub devices found
-                lan_pi_devices = self._fallback_lan_pi_check_list()
-                if lan_pi_devices:
-                    logger.info(f"✅ LAN fallback found {len(lan_pi_devices)} responsive Pi device(s): {lan_pi_devices}")
-                    self.raspberry_pi_devices_available = True
+                # Try network discovery as fallback
+                logger.debug("❌ Configured Pi not responsive, trying network discovery...")
+                discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
+                
+                if discovered_devices:
+                    # Test connectivity to discovered devices
+                    responsive_devices = []
+                    for device in discovered_devices:
+                        if self._test_real_pi_connectivity(device['ip']):
+                            responsive_devices.append(device)
+                    
+                    if responsive_devices:
+                        logger.info(f"✅ Found {len(responsive_devices)} responsive Pi device(s) via discovery")
+                        self.raspberry_pi_devices_available = True
+                    else:
+                        logger.debug("❌ No responsive Pi devices found via discovery")
+                        self.raspberry_pi_devices_available = False
                 else:
-                    logger.debug("❌ No responsive Pi devices found via LAN either")
+                    logger.debug("❌ No Pi devices found via network discovery")
                     self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
@@ -261,9 +277,11 @@ class ConnectionManager:
             return self.raspberry_pi_devices_available
             
         except Exception as e:
-            logger.debug(f"Error checking Pi availability via IoT Hub: {e}")
-            # Fallback to LAN check only if IoT Hub fails
-            return self._fallback_lan_pi_check()
+            logger.debug(f"Error checking Pi availability: {e}")
+            self.raspberry_pi_devices_available = False
+            self.fast_pi_cache['available'] = False
+            self.fast_pi_cache['last_check'] = current_time
+            return False
     
     def _check_iot_hub_pi_devices(self) -> list:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""
