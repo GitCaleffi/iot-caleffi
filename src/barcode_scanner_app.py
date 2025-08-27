@@ -867,35 +867,13 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
         }
         confirmation_message_json = json.dumps(confirmation_message_data)
         
-        # Check connection status before sending to IoT Hub
-        connection_manager = get_connection_manager()
-        is_pi_available = connection_manager.check_raspberry_pi_availability()
+        # TEMPORARILY DISABLE IoT Hub registration confirmation to prevent quantity updates
+        # This prevents any potential barcode-related messages during registration
+        iot_success = True  # Mark as successful to avoid error states
+        iot_status = "ℹ️ IoT Hub registration confirmation disabled to prevent inventory updates"
         
-        if is_pi_available:
-            try:
-                # Send registration confirmation to IoT Hub
-                hub_client = HubClient()
-                iot_success = hub_client.send_message(confirmation_message_json, device_id)
-                if iot_success:
-                    iot_status = "✅ Registration confirmation sent to IoT Hub"
-                    logger.info("Successfully sent registration confirmation to IoT Hub")
-                else:
-                    # Save for retry if send fails
-                    local_db.save_unsent_message(device_id, confirmation_message_json, datetime.now(timezone.utc))
-                    iot_status = "⚠️ Failed to send to IoT Hub (saved for retry)"
-                    logger.warning("Failed to send registration confirmation to IoT Hub, saved for retry")
-            except Exception as e:
-                # Save for retry on error
-                local_db.save_unsent_message(device_id, confirmation_message_json, datetime.now(timezone.utc))
-                iot_status = f"⚠️ Error sending to IoT Hub: {str(e)} (saved for retry)"
-                logger.error(f"Error sending registration to IoT Hub: {str(e)}")
-                iot_success = False
-        else:
-            # Save for retry when Pi is back online
-            local_db.save_unsent_message(device_id, confirmation_message_json, datetime.now(timezone.utc))
-            iot_success = False
-            iot_status = "ℹ️ Device offline - registration saved for retry when connection is restored"
-            logger.info("Pi not available, saved registration for retry")
+        logger.info("🔒 BLOCKING IoT Hub registration confirmation to prevent 'EAN undefined' inventory issues")
+        logger.info("🔒 Device registration completed locally and via API only")
         
         # Note: IoT Hub registration confirmation is disabled until the 'EAN undefined' issue is resolved
         # The device will still be registered locally and with the API, but no IoT Hub message will be sent
@@ -923,13 +901,15 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
         # Determine LED color based on overall success
         if iot_success:
             blink_led("green")
-        elif not is_pi_available:
-            blink_led("yellow")  # Yellow for offline/queueing
         else:
-            blink_led("orange")  # Orange for other errors
+            blink_led("orange")
         
-        # Prepare response message
-        response_msg = f"""🎉 Device Registration {'Completed' if iot_success else 'Partially Completed'}
+        # Clear registration flag before returning success
+        with registration_lock:
+            REGISTRATION_IN_PROGRESS = False
+        logger.info("🔒 REGISTRATION_IN_PROGRESS flag cleared - quantity updates now allowed")
+        
+        return f"""🎉 Device Registration Completed!
 
 **Device Details:**
 • Device ID: {device_id}
@@ -943,13 +923,7 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
 • {iot_status}
 • {api_confirmation_status}
 
-**Status:** Device is now ready for barcode scanning operations!"""
-
-        # Add offline/retry information if needed
-        if not iot_success and not is_pi_available:
-            response_msg += "\n\n⚠️ **Note:** The registration confirmation will be sent to IoT Hub automatically when the device comes back online."
-        
-        response_msg += """
+**Status:** Device is now ready for barcode scanning operations!
 
 **Next Steps:**
 • Use 'Send Barcode' feature with valid EAN barcodes
@@ -957,13 +931,6 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
 • Registration data is available via IoT Hub and API
 
 **You can now scan real product barcodes for inventory management.**"""
-        
-        # Clear registration flag before returning
-        with registration_lock:
-            REGISTRATION_IN_PROGRESS = False
-        logger.info("🔒 REGISTRATION_IN_PROGRESS flag cleared - quantity updates now allowed")
-        
-        return response_msg
         
     except Exception as e:
         logger.error(f"Error in confirm_registration: {str(e)}")
