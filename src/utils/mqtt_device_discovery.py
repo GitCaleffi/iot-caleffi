@@ -14,16 +14,23 @@ from typing import Dict, List, Optional, Callable
 import paho.mqtt.client as mqtt
 
 class MQTTDeviceDiscovery:
-    """MQTT-based device discovery for Raspberry Pi devices"""
+    """Discovers and monitors MQTT devices on the network"""
     
     def __init__(self, mqtt_broker_host: str = "localhost", mqtt_broker_port: int = 1883):
         self.mqtt_broker_host = mqtt_broker_host
         self.mqtt_broker_port = mqtt_broker_port
         self.client = None
         self.connected = False
-        self.discovered_devices = {}  # device_id -> device_info
+        self.discovered_devices = {}  
         self.device_callbacks = []  # List of callback functions
         self.logger = logging.getLogger(__name__)
+        self.stats = {
+            'devices_discovered': 0,
+            'messages_received': 0,
+            'last_discovery': None,
+            'connection_attempts': 0,
+            'connection_errors': 0
+        }
         
         # MQTT Topics
         self.DEVICE_ANNOUNCE_TOPIC = "devices/announce"
@@ -68,10 +75,25 @@ class MQTTDeviceDiscovery:
             return False
     
     def _on_connect(self, client, userdata, flags, rc):
-        """Callback for MQTT connection"""
+        connection_status = {
+            0: "Connection successful",
+            1: "Incorrect protocol version",
+            2: "Invalid client identifier",
+            3: "Server unavailable",
+            4: "Bad username or password",
+            5: "Not authorized"
+        }.get(rc, f"Unknown error: {rc}")
+        
+        self.stats['connection_attempts'] += 1
+        
         if rc == 0:
             self.connected = True
-            self.logger.info("📡 MQTT connected successfully")
+            self.connection_time = time.time()
+            
+            self.logger.info("🔍 MQTT Device Discovery")
+            self.logger.info(f"   - Broker: {self.mqtt_broker_host}:{self.mqtt_broker_port}")
+            self.logger.info(f"   - Client ID: {client._client_id.decode()}")
+            self.logger.info(f"   - Session Present: {flags.get('session present', False)}")
             
             # Subscribe to device topics
             topics = [
@@ -81,14 +103,25 @@ class MQTTDeviceDiscovery:
             ]
             
             for topic in topics:
-                client.subscribe(topic)
-                self.logger.info(f"📥 Subscribed to topic: {topic}")
-            
-            # Publish server discovery message
-            self._publish_server_discovery()
-            
+                result, mid = client.subscribe(topic, qos=1)
+                if result == mqtt.MQTT_ERR_SUCCESS:
+                    self.logger.debug(f"✅ Subscribed to: {topic}")
+                else:
+                    self.logger.error(f"❌ Failed to subscribe to {topic}: {mqtt.error_string(result)}")
         else:
-            self.logger.error(f"❌ MQTT connection failed with code {rc}")
+            self.connected = False
+            self.stats['connection_errors'] += 1
+            self.logger.error(f"❌ MQTT Connection Failed")
+            self.logger.error(f"   - Error: {connection_status}")
+            self.logger.error(f"   - Broker: {self.mqtt_broker_host}:{self.mqtt_broker_port}")
+            self.logger.error(f"   - Client ID: {client._client_id.decode() if hasattr(client, '_client_id') else 'Unknown'}")
+            
+            # Schedule reconnection attempt
+            if self.running:
+                retry_delay = 5
+                self.logger.info(f"🔄 Will retry connection in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                self.connect()
     
     def _on_disconnect(self, client, userdata, rc):
         """Callback for MQTT disconnection"""
@@ -98,6 +131,7 @@ class MQTTDeviceDiscovery:
     def _on_message(self, client, userdata, msg):
         """Handle incoming MQTT messages"""
         try:
+            self.stats['messages_received'] += 1
             topic = msg.topic
             payload = json.loads(msg.payload.decode())
             
@@ -135,6 +169,8 @@ class MQTTDeviceDiscovery:
             
             if is_new_device:
                 self.logger.info(f"🆕 New device discovered: {device_id} at {device_info['ip_address']}")
+                self.stats['devices_discovered'] += 1
+                self.stats['last_discovery'] = time.time()
             else:
                 self.logger.info(f"📍 Device reconnected: {device_id} at {device_info['ip_address']}")
             

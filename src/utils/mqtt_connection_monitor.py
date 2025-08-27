@@ -58,30 +58,77 @@ class MQTTConnectionMonitor:
     
     def _on_connect(self, client, userdata, flags, rc):
         """Handle MQTT connection established"""
+        connection_status = {
+            0: "Connection successful",
+            1: "Incorrect protocol version",
+            2: "Invalid client identifier",
+            3: "Server unavailable",
+            4: "Bad username or password",
+            5: "Not authorized"
+        }.get(rc, f"Unknown error: {rc}")
+        
         if rc == 0:
             self.connected = True
             self.last_status = True
-            logger.info("✅ Connected to MQTT broker")
+            self.connection_time = time.time()
+            self.disconnect_reason = None
+            
+            # Log connection details
+            logger.info("✅ MQTT Connection Established")
+            logger.info(f"   - Broker: {self.broker_host}:{self.broker_port}")
+            logger.info(f"   - Client ID: {client._client_id.decode()}")
+            logger.info(f"   - Session Present: {flags.get('session present', False)}")
             
             # Subscribe to device-specific topics if device_id is set
             if self.device_id:
+                logger.info(f"🔔 Subscribing to device topics for {self.device_id}")
                 self._subscribe_to_device_topics()
+            else:
+                logger.warning("⚠️  No device ID set - not subscribing to device topics")
                 
         else:
             self.connected = False
             self.last_status = False
-            logger.error(f"❌ Failed to connect to MQTT broker with code: {rc}")
+            self.disconnect_reason = connection_status
+            logger.error(f"❌ MQTT Connection Failed")
+            logger.error(f"   - Error: {connection_status}")
+            logger.error(f"   - Broker: {self.broker_host}:{self.broker_port}")
+            logger.error(f"   - Client ID: {client._client_id.decode() if hasattr(client, '_client_id') else 'Unknown'}")
     
     def _on_disconnect(self, client, userdata, rc):
         """Handle MQTT disconnection"""
+        disconnect_reasons = {
+            0: "Normal disconnection",
+            1: "Transport error",
+            2: "Protocol error",
+            3: "Client error",
+            4: "Network error",
+            5: "Client was not authorized to connect",
+            6: "Client was not authorized to connect with this configuration"
+        }
+        
         self.connected = False
         self.last_status = False
-        logger.warning(f"⚠️ Disconnected from MQTT broker (code: {rc})")
+        self.disconnect_reason = disconnect_reasons.get(rc, f"Unknown error: {rc}")
         
-        # Try to reconnect
+        # Calculate connection duration if we were connected
+        duration = ""
+        if hasattr(self, 'connection_time'):
+            duration = f" (was connected for {time.time() - self.connection_time:.1f} seconds)"
+        
+        logger.warning(f"⚠️ MQTT Disconnected")
+        logger.warning(f"   - Reason: {self.disconnect_reason}{duration}")
+        logger.warning(f"   - Broker: {self.broker_host}:{self.broker_port}")
+        
+        # Try to reconnect if we're still running
         if self.running:
-            time.sleep(5)  # Wait before reconnecting
-            self.connect()
+            retry_delay = 5
+            logger.info(f"🔄 Attempting to reconnect in {retry_delay} seconds...")
+            time.sleep(retry_delay)
+            try:
+                self.connect()
+            except Exception as e:
+                logger.error(f"❌ Reconnection attempt failed: {e}")
     
     def _on_message(self, client, userdata, msg):
         """Handle incoming MQTT messages"""
@@ -133,26 +180,60 @@ class MQTTConnectionMonitor:
         
     def connect(self, device_id: str = None):
         """Connect to the MQTT broker"""
-        if device_id:
+        if device_id and device_id != self.device_id:
+            logger.info(f"🆔 Updating device ID to: {device_id}")
             self.device_id = device_id
             
         if not self.mqtt_client:
+            logger.debug("Initializing new MQTT client...")
             self._init_mqtt_client()
+        
+        if not self.mqtt_client:
+            logger.error("❌ Cannot connect: MQTT client initialization failed")
+            return False
             
         try:
             logger.info(f"🔌 Connecting to MQTT broker at {self.broker_host}:{self.broker_port}")
+            logger.debug(f"   - Client ID: {self.mqtt_client._client_id.decode()}")
+            logger.debug(f"   - Keepalive: {self.keepalive}s")
+            
+            # Record connection attempt time
+            connect_start = time.time()
+            
+            # Connect with timeout
             self.mqtt_client.connect(
                 host=self.broker_host,
                 port=self.broker_port,
                 keepalive=self.keepalive
             )
+            
+            # Start network loop in a separate thread
             self.mqtt_client.loop_start()
-            return True
+            
+            # Wait briefly for connection to complete
+            time.sleep(0.5)
+            
+            if self.connected:
+                logger.info(f"✅ MQTT connection established in {(time.time() - connect_start):.2f}s")
+                return True
+            else:
+                logger.error(f"❌ MQTT connection failed - check broker status and credentials")
+                return False
+                
+        except socket.gaierror as e:
+            logger.error(f"❌ DNS resolution failed for {self.broker_host}: {e}")
+        except ConnectionRefusedError as e:
+            logger.error(f"❌ Connection refused by broker at {self.broker_host}:{self.broker_port}")
+            logger.error("   - Check if the MQTT broker is running and accessible")
+        except TimeoutError as e:
+            logger.error(f"❌ Connection timed out while connecting to {self.broker_host}:{self.broker_port}")
+            logger.error("   - Check network connectivity and firewall settings")
         except Exception as e:
-            logger.error(f"❌ Failed to connect to MQTT broker: {e}")
-            self.connected = False
-            self.last_status = False
-            return False
+            logger.error(f"❌ Failed to connect to MQTT broker: {str(e)}")
+            
+        self.connected = False
+        self.last_status = False
+        return False
     
     def disconnect(self):
         """Disconnect from MQTT broker"""

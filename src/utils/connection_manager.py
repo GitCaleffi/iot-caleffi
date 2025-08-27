@@ -95,7 +95,8 @@ class ConnectionManager:
         
         # Use cached result if recent check
         if current_time - self.last_connection_check < self.connection_check_interval:
-            logger.debug(f"Using cached connectivity result: {self.is_connected_to_internet}")
+            status = "ONLINE" if self.is_connected_to_internet else "OFFLINE"
+            logger.debug(f"📡 Using cached internet status: {status} (checked {current_time - self.last_connection_check:.1f}s ago)")
             return self.is_connected_to_internet
             
         logger.debug("Performing fresh internet connectivity check...")
@@ -165,8 +166,19 @@ class ConnectionManager:
         """
         # First check MQTT connection status if available
         mqtt_monitor = get_mqtt_monitor()
-        if mqtt_monitor and mqtt_monitor.last_status is not None:
-            return mqtt_monitor.last_status
+        if mqtt_monitor:
+            status = "CONNECTED ✅" if mqtt_monitor.last_status else "DISCONNECTED ❌"
+            logger.debug(f"🔌 MQTT Monitor Status: {status}")
+            if mqtt_monitor.connected:
+                logger.debug(f"   - Broker: {mqtt_monitor.broker_host}:{mqtt_monitor.broker_port}")
+                logger.debug(f"   - Device ID: {mqtt_monitor.device_id or 'Not set'}")
+            else:
+                logger.debug("   - Not connected to MQTT broker")
+                if mqtt_monitor.initialization_error:
+                    logger.debug(f"   - Initialization error: {mqtt_monitor.initialization_error}")
+            
+            if mqtt_monitor.last_status is not None:
+                return mqtt_monitor.last_status
             
         # Fall back to direct IoT Hub check if MQTT not available
         try:
@@ -252,7 +264,9 @@ class ConnectionManager:
         # Use shorter cache interval for more dynamic detection
         cache_interval = 5  # Reduced to 5 seconds for faster disconnection detection
         if not force_check and current_time - self.last_pi_check < cache_interval:
-            logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
+            status = "AVAILABLE ✅" if self.raspberry_pi_devices_available else "UNAVAILABLE ❌"
+            time_since_check = current_time - self.last_pi_check
+            logger.debug(f"🍓 Using cached Pi status: {status} (checked {time_since_check:.1f}s ago)")
             return self.raspberry_pi_devices_available
         
         try:
