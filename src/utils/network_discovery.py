@@ -124,8 +124,10 @@ class NetworkDiscovery:
         
         return devices
     
-    def _get_local_mac_address(self) -> Optional[str]:
-        """Get the MAC address of the local device dynamically."""
+    def _get_local_device_mac(self) -> str:
+        """Get the MAC address of the local device dynamically"""
+        import re
+        
         # Method 1: Use ip link command (most reliable for servers)
         try:
             result = subprocess.run(
@@ -135,15 +137,16 @@ class NetworkDiscovery:
                 timeout=5
             )
             if result.returncode == 0:
+                # Look for MAC addresses in the output
                 mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
                 matches = re.findall(mac_pattern, result.stdout.lower())
                 for mac in matches:
                     if mac != "00:00:00:00:00:00":
-                        logger.debug(f"📍 Server MAC address detected via ip link: {mac}")
+                        logger.info(f"📍 Found MAC address via ip link: {mac}")
                         return mac
         except Exception as e:
-            logger.debug(f"ip link method failed: {e}")
-
+            logger.warning(f"ip link method failed: {e}")
+        
         # Method 2: Use ifconfig command (fallback)
         try:
             result = subprocess.run(
@@ -153,45 +156,54 @@ class NetworkDiscovery:
                 timeout=5
             )
             if result.returncode == 0:
+                # Look for MAC addresses in ifconfig output
                 mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
                 matches = re.findall(mac_pattern, result.stdout.lower())
                 for mac in matches:
                     if mac != "00:00:00:00:00:00":
-                        logger.debug(f"📍 Server MAC address detected via ifconfig: {mac}")
+                        logger.info(f"📍 Found MAC address via ifconfig: {mac}")
                         return mac
         except Exception as e:
-            logger.debug(f"ifconfig method failed: {e}")
-
-        # Method 3: Read from /sys/class/net interfaces (Linux-specific)
+            logger.warning(f"ifconfig method failed: {e}")
+        
+        # Method 3: Check /sys/class/net files (if available)
         try:
-            import os
-            net_path = '/sys/class/net'
-            if os.path.exists(net_path):
-                for interface in os.listdir(net_path):
-                    if interface != 'lo':  # Skip loopback
-                        mac_file = f'{net_path}/{interface}/address'
-                        if os.path.exists(mac_file):
-                            with open(mac_file, 'r') as f:
-                                mac = f.read().strip().lower()
-                                if mac != "00:00:00:00:00:00" and ":" in mac:
-                                    logger.debug(f"📍 Server MAC address detected via /sys/class/net: {mac}")
-                                    return mac
+            interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33', 'eno1', 'ens160']
+            for interface in interfaces:
+                try:
+                    with open(f"/sys/class/net/{interface}/address", 'r') as f:
+                        mac = f.read().strip().lower()
+                        if mac and mac != "00:00:00:00:00:00" and ":" in mac:
+                            logger.info(f"📍 Found MAC address from {interface}: {mac}")
+                            return mac
+                except (FileNotFoundError, PermissionError):
+                    continue
         except Exception as e:
             logger.debug(f"/sys/class/net method failed: {e}")
         
-        logger.warning("❌ Could not detect server MAC address using any method")
-        return None
-    
-    def _is_configured_pi_ip(self, ip: str) -> bool:
-        """Check if the given IP matches the configured Pi IP"""
+        # Method 4: Use cat /proc/net/arp (alternative approach)
         try:
-            from utils.config import load_config
-            config = load_config()
-            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
-            return user_pi_ip and ip == user_pi_ip
+            result = subprocess.run(
+                ["cat", "/proc/net/arp"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                # Parse ARP table for local device info
+                lines = result.stdout.strip().split('\n')[1:]  # Skip header
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        mac = parts[3].lower()
+                        if mac and mac != "00:00:00:00:00:00" and ":" in mac and len(mac) == 17:
+                            logger.info(f"📍 Found MAC address via /proc/net/arp: {mac}")
+                            return mac
         except Exception as e:
-            logger.debug(f"Error checking configured Pi IP: {e}")
-            return False
+            logger.debug(f"/proc/net/arp method failed: {e}")
+        
+        logger.error("❌ Could not detect local device MAC address using any method")
+        return None
     
     def _get_server_ip(self) -> str:
         """Get the actual server IP address using Python socket methods"""
@@ -267,36 +279,42 @@ class NetworkDiscovery:
     
     def _test_ip_connectivity(self, ip: str) -> bool:
         """Test IP connectivity using multiple methods"""
-        # Method 1: Try multiple common ports for Pi devices
-        common_ports = [22, 80, 443, 5000, 8080]  # SSH, HTTP, HTTPS, Flask default, alternative web
-        for port in common_ports:
-            try:
-                import socket
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                result = sock.connect_ex((ip, port))
-                sock.close()
-                
-                if result == 0:
-                    logger.debug(f"✅ {ip}:{port} is open")
-                    return True
-            except:
-                continue
-        
-        # Method 2: Try ping as fallback
+        # Method 1: Try ping
         try:
             ping_result = subprocess.run(
-                ["ping", "-c", "1", "-W", "1", ip],
-                capture_output=True,
+                ["ping", "-c", "1", "-W", "1", ip], 
+                capture_output=True, 
                 timeout=2
             )
             if ping_result.returncode == 0:
-                logger.debug(f"✅ {ip} responds to ping")
                 return True
         except:
             pass
         
-        logger.debug(f"❌ {ip} not responsive on any tested method")
+        # Method 2: Try SSH port (22)
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((ip, 22))
+            sock.close()
+            if result == 0:
+                return True
+        except:
+            pass
+        
+        # Method 3: Try HTTP port (5000 - common for Pi web services)
+        try:
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((ip, 5000))
+            sock.close()
+            if result == 0:
+                return True
+        except:
+            pass
+        
         return False
     
     def _discover_via_ip_neighbor(self) -> List[Dict[str, str]]:
@@ -532,182 +550,9 @@ class NetworkDiscovery:
         
         return devices
     
-    def _get_arp_entries(self) -> List[Dict[str, str]]:
-        """Get ARP table entries from system"""
-        entries = []
-        
-        # Method 1: Try arp command
-        try:
-            result = subprocess.run(
-                ["arp", "-a"], 
-                capture_output=True, 
-                text=True, 
-                timeout=5
-            )
-            
-            if result.returncode == 0:
-                for line in result.stdout.splitlines():
-                    # Parse arp output: ? (192.168.1.18) at 2c:cf:67:6c:45:f2 [ether] on eno1
-                    if "at" in line and "[ether]" in line:
-                        parts = line.split()
-                        if len(parts) >= 4:
-                            # Extract IP (remove parentheses)
-                            ip_part = parts[1] if "(" in parts[1] else parts[0]
-                            ip = ip_part.strip("()")
-                            
-                            # Extract MAC address
-                            mac = parts[3] if len(parts) > 3 else "unknown"
-                            
-                            # Extract hostname if available
-                            hostname = parts[0] if parts[0] != "?" else ""
-                            
-                            entries.append({
-                                "ip": ip,
-                                "mac": mac.lower(),
-                                "hostname": hostname
-                            })
-        except Exception as e:
-            logger.debug(f"arp command failed: {e}")
-        
-        # Method 2: Fallback to ip neighbor if arp didn't work
-        if not entries:
-            try:
-                result = subprocess.run(
-                    ["ip", "neighbor", "show"], 
-                    capture_output=True, 
-                    text=True, 
-                    timeout=3
-                )
-                
-                if result.returncode == 0:
-                    for line in result.stdout.splitlines():
-                        # Parse ip neighbor output: 192.168.1.18 dev eth0 lladdr 2c:cf:67:6c:45:f2 REACHABLE
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            ip = parts[0]
-                            mac = parts[4] if len(parts) > 4 else "unknown"
-                            
-                            entries.append({
-                                "ip": ip,
-                                "mac": mac.lower(),
-                                "hostname": ""
-                            })
-            except Exception as e:
-                logger.debug(f"ip neighbor fallback failed: {e}")
-        
-        return entries
-    
-    def _detect_services(self, ip: str) -> Dict[str, bool]:
-        """Detect common services running on an IP address"""
-        services = {
-            'ssh': False,
-            'web': False,
-            'https': False,
-            'custom_web': False
-        }
-        
-        # Test common ports
-        ports_to_test = {
-            'ssh': 22,
-            'web': 80,
-            'https': 443,
-            'custom_web': 5000
-        }
-        
-        for service_name, port in ports_to_test.items():
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(1)
-                result = sock.connect_ex((ip, port))
-                sock.close()
-                services[service_name] = (result == 0)
-            except:
-                services[service_name] = False
-        
-        return services
-    
-    def discover_raspberry_pi_devices(self) -> List[Dict[str, str]]:
+    def discover_raspberry_pi_devices(self, use_nmap: bool = False) -> List[Dict[str, str]]:
         """
-        Discover EXTERNAL Raspberry Pi devices on the local network using ARP scanning
-        Excludes the server itself to prevent false positive detections
-        Returns list of discovered Pi devices with IP, MAC, and hostname info
-        """
-        discovered_pis = []
-        
-        try:
-            # Get server's own IP and MAC to exclude from Pi detection
-            server_ip = self._get_server_ip()
-            server_mac = self._get_local_mac_address()
-            
-            logger.debug(f"Server exclusion - IP: {server_ip}, MAC: {server_mac}")
-            
-            # Get ARP table entries
-            arp_entries = self._get_arp_entries()
-            
-            for entry in arp_entries:
-                ip = entry.get('ip')
-                mac = entry.get('mac', '').lower()
-                hostname = entry.get('hostname', '')
-                
-                # CRITICAL: Exclude server itself from Pi detection
-                if ip == server_ip:
-                    logger.debug(f"🚫 Excluding server IP {ip} from Pi detection")
-                    continue
-                    
-                if server_mac and mac == server_mac.lower():
-                    logger.debug(f"🚫 Excluding server MAC {mac} from Pi detection")
-                    continue
-                
-                # Check if this looks like a Raspberry Pi
-                is_pi_by_mac = any(mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
-                is_pi_by_hostname = any(pi_name in hostname.lower() for pi_name in self.RASPBERRY_PI_HOSTNAMES)
-                
-                # Check if this is the configured Pi IP (highest priority)
-                is_configured_pi = self._is_configured_pi_ip(ip)
-                
-                # Only consider it a Pi if it matches MAC prefixes, hostname patterns, or is the configured IP
-                # Don't automatically assume any device with open ports is a Pi
-                if is_pi_by_mac or is_pi_by_hostname or is_configured_pi:
-                    # Test connectivity to confirm it's reachable
-                    if self._test_ip_connectivity(ip):
-                        pi_device = {
-                            'ip': ip,
-                            'mac': mac,
-                            'hostname': hostname,
-                            'detection_method': 'mac' if is_pi_by_mac else 'hostname',
-                            'services': self._detect_services(ip)
-                        }
-                        discovered_pis.append(pi_device)
-                        logger.info(f"✅ Discovered EXTERNAL Raspberry Pi: {ip} ({mac}) - {hostname}")
-                    else:
-                        # Even if not immediately responsive, if it matches Pi patterns, include it with warning
-                        if is_pi_by_mac or is_pi_by_hostname:
-                            pi_device = {
-                                'ip': ip,
-                                'mac': mac,
-                                'hostname': hostname,
-                                'detection_method': 'mac' if is_pi_by_mac else 'hostname',
-                                'services': self._detect_services(ip),
-                                'status': 'unresponsive'
-                            }
-                            discovered_pis.append(pi_device)
-                            logger.info(f"⚠️ Found Pi-like device (unresponsive): {ip} ({mac}) - {hostname}")
-                        else:
-                            logger.debug(f"❌ Pi device {ip} not responsive")
-            
-            if not discovered_pis:
-                logger.info("❌ No external Raspberry Pi devices found on network")
-            else:
-                logger.info(f"✅ Found {len(discovered_pis)} external Raspberry Pi device(s)")
-                
-        except Exception as e:
-            logger.error(f"Error during Pi discovery: {e}")
-            
-        return discovered_pis
-    
-    def discover_raspberry_pi_devices_with_nmap(self, use_nmap: bool = False) -> List[Dict[str, str]]:
-        """
-        Discover Raspberry Pi devices on the local network using nmap
+        Discover Raspberry Pi devices on the local network
         
         Args:
             use_nmap: Whether to use nmap scanning (more accurate but requires nmap installation)
