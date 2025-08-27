@@ -206,13 +206,10 @@ class ConnectionManager:
                 parts = dict(part.split('=', 1) for part in iot_hub_connection_string.split(';'))
                 hostname = parts.get('HostName')
                 
-                if hostname:
-                    # Test socket connection to IoT Hub hostname
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(5)  # 5 second timeout
-                    result = sock.connect_ex((hostname, 443))  # HTTPS port
-                    sock.close()
-                    
+                # Test IoT Hub connectivity by connecting to port 443 (HTTPS)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(5)  # 5 second timeout for IoT Hub
+                    result = s.connect_ex((hostname, 443))
                     if result != 0:
                         logger.info(f"Socket connection to {hostname}:443 failed - IoT Hub offline")
                         self.is_connected_to_iot_hub = False
@@ -531,20 +528,22 @@ class ConnectionManager:
             
             logger.info(f"🔍 Checking LAN connectivity for Pi devices...")
             
-            # Method 1: Check configured Pi IP (highest priority)
-            if user_pi_ip:
-                logger.info(f"Testing MQTT connection for device: {user_pi_ip}")
-                # Check MQTT connection status
-                if self.mqtt_monitor and self.mqtt_monitor.connected:
-                    logger.info(f"✅ MQTT connection active for device {user_pi_ip}")
+            # Method 1: Check MQTT connection first (fastest)
+            if self.mqtt_monitor:
+                if self.mqtt_monitor.connected:
+                    logger.info(f"✅ MQTT connection active")
                     return True
                 else:
-                    logger.info(f"⚠️ MQTT connection not active for device {user_pi_ip}")
-                    # Fall back to direct check if MQTT is not available
-                    if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
-                        logger.info(f"✅ Direct connection check passed for device {user_pi_ip}")
-                        return True
-                    return False
+                    logger.info(f"⚠️ MQTT connection not active, checking direct connection...")
+            
+            # Method 2: Check configured Pi IP
+            if user_pi_ip:
+                logger.info(f"Testing direct connection to Pi at {user_pi_ip}...")
+                # Try direct connection check
+                if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
+                    logger.info(f"✅ Direct connection check passed for device {user_pi_ip}")
+                    return True
+                logger.info(f"⚠️ Direct connection check failed for device {user_pi_ip}")
             
             # Method 2: Network discovery scan
             logger.info("🔍 Scanning network for Pi devices...")
