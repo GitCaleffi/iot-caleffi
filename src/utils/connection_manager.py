@@ -1072,6 +1072,67 @@ class ConnectionManager:
             logger.error(f"Error in force retry: {e}")
             return f"❌ Error retrying messages: {str(e)}"
     
+    def send_message_with_retry(self, device_id: str, barcode: str, quantity: int = 1, message_type: str = "barcode_scan") -> Tuple[bool, str]:
+        """
+        Send a message to IoT Hub with automatic retry and offline queuing.
+        
+        Args:
+            device_id: The device ID sending the message
+            barcode: The barcode data to send
+            quantity: Quantity of items (default: 1)
+            message_type: Type of message (default: "barcode_scan")
+            
+        Returns:
+            Tuple[bool, str]: (success, status_message)
+        """
+        with self.lock:
+            try:
+                timestamp = datetime.now(timezone.utc)
+                
+                # Prepare message data
+                message_data = {
+                    "device_id": device_id,
+                    "barcode": barcode,
+                    "quantity": quantity,
+                    "message_type": message_type,
+                    "timestamp": timestamp.isoformat()
+                }
+                message_json = json.dumps(message_data)
+                
+                # Check if Pi is available before sending
+                if not self.check_raspberry_pi_availability():
+                    logger.info(f"Raspberry Pi offline - saving message locally for device {device_id}")
+                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
+                    return False, "⚠️ Raspberry Pi offline - message queued for later delivery"
+                
+                # Check internet and IoT Hub connectivity
+                if not self.check_internet_connectivity():
+                    logger.info(f"No internet connection - saving message locally for device {device_id}")
+                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
+                    return False, "⚠️ No internet connection - message queued for later delivery"
+                
+                if not self.is_connected_to_iot_hub:
+                    logger.info(f"IoT Hub not connected - saving message locally for device {device_id}")
+                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
+                    return False, "⚠️ IoT Hub not connected - message queued for later delivery"
+                
+                # Try to send the message
+                hub_client = HubClient()
+                success = hub_client.send_message(message_data)
+                
+                if success:
+                    logger.info(f"✅ Successfully sent message to IoT Hub for device {device_id}")
+                    return True, "✅ Message sent successfully"
+                else:
+                    logger.warning(f"Failed to send message to IoT Hub for device {device_id} - saving locally")
+                    self.local_db.save_unsent_message(device_id, message_json, timestamp)
+                    return False, "⚠️ Failed to send message - saved for retry"
+                    
+            except Exception as e:
+                error_msg = f"Error in send_message_with_retry: {str(e)}"
+                logger.error(error_msg, exc_info=True)
+                return False, f"❌ {error_msg}"
+    
     def stop_retry_thread(self):
         """
         Stop the background retry thread.
