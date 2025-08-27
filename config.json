@@ -37,8 +37,8 @@
     "enable_device_stats": true
   },
   "raspberry_pi": {
-    "auto_detected_ip": "192.168.1.18",
-    "last_detection": "2025-08-22T08:22:17.689914+00:00",
+    "auto_detected_ip": "",
+    "last_detection": "2025-08-27T07:29:00.000000+00:00",
     "mac_address": "7c:1e:52:84:d8:ff",
     "device_ids": [
       "pi-5284d8ff",
@@ -46,6 +46,8 @@
       "raspberry-pi-main",
       "rpi-192168118"
     ],
-    "use_iot_hub_detection": true
+    "use_iot_hub_detection": false,
+    "status": "offline",
+    "last_ping_result": "unreachable"
   }
 }
