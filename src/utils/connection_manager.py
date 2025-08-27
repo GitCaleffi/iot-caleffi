@@ -249,26 +249,32 @@ class ConnectionManager:
                 logger.info(f"✅ Found responsive Pi device at {user_pi_ip}")
                 self.raspberry_pi_devices_available = True
             else:
-                # Try network discovery as fallback
-                logger.debug("❌ Configured Pi not responsive, trying network discovery...")
-                discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
-                
-                if discovered_devices:
-                    # Test connectivity to discovered devices
-                    responsive_devices = []
-                    for device in discovered_devices:
-                        if self._test_real_pi_connectivity(device['ip']):
-                            responsive_devices.append(device)
-                    
-                    if responsive_devices:
-                        logger.info(f"✅ Found {len(responsive_devices)} responsive Pi device(s) via discovery")
-                        self.raspberry_pi_devices_available = True
-                    else:
-                        logger.debug("❌ No responsive Pi devices found via discovery")
-                        self.raspberry_pi_devices_available = False
+                # Try raspberrypi.local hostname (common Pi default)
+                logger.debug("❌ Configured Pi not responsive, trying raspberrypi.local...")
+                if self._test_pi_hostname("raspberrypi.local"):
+                    logger.info("✅ Found responsive Pi device at raspberrypi.local")
+                    self.raspberry_pi_devices_available = True
                 else:
-                    logger.debug("❌ No Pi devices found via network discovery")
-                    self.raspberry_pi_devices_available = False
+                    # Try network discovery as fallback
+                    logger.debug("❌ raspberrypi.local not responsive, trying network discovery...")
+                    discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
+                    
+                    if discovered_devices:
+                        # Test connectivity to discovered devices
+                        responsive_devices = []
+                        for device in discovered_devices:
+                            if self._test_real_pi_connectivity(device['ip']):
+                                responsive_devices.append(device)
+                        
+                        if responsive_devices:
+                            logger.info(f"✅ Found {len(responsive_devices)} responsive Pi device(s) via discovery")
+                            self.raspberry_pi_devices_available = True
+                        else:
+                            logger.debug("❌ No responsive Pi devices found via discovery")
+                            self.raspberry_pi_devices_available = False
+                    else:
+                        logger.debug("❌ No Pi devices found via network discovery")
+                        self.raspberry_pi_devices_available = False
                 
             self.last_pi_check = current_time
             # Update fast cache with result
@@ -443,6 +449,26 @@ class ConnectionManager:
                 return False
         except Exception as e:
             logger.debug(f"❌ {ip} SSH test failed: {e}")
+            return False
+    
+    def _test_pi_hostname(self, hostname: str) -> bool:
+        """Test Pi connectivity using hostname (e.g., raspberrypi.local)"""
+        try:
+            # First try to resolve hostname to IP
+            import socket
+            try:
+                ip = socket.gethostbyname(hostname)
+                logger.debug(f"🔍 Resolved {hostname} to {ip}")
+                
+                # Test SSH connectivity to resolved IP
+                return self._test_real_pi_connectivity(ip)
+                
+            except socket.gaierror:
+                logger.debug(f"❌ Could not resolve hostname {hostname}")
+                return False
+                
+        except Exception as e:
+            logger.debug(f"❌ Hostname test failed for {hostname}: {e}")
             return False
     
     def _start_auto_refresh_worker(self):
