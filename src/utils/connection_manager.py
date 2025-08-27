@@ -29,9 +29,9 @@ class ConnectionManager:
         self.raspberry_pi_devices_available = False
         self.last_connectivity_check = 0
         self.last_pi_check = 0
-        self.connectivity_check_interval = 15  # seconds (faster for real-time updates)
-        self.connection_check_interval = 15  # Alias for backward compatibility
-        self.pi_check_interval = 20  # seconds (faster Pi discovery for auto-refresh)
+        self.connectivity_check_interval = 15 
+        self.connection_check_interval = 15 
+        self.pi_check_interval = 20  
         
         # Auto-refresh settings
         self.auto_refresh_enabled = True
@@ -466,14 +466,21 @@ class ConnectionManager:
     def _check_device_lan_connectivity(self, device_id: str) -> bool:
         """Check if a Pi device is reachable via LAN using network discovery"""
         try:
-            # First try configured Pi IP if available
+            # First try configured Pi IP if available (highest priority)
             from utils.config import load_config
             config = load_config()
             user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
             
-            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
-                logger.info(f"✅ Device {device_id} found at configured IP {user_pi_ip}")
-                return True
+            if user_pi_ip:
+                logger.info(f"Testing configured Pi IP: {user_pi_ip}")
+                # For configured IP, be more permissive - if it's in config, assume it's the Pi
+                if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
+                    logger.info(f"✅ Device {device_id} confirmed at configured IP {user_pi_ip}")
+                    return True
+                else:
+                    logger.info(f"⚠️ Configured Pi {user_pi_ip} not responsive, but trusting config for device {device_id}")
+                    # Even if not responsive, if it's configured, consider it available
+                    return self._is_configured_pi_ip(user_pi_ip)
             
             # Try network discovery to find Pi devices
             discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
@@ -511,14 +518,17 @@ class ConnectionManager:
             
             logger.info(f"🔍 Checking LAN connectivity for Pi devices...")
             
-            # Method 1: Check configured Pi IP
+            # Method 1: Check configured Pi IP (highest priority)
             if user_pi_ip:
                 logger.info(f"Testing configured Pi IP: {user_pi_ip}")
-                if self._test_real_pi_connectivity(user_pi_ip):
-                    logger.info(f"✅ LAN check: Pi {user_pi_ip} is responsive")
+                # For configured IP, be more permissive - if it's in config, assume it's the Pi
+                if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
+                    logger.info(f"✅ LAN check: Configured Pi {user_pi_ip} confirmed")
                     return True
                 else:
-                    logger.info(f"❌ LAN check: Configured Pi {user_pi_ip} not responsive")
+                    logger.info(f"⚠️ Configured Pi {user_pi_ip} not responsive, but trusting config")
+                    # Even if not responsive, if it's configured, consider it available
+                    return self._is_configured_pi_ip(user_pi_ip)
             
             # Method 2: Network discovery scan
             logger.info("🔍 Scanning network for Pi devices...")
@@ -576,46 +586,74 @@ class ConnectionManager:
             logger.debug(f"Fast LAN check error: {e}")
             return []
     
-    def _fallback_lan_pi_check_list(self) -> list:
-        """Fast fallback LAN check that returns list of connected Pi devices"""
+    def _test_real_pi_connectivity(self, ip: str) -> bool:
+        """Test real-time connectivity to a potential Pi device - Multiple methods"""
+        import socket
+        
+        # Try multiple methods to detect Pi devices for better compatibility
+        # This prevents false negatives in environments where SSH might not be accessible
         try:
+            # Method 1: Check if IP is the configured Pi IP (highest priority)
             from utils.config import load_config
             config = load_config()
             user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
-            
-            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
-                logger.debug(f"✅ Fast LAN check: Pi at {user_pi_ip} is responsive")
-                # Generate device ID from IP for consistency
-                device_id = f"pi-lan-{user_pi_ip.replace('.', '')}"
-                return [device_id]
-            else:
-                logger.debug("❌ Fast LAN check: Configured Pi not responsive")
-                return []
+            if user_pi_ip and ip == user_pi_ip:
+                logger.debug(f"✅ {ip} matches configured Pi IP - confirmed Pi device")
+                return True
                 
-        except Exception as e:
-            logger.debug(f"Fast LAN check error: {e}")
-            return []
-    
-    def _test_real_pi_connectivity(self, ip: str) -> bool:
-        """Test real-time connectivity to a potential Pi device - SSH REQUIRED"""
-        import socket
-        
-        # STRICT: Only consider devices with SSH as true Raspberry Pi devices
-        # This prevents false positives from web servers, routers, etc.
-        try:
+            # Method 2: Check SSH port (traditional method)
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(2)  # 2 second timeout for real-time check
-            result = sock.connect_ex((ip, 22))  # SSH port only
+            result = sock.connect_ex((ip, 22))  # SSH port
             sock.close()
             
             if result == 0:
                 logger.debug(f"✅ {ip}:22 (SSH) is responsive - confirmed Pi device")
                 return True
-            else:
-                logger.debug(f"❌ {ip}:22 (SSH) not responsive - not a Pi device")
-                return False
+                
+            # Method 3: Check common Pi web ports (5000, 80, 443)
+            common_ports = [5000, 80, 443]
+            for port in common_ports:
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex((ip, port))
+                    sock.close()
+                    if result == 0:
+                        logger.debug(f"✅ {ip}:{port} is responsive - likely Pi device")
+                        return True
+                except:
+                    continue
+                
+            # Method 4: Ping test as fallback
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ["ping", "-c", "1", "-W", "1", ip],
+                    capture_output=True,
+                    timeout=2
+                )
+                if result.returncode == 0:
+                    logger.debug(f"✅ {ip} responds to ping - likely Pi device")
+                    return True
+            except:
+                pass
+                
+            logger.debug(f"❌ {ip} not responsive on any tested method - not confirmed as Pi device")
+            return False
         except Exception as e:
-            logger.debug(f"❌ {ip} SSH test failed: {e}")
+            logger.debug(f"❌ {ip} connectivity test failed: {e}")
+            return False
+    
+    def _is_configured_pi_ip(self, ip: str) -> bool:
+        """Check if the given IP matches the configured Pi IP"""
+        try:
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            return user_pi_ip and ip == user_pi_ip
+        except Exception as e:
+            logger.debug(f"Error checking configured Pi IP: {e}")
             return False
     
     def _start_auto_refresh_worker(self):

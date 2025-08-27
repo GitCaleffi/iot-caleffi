@@ -182,6 +182,17 @@ class NetworkDiscovery:
         logger.warning("❌ Could not detect server MAC address using any method")
         return None
     
+    def _is_configured_pi_ip(self, ip: str) -> bool:
+        """Check if the given IP matches the configured Pi IP"""
+        try:
+            from utils.config import load_config
+            config = load_config()
+            user_pi_ip = config.get("raspberry_pi", {}).get("auto_detected_ip")
+            return user_pi_ip and ip == user_pi_ip
+        except Exception as e:
+            logger.debug(f"Error checking configured Pi IP: {e}")
+            return False
+    
     def _get_server_ip(self) -> str:
         """Get the actual server IP address using Python socket methods"""
         import socket
@@ -256,42 +267,36 @@ class NetworkDiscovery:
     
     def _test_ip_connectivity(self, ip: str) -> bool:
         """Test IP connectivity using multiple methods"""
-        # Method 1: Try ping
+        # Method 1: Try multiple common ports for Pi devices
+        common_ports = [22, 80, 443, 5000, 8080]  # SSH, HTTP, HTTPS, Flask default, alternative web
+        for port in common_ports:
+            try:
+                import socket
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)
+                result = sock.connect_ex((ip, port))
+                sock.close()
+                
+                if result == 0:
+                    logger.debug(f"✅ {ip}:{port} is open")
+                    return True
+            except:
+                continue
+        
+        # Method 2: Try ping as fallback
         try:
             ping_result = subprocess.run(
-                ["ping", "-c", "1", "-W", "1", ip], 
-                capture_output=True, 
+                ["ping", "-c", "1", "-W", "1", ip],
+                capture_output=True,
                 timeout=2
             )
             if ping_result.returncode == 0:
+                logger.debug(f"✅ {ip} responds to ping")
                 return True
         except:
             pass
         
-        # Method 2: Try SSH port (22)
-        try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            result = sock.connect_ex((ip, 22))
-            sock.close()
-            if result == 0:
-                return True
-        except:
-            pass
-        
-        # Method 3: Try HTTP port (5000 - common for Pi web services)
-        try:
-            import socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
-            result = sock.connect_ex((ip, 5000))
-            sock.close()
-            if result == 0:
-                return True
-        except:
-            pass
-        
+        logger.debug(f"❌ {ip} not responsive on any tested method")
         return False
     
     def _discover_via_ip_neighbor(self) -> List[Dict[str, str]]:
@@ -657,12 +662,12 @@ class NetworkDiscovery:
                 is_pi_by_mac = any(mac.startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
                 is_pi_by_hostname = any(pi_name in hostname.lower() for pi_name in self.RASPBERRY_PI_HOSTNAMES)
                 
-                # Also check for Pi-like services (SSH, common Pi web services)
-                services = self._detect_services(ip)
-                has_ssh = services.get('ssh', False)
-                has_pi_services = has_ssh or services.get('web', False)
+                # Check if this is the configured Pi IP (highest priority)
+                is_configured_pi = self._is_configured_pi_ip(ip)
                 
-                if is_pi_by_mac or is_pi_by_hostname or has_pi_services:
+                # Only consider it a Pi if it matches MAC prefixes, hostname patterns, or is the configured IP
+                # Don't automatically assume any device with open ports is a Pi
+                if is_pi_by_mac or is_pi_by_hostname or is_configured_pi:
                     # Test connectivity to confirm it's reachable
                     if self._test_ip_connectivity(ip):
                         pi_device = {
@@ -675,7 +680,20 @@ class NetworkDiscovery:
                         discovered_pis.append(pi_device)
                         logger.info(f"✅ Discovered EXTERNAL Raspberry Pi: {ip} ({mac}) - {hostname}")
                     else:
-                        logger.debug(f"❌ Pi device {ip} not responsive")
+                        # Even if not immediately responsive, if it matches Pi patterns, include it with warning
+                        if is_pi_by_mac or is_pi_by_hostname:
+                            pi_device = {
+                                'ip': ip,
+                                'mac': mac,
+                                'hostname': hostname,
+                                'detection_method': 'mac' if is_pi_by_mac else 'hostname',
+                                'services': self._detect_services(ip),
+                                'status': 'unresponsive'
+                            }
+                            discovered_pis.append(pi_device)
+                            logger.info(f"⚠️ Found Pi-like device (unresponsive): {ip} ({mac}) - {hostname}")
+                        else:
+                            logger.debug(f"❌ Pi device {ip} not responsive")
             
             if not discovered_pis:
                 logger.info("❌ No external Raspberry Pi devices found on network")

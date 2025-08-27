@@ -285,8 +285,21 @@
         "user_agent": "Barcode Scanner App v2.0",
         "pi_ip": "127.0.0.1"
       }
+    },
+    "933dee6de6ee": {
+      "device_id": "933dee6de6ee",
+      "registered_at": "2025-08-27T10:10:58.966406+00:00",
+      "last_seen": "2025-08-27T10:10:58.966462+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "direct_registration",
+        "online_at_registration": true,
+        "user_agent": "Barcode Scanner App v2.0",
+        "pi_ip": "127.0.0.1"
+      }
     }
   },
   "registration_tokens": {},
-  "last_updated": "2025-08-27T06:55:09.498427+00:00"
+  "last_updated": "2025-08-27T10:10:58.966480+00:00"
 }
