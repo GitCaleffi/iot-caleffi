@@ -693,86 +693,23 @@ class ConnectionManager:
         def worker():
             # Initialize last status tracking
             self.last_internet_status = False
-            self.last_iot_hub_status = False
-            self.last_pi_status = False
-            
-            while self.auto_refresh_enabled:
-                try:
-                    # Check internet and IoT Hub status
-                    internet_connected = self.check_internet_connectivity()
-                    iot_hub_connected = self.check_iot_hub_connectivity()
-                    
-                    # Only check Pi status if we have internet and IoT Hub is up
-                    if internet_connected and iot_hub_connected:
-                        self.check_raspberry_pi_availability()
-                    else:
-                        logger.warning("Skipping Pi status check - no internet or IoT Hub connection")
-                    
-                    # Check for status changes
-                    status_changed = (
-                        self.last_internet_status != internet_connected or 
-                        self.last_iot_hub_status != iot_hub_connected or 
-                        self.last_pi_status != self.raspberry_pi_devices_available
-                    )
-                    
-                    if status_changed:
-                        internet_status = "✅" if internet_connected else "❌"
-                        iot_hub_status = "✅" if iot_hub_connected else "❌"
-                        pi_status = "✅" if self.raspberry_pi_devices_available else "❌"
-                        
-                        logger.info(f"🔄 Connection status changed - Internet: {internet_status}, IoT Hub: {iot_hub_status}, Pi: {pi_status}")
-                        
-                        # Special logging for Pi status changes
-                        if self.last_pi_status != self.raspberry_pi_devices_available:
-                            if self.raspberry_pi_devices_available:
-                                logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
-                            else:
-                                logger.warning("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be queued")
-                    
-                    # Update last status
-                    self.last_internet_status = internet_connected
-                    self.last_iot_hub_status = iot_hub_connected
-                    self.last_pi_status = self.raspberry_pi_devices_available
-                        
-                except Exception as e:
-                    logger.error(f"Error in auto-refresh worker: {e}")
-                    time.sleep(30)  # Wait longer on error
-                    continue
-                    
-                time.sleep(self.auto_refresh_interval)
-        
-        self.auto_refresh_thread = threading.Thread(target=worker, daemon=True)
-        self.auto_refresh_thread.start()
-        logger.info("🔄 Auto-refresh connection monitoring started")
-    
-    def stop_auto_refresh(self):
-        """Stop the auto-refresh worker"""
-        self.auto_refresh_enabled = False
-        if self.auto_refresh_thread:
-            logger.info("🔄 Auto-refresh worker stopped")
-    
-    def send_message_with_retry(self, device_id: str, barcode: str, quantity: int = 1, 
-                           message_type: str = "barcode_scan") -> Tuple[bool, str]:
-        """
-        Send message to IoT Hub with automatic offline queuing.
-        Includes Raspberry Pi network detection to prevent sending when Pi is offline.
-        
-        Args:
-            device_id: Device ID
-            barcode: Scanned barcode
-            quantity: Quantity (default 1)
-            message_type: Type of message (barcode_scan, device_registration, etc.)
-            
-        Returns:
-            Tuple[bool, str]: (success, status_message)
-        """
-        with self.lock:
             try:
-                # Create consistent message data for storage
-                timestamp = datetime.now()
+                # Check internet and IoT Hub connectivity
+                if not self.check_internet_connectivity():
+                    logger.warning("🌐 No internet connection - message will be queued")
+                    raise ConnectionError("No internet connection")
+
+                # Double-check IoT Hub connection status
+                if not self.is_connected_to_iot_hub:
+                    logger.warning("🔌 IoT Hub connection not active - message will be queued")
+                    raise ConnectionError("IoT Hub connection not active")
+
+                # Check Pi status if we have internet and IoT Hub is up
+                if self.check_internet_connectivity() and self.is_connected_to_iot_hub:
+                    self.check_raspberry_pi_availability()
+                    
+                # Prepare message data
                 message_data = {
-                    "barcode": barcode,
-                    "quantity": quantity,
                     "message_type": message_type,
                     "timestamp": timestamp.isoformat()
                 }
@@ -833,58 +770,109 @@ class ConnectionManager:
                 error_msg = f"❌ Error sending message: {str(e)} - Message saved for retry"
                 return False, error_msg
     
+    def _verify_pi_connection(self) -> Tuple[bool, str]:
+        """
+        Verify Raspberry Pi connection using multiple methods.
+        
+        Returns:
+            Tuple[bool, str]: (is_connected, status_message)
+        """
+        try:
+            # 1. Check MQTT connection (fastest method)
+            if self.mqtt_monitor and self.mqtt_monitor.connected:
+                logger.info("✅ Pi connection verified via active MQTT connection")
+                return True, "Pi connected via MQTT"
+            
+            # 2. Check LAN connectivity
+            from utils.config import load_config
+            config = load_config()
+            pi_config = config.get("raspberry_pi", {})
+            user_pi_ip = pi_config.get("auto_detected_ip")
+            
+            if user_pi_ip and self._test_real_pi_connectivity(user_pi_ip):
+                logger.info(f"✅ Pi connection verified at configured IP: {user_pi_ip}")
+                return True, f"Pi connected at {user_pi_ip}"
+            
+            # 3. Try network discovery
+            discovered_devices = self.network_discovery.discover_raspberry_pi_devices()
+            if discovered_devices:
+                logger.info(f"✅ Found {len(discovered_devices)} Pi device(s) via network scan")
+                return True, f"Found {len(discovered_devices)} Pi device(s) on network"
+            
+            # 4. Check IoT Hub device twin status
+            if self.dynamic_registration_service:
+                device_twin = self.dynamic_registration_service.get_device_twin("raspberry-pi")
+                if device_twin and device_twin.get("connectionState") == "Connected":
+                    logger.info("✅ Pi connection verified via IoT Hub device twin")
+                    return True, "Pi connected via IoT Hub"
+            
+            logger.warning("❌ Could not verify Pi connection through any method")
+            return False, "Raspberry Pi not found on network or IoT Hub"
+            
+        except Exception as e:
+            logger.error(f"Error verifying Pi connection: {e}")
+            return False, f"Connection check error: {str(e)}"
+    
     def _send_message_now(self, device_id: str, barcode: str, quantity: int, 
                          message_type: str) -> Tuple[bool, str]:
         """
         Internal method to send message immediately to IoT Hub.
-        SAFETY CHECK: Verifies Pi is available before sending.
+        Performs comprehensive Pi availability check before sending.
         
         Returns:
             Tuple[bool, str]: (success, status_message)
         """
         try:
-            # Check Pi availability before sending
-            if not self.check_raspberry_pi_availability():
-                return False, "🍓 Raspberry Pi offline - Cannot send message"
+            # 1. Verify Pi is actually connected
+            pi_connected, pi_status = self._verify_pi_connection()
+            if not pi_connected:
+                logger.warning(f"❌ Message send blocked: {pi_status}")
+                return False, f"🍓 Raspberry Pi offline - {pi_status}"
             
-            # Load configuration
+            # 2. Load configuration
             config = load_config()
             if not config:
                 return False, "Configuration not loaded"
-                
-            # Get IoT Hub connection string
+            
+            # 3. Get IoT Hub connection
             iot_hub_connection_string = config.get("iot_hub", {}).get("connection_string")
             if not iot_hub_connection_string:
                 return False, "No IoT Hub connection string configured"
-                
-            # Get device-specific connection string
+            
+            # 4. Get device-specific connection string
             registration_service = get_dynamic_registration_service(iot_hub_connection_string)
             if not registration_service:
                 return False, "Failed to initialize registration service"
-                
+            
             device_connection_string = registration_service.register_device_with_azure(device_id)
             if not device_connection_string:
                 return False, f"Failed to get connection string for device {device_id}"
-                
-            # Create Hub client and send message
+            
+            # 5. Create Hub client and send message
             hub_client = HubClient(device_connection_string)
             
-            # Prepare message payload
+            # Prepare message with additional metadata
             message_payload = {
                 "scannedBarcode": barcode,
                 "deviceId": device_id,
                 "quantity": quantity,
                 "messageType": message_type,
-                "timestamp": datetime.now(timezone.utc).isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "connectionStatus": pi_status,
+                "source": "barcode_scanner"
             }
             
-            # Send message
+            # 6. Send message with error handling
+            logger.info(f"📤 Sending message to IoT Hub: {barcode}")
             success = hub_client.send_message(barcode, device_id)
             
             if success:
+                logger.info(f"✅ Successfully sent message to IoT Hub: {barcode}")
                 return True, "✅ Message sent to IoT Hub successfully"
             else:
-                return False, "⚠️ Failed to send message to IoT Hub"
+                error_msg = "⚠️ Failed to send message to IoT Hub"
+                logger.warning(f"{error_msg}: {barcode}")
+                return False, error_msg
                 
         except Exception as e:
             logger.error(f"Error in _send_message_now: {e}")
