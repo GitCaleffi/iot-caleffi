@@ -35,7 +35,7 @@ class ConnectionManager:
         
         # Auto-refresh settings
         self.auto_refresh_enabled = True
-        self.auto_refresh_interval = 10  # seconds
+        self.auto_refresh_interval = 5  # seconds - faster for real-time disconnection detection
         self.auto_refresh_thread = None
         self.retry_thread = None
         self.retry_running = False
@@ -232,7 +232,7 @@ class ConnectionManager:
             self.is_connected_to_iot_hub = False
             return False
     
-    def check_raspberry_pi_availability(self) -> bool:
+    def check_raspberry_pi_availability(self, force_check=False) -> bool:
         """
         Check if Raspberry Pi devices are available via LAN first, then IoT Hub.
         Prioritizes local network detection to handle NAT/firewall scenarios.
@@ -240,18 +240,27 @@ class ConnectionManager:
         current_time = time.time()
         
         # Use shorter cache interval for more dynamic detection
-        cache_interval = 10  # Check every 10 seconds instead of 30
-        if current_time - self.last_pi_check < cache_interval:
+        cache_interval = 5  # Reduced to 5 seconds for faster disconnection detection
+        if not force_check and current_time - self.last_pi_check < cache_interval:
             logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
             return self.raspberry_pi_devices_available
         
         try:
+            # Store previous state to detect changes
+            previous_state = self.raspberry_pi_devices_available
+            
             # PRIORITY 1: Check LAN connectivity first (handles NAT/firewall cases)
             lan_available = self._fallback_lan_pi_check()
             if lan_available:
                 logger.debug("✅ Pi found via LAN - using local network detection")
                 self.raspberry_pi_devices_available = True
                 self.last_pi_check = current_time
+                
+                # Detect state change from offline to online
+                if not previous_state and self.raspberry_pi_devices_available:
+                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
+                    self._send_pi_status_update(True)
+                
                 return True
             
             # PRIORITY 2: Check IoT Hub as secondary method
@@ -260,17 +269,77 @@ class ConnectionManager:
             if connected_pi_devices:
                 logger.debug(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
                 self.raspberry_pi_devices_available = True
+                
+                # Detect state change from offline to online
+                if not previous_state and self.raspberry_pi_devices_available:
+                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
+                    self._send_pi_status_update(True)
             else:
                 logger.debug("❌ No Pi devices found via LAN or IoT Hub")
                 self.raspberry_pi_devices_available = False
+                
+                # Detect state change from online to offline
+                if previous_state and not self.raspberry_pi_devices_available:
+                    logger.info("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be queued locally")
+                    self._send_pi_status_update(False)
                 
             self.last_pi_check = current_time
             return self.raspberry_pi_devices_available
             
         except Exception as e:
             logger.debug(f"Error checking Pi availability: {e}")
+            # Detect state change from online to offline on error
+            if self.raspberry_pi_devices_available:
+                logger.info("🍓 ❌ Raspberry Pi went OFFLINE due to error - Messages will be queued locally")
+                self._send_pi_status_update(False)
             self.raspberry_pi_devices_available = False
             return False
+    
+    def _send_pi_status_update(self, is_connected: bool):
+        """Send Pi connection status update to IoT Hub via device twin"""
+        try:
+            from utils.config import load_config
+            config = load_config()
+            pi_config = config.get("raspberry_pi", {})
+            pi_ip = pi_config.get("auto_detected_ip", "")
+            
+            # Create status message for IoT Hub
+            status_message = {
+                "messageType": "pi_status",
+                "deviceId": "live-server-pi-status",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "connected": is_connected,
+                "ip_address": pi_ip,
+                "detection_method": "LAN" if pi_ip else "IoT_Hub"
+            }
+            
+            # Send to IoT Hub if available
+            if self.is_connected_to_iot_hub:
+                hub_client = HubClient()
+                success = hub_client.send_message(status_message)
+                if success:
+                    logger.info(f"📡 Pi status sent to IoT Hub: Connected={is_connected}")
+                else:
+                    logger.warning(f"⚠️ Failed to send Pi status to IoT Hub")
+                    # Save locally for retry
+                    self.local_db.save_unsent_message(
+                        "live-server-pi-status", 
+                        json.dumps(status_message),
+                        datetime.now(timezone.utc)
+                    )
+            else:
+                # Save locally for retry when IoT Hub comes back online
+                self.local_db.save_unsent_message(
+                    "live-server-pi-status", 
+                    json.dumps(status_message),
+                    datetime.now(timezone.utc)
+                )
+                logger.info("Raspberry Pi offline - saving message locally for device live-server-pi-status")
+            
+            logger.info(f"📡 Pi connection status changed: {is_connected} (IP: {pi_ip})")
+            
+        except Exception as e:
+            logger.error(f"Error sending Pi status update: {e}")
     
     def _check_iot_hub_pi_devices(self) -> list:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""

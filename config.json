@@ -6,10 +6,6 @@
     "device_connection_string": "",
     "auto_register_devices": true
   },
-  "frontend": {
-    "notification_url": "https://iot.caleffionline.it/api/registration-notification",
-    "timeout": 10
-  },
   "barcode_scanner": {
     "scanner_type": "Handreader",
     "scan_timeout": 5000,
@@ -19,6 +15,19 @@
       13,
       14
     ]
+  },
+  "frontend": {
+    "notification_url": "https://iot.caleffionline.it/api/registration-notification",
+    "timeout": 10
+  },
+  "performance": {
+    "fast_mode": true,
+    "cache_duration": 30,
+    "parallel_processing": true,
+    "batch_size": 50,
+    "auto_config": true,
+    "last_test": 1756283538.949993,
+    "test_status": "passed"
   },
   "commercial_deployment": {
     "auto_registration": true,
@@ -37,17 +46,18 @@
     "enable_device_stats": true
   },
   "raspberry_pi": {
-    "auto_detected_ip": "",
-    "last_detection": "2025-08-27T07:29:00.000000+00:00",
-    "mac_address": "7c:1e:52:84:d8:ff",
+    "auto_detected_ip": "192.168.1.18",
+    "last_detection": "2025-08-27T13:38:19+00:00",
+    "mac_address": "2c:cf:67:6c:45:f2",
     "device_ids": [
+      "pi-676c45f2",
       "pi-5284d8ff",
-      "pi-c1323007",
       "raspberry-pi-main",
       "rpi-192168118"
     ],
     "use_iot_hub_detection": false,
-    "status": "offline",
-    "last_ping_result": "unreachable"
+    "status": "auto",
+    "auto_detect": true,
+    "last_ping_result": "reachable"
   }
 }
