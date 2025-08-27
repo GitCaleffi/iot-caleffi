@@ -4,13 +4,16 @@ import subprocess
 import time
 import threading
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from threading import RLock
 from database.local_storage import LocalStorage
 from iot.hub_client import HubClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.config import load_config
 from utils.network_discovery import NetworkDiscovery
+from .network_discovery import NetworkDiscovery
+from .config import load_config
+from .mqtt_connection_monitor import init_mqtt_monitor, get_mqtt_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +45,20 @@ class ConnectionManager:
         self.lock = RLock()
         self.network_discovery = NetworkDiscovery()
         
+        # Track last known MQTT state
+        self.last_mqtt_status = None
+        self.mqtt_connection_time = None
+        self.mqtt_disconnect_reason = None
+        
         # Initialize dynamic registration service for IoT Hub Pi detection
         self.dynamic_registration_service = None
         self._initialize_registration_service()
         
         # Start background retry worker
         self._start_retry_thread()
+        
+        # Initialize MQTT monitoring (must be before auto-refresh worker)
+        self.mqtt_monitor = init_mqtt_monitor(self)
         
         # Start auto-refresh worker for real-time status updates
         self._start_auto_refresh_worker()
@@ -145,17 +156,14 @@ class ConnectionManager:
             self.last_connection_check = current_time
             return False
     
-    def check_iot_hub_connectivity(self, device_id: str = None) -> bool:
-        """
-        Check if IoT Hub is accessible and device can connect.
-        Uses multiple verification methods to ensure true connectivity.
-        
-        Args:
-            device_id: Optional device ID to test specific device connection
+    def check_iot_hub_connectivity(self) -> bool:
+        """Check if we can connect to IoT Hub"""
+        # First check MQTT connection status if available
+        mqtt_monitor = get_mqtt_monitor()
+        if mqtt_monitor and mqtt_monitor.last_status is not None:
+            return mqtt_monitor.last_status
             
-        Returns:
-            bool: True if IoT Hub is accessible, False otherwise
-        """
+        # Fall back to direct IoT Hub check if MQTT not available
         try:
             # Skip Pi availability check - always assume available
                 
@@ -657,61 +665,62 @@ class ConnectionManager:
             return False
     
     def _start_auto_refresh_worker(self):
-        """
-        Start background thread for auto-refreshing connection status.
-        This provides real-time updates of Pi connectivity status.
-        """
-        if not self.auto_refresh_enabled:
+        """Start a background thread to periodically refresh connection status"""
+        if self.auto_refresh_thread and self.auto_refresh_thread.is_alive():
             return
             
-        def auto_refresh_loop():
-            """Background loop to continuously refresh connection status"""
-            logger.info(f"🔄 Auto-refresh worker started (checking every {self.auto_refresh_interval} seconds)")
+        def worker():
+            # Initialize last status tracking
+            self.last_internet_status = False
+            self.last_iot_hub_status = False
+            self.last_pi_status = False
             
             while self.auto_refresh_enabled:
                 try:
-                    with self.lock:
-                        # Force refresh of all connection statuses
-                        old_internet = self.is_connected_to_internet
-                        old_iot_hub = self.is_connected_to_iot_hub
-                        old_pi = self.raspberry_pi_devices_available
-                        
-                        # Check all connectivity components
-                        self.check_internet_connectivity()
-                        self.check_iot_hub_connectivity()
+                    # Check internet and IoT Hub status
+                    internet_connected = self.check_internet_connectivity()
+                    iot_hub_connected = self.check_iot_hub_connectivity()
+                    
+                    # Only check Pi status if we have internet and IoT Hub is up
+                    if internet_connected and iot_hub_connected:
                         self.check_raspberry_pi_availability()
-                        
-                        # Re-initialize registration service if needed
-                        if not self.dynamic_registration_service:
-                            self._initialize_registration_service()
-                        
-                        # Log status changes for real-time monitoring
-                        if (old_internet != self.is_connected_to_internet or 
-                            old_iot_hub != self.is_connected_to_iot_hub or 
-                            old_pi != self.raspberry_pi_devices_available):
-                            
-                            internet_status = "✅" if self.is_connected_to_internet else "❌"
-                            iot_hub_status = "✅" if self.is_connected_to_iot_hub else "❌"
-                            pi_status = "✅" if self.raspberry_pi_devices_available else "❌"
-                            
-                            logger.info(f"🔄 Connection status changed - Internet: {internet_status}, IoT Hub: {iot_hub_status}, Pi: {pi_status}")
-                            
-                            # Special logging for Pi status changes
-                            if old_pi != self.raspberry_pi_devices_available:
-                                if self.raspberry_pi_devices_available:
-                                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
-                                else:
-                                    logger.info("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be saved locally")
+                    else:
+                        logger.warning("Skipping Pi status check - no internet or IoT Hub connection")
                     
-                    # Wait before next refresh
-                    time.sleep(self.auto_refresh_interval)
+                    # Check for status changes
+                    status_changed = (
+                        self.last_internet_status != internet_connected or 
+                        self.last_iot_hub_status != iot_hub_connected or 
+                        self.last_pi_status != self.raspberry_pi_devices_available
+                    )
                     
+                    if status_changed:
+                        internet_status = "✅" if internet_connected else "❌"
+                        iot_hub_status = "✅" if iot_hub_connected else "❌"
+                        pi_status = "✅" if self.raspberry_pi_devices_available else "❌"
+                        
+                        logger.info(f"🔄 Connection status changed - Internet: {internet_status}, IoT Hub: {iot_hub_status}, Pi: {pi_status}")
+                        
+                        # Special logging for Pi status changes
+                        if self.last_pi_status != self.raspberry_pi_devices_available:
+                            if self.raspberry_pi_devices_available:
+                                logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
+                            else:
+                                logger.warning("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be queued")
+                    
+                    # Update last status
+                    self.last_internet_status = internet_connected
+                    self.last_iot_hub_status = iot_hub_connected
+                    self.last_pi_status = self.raspberry_pi_devices_available
+                        
                 except Exception as e:
                     logger.error(f"Error in auto-refresh worker: {e}")
                     time.sleep(30)  # Wait longer on error
+                    continue
+                    
+                time.sleep(self.auto_refresh_interval)
         
-        # Start background thread
-        self.auto_refresh_thread = threading.Thread(target=auto_refresh_loop, daemon=True)
+        self.auto_refresh_thread = threading.Thread(target=worker, daemon=True)
         self.auto_refresh_thread.start()
         logger.info("🔄 Auto-refresh connection monitoring started")
     
@@ -971,24 +980,53 @@ class ConnectionManager:
             logger.error(f"Error processing unsent messages in background: {e}")
             return 0
     
-    def get_connection_status(self) -> Dict:
+    def get_connection_status(self) -> Dict[str, Any]:
         """
-        Get current connection status information.
+        Get the current connection status
         
         Returns:
-            Dict: Connection status details
+            Dict containing connection status information
         """
-        # Get unsent message count
-        unsent_messages = self.local_db.get_unsent_scans()
-        unsent_count = len(unsent_messages) if unsent_messages else 0
+        with self.lock:
+            return {
+                'internet_connected': self.is_connected_to_internet,
+                'iot_hub_connected': self.is_connected_to_iot_hub,
+                'pi_connected': self.raspberry_pi_devices_available,
+                'last_check': self.last_connectivity_check,
+                'mqtt_status': self.last_mqtt_status if hasattr(self, 'last_mqtt_status') else None,
+                'mqtt_connection_time': self.mqtt_connection_time if hasattr(self, 'mqtt_connection_time') else None
+            }
+            
+    def update_connection_status(self, iot_hub_connected: bool, reason: str = ""):
+        """
+        Update the connection status and log changes with MQTT awareness.
         
-        return {
-            "internet_connected": self.is_connected_to_internet,
-            "iot_hub_connected": self.is_connected_to_iot_hub,
-            "last_check": datetime.fromtimestamp(self.last_connection_check).isoformat() if self.last_connection_check > 0 else None,
-            "unsent_messages_count": unsent_count,
-            "retry_thread_running": self.retry_running and self.retry_thread and self.retry_thread.is_alive()
-        }
+        Args:
+            iot_hub_connected: Whether the IoT Hub is connected
+            reason: Reason for the status change (for logging)
+        """
+        with self.lock:
+            # Only update if status actually changed
+            if hasattr(self, 'is_connected_to_iot_hub') and self.is_connected_to_iot_hub == iot_hub_connected:
+                return
+                
+            # Update the status
+            self.is_connected_to_iot_hub = iot_hub_connected
+            self.last_connectivity_check = time.time()
+            
+            # Log the status change
+            status = "connected" if iot_hub_connected else "disconnected"
+            logger.info(f"🔌 IoT Hub connection status changed to: {status}. Reason: {reason}")
+            
+            # If we have MQTT monitor, update its status as well
+            if hasattr(self, 'mqtt_monitor') and self.mqtt_monitor:
+                try:
+                    if iot_hub_connected:
+                        self.mqtt_monitor.last_status = True
+                    else:
+                        self.mqtt_monitor.last_status = False
+                except Exception as e:
+                    logger.warning(f"Failed to update MQTT monitor status: {e}")
     
     def force_retry_unsent_messages(self) -> str:
         """
