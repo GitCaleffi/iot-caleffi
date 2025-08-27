@@ -528,15 +528,18 @@ class ConnectionManager:
             
             # Method 1: Check configured Pi IP (highest priority)
             if user_pi_ip:
-                logger.info(f"Testing configured Pi IP: {user_pi_ip}")
-                # For configured IP, be more permissive - if it's in config, assume it's the Pi
-                if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
-                    logger.info(f"✅ LAN check: Configured Pi {user_pi_ip} confirmed")
+                logger.info(f"Testing MQTT connection for device: {user_pi_ip}")
+                # Check MQTT connection status
+                if self.mqtt_monitor and self.mqtt_monitor.connected:
+                    logger.info(f"✅ MQTT connection active for device {user_pi_ip}")
                     return True
                 else:
-                    logger.info(f"⚠️ Configured Pi {user_pi_ip} not responsive, but trusting config")
-                    # Even if not responsive, if it's configured, consider it available
-                    return self._is_configured_pi_ip(user_pi_ip)
+                    logger.info(f"⚠️ MQTT connection not active for device {user_pi_ip}")
+                    # Fall back to direct check if MQTT is not available
+                    if self._test_real_pi_connectivity(user_pi_ip) or self._is_configured_pi_ip(user_pi_ip):
+                        logger.info(f"✅ Direct connection check passed for device {user_pi_ip}")
+                        return True
+                    return False
             
             # Method 2: Network discovery scan
             logger.info("🔍 Scanning network for Pi devices...")

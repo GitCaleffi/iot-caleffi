@@ -1,5 +1,19 @@
 {
-  "devices": {},
+  "devices": {
+    "test-device-001": {
+      "device_id": "test-device-001",
+      "registered_at": "2025-08-27T10:20:22.136141+00:00",
+      "last_seen": "2025-08-27T10:20:22.136151+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "direct_registration",
+        "online_at_registration": true,
+        "user_agent": "Barcode Scanner App v2.0",
+        "pi_ip": "127.0.0.1"
+      }
+    }
+  },
   "registration_tokens": {},
-  "last_updated": "2025-08-25T04:29:57.946004+00:00"
+  "last_updated": "2025-08-27T10:20:22.136155+00:00"
 }
