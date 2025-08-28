@@ -476,7 +476,7 @@ def require_pi_connection(func):
     def wrapper(*args, **kwargs):
         try:
             # Prefer live status from ConnectionManager, fall back to cached status
-            cm = get_connection_manager()
+            cm =  ConnectionManager()
             pi_available = cm.check_raspberry_pi_availability()
         except Exception:
             pi_available = _pi_connection_status.get('connected', False)
@@ -537,7 +537,7 @@ def process_unsent_messages_ui():
     """Process unsent messages with user-visible progress for Gradio UI."""
     # Check if Raspberry Pi is connected using connection manager for consistency
     from utils.connection_manager import ConnectionManager
-    connection_manager = get_connection_manager()
+    connection_manager =  ConnectionManager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
     if not pi_available:
@@ -674,7 +674,7 @@ def generate_registration_token():
     
     # Check Raspberry Pi connection first using connection manager
     from utils.connection_manager import ConnectionManager
-    connection_manager = get_connection_manager()
+    connection_manager = manager = ConnectionManager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
     if not pi_available:
@@ -725,7 +725,7 @@ def confirm_registration(registration_token, device_id):
     
     # Check Raspberry Pi connection first
     from utils.connection_manager import ConnectionManager
-    connection_manager = get_connection_manager()
+    connection_manager =  ConnectionManager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
     if not pi_available:
@@ -745,7 +745,7 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
     # On live server, we don't want to check actual Pi connectivity
     
     # 1. First check Raspberry Pi connection before proceeding
-    # connection_manager = get_connection_manager()
+    # connection_manager =  ConnectionManager()
     # 
     # # Get Pi IP and connection status
     # pi_ip = get_primary_raspberry_pi_ip()
@@ -974,7 +974,7 @@ def pi_status_monitor():
     
     while True:
         try:
-            connection_manager = get_connection_manager()
+            connection_manager =  ConnectionManager()
             if connection_manager:
                 # Check Pi availability
                 pi_available = connection_manager.check_raspberry_pi_availability()
@@ -1050,7 +1050,7 @@ def get_pi_status_info():
             return status_text
         else:
             # Get current status without sending
-            connection_manager = get_connection_manager()
+            connection_manager =  ConnectionManager()
             if connection_manager:
                 pi_available = connection_manager.check_raspberry_pi_availability()
                 config = load_config()
@@ -1076,7 +1076,7 @@ def get_pi_status_info():
 def get_real_time_pi_status():
     """Get real-time Pi connection status from connection manager"""
     try:
-        connection_manager = get_connection_manager()
+        connection_manager =  ConnectionManager()
         if not connection_manager:
             return "## 📡 Pi Status: Connection manager not available"
         
@@ -1135,7 +1135,7 @@ def process_barcode_scan(barcode, device_id=None):
 
     # Check Raspberry Pi connection first
     from utils.connection_manager import ConnectionManager
-    connection_manager = get_connection_manager()
+    connection_manager =  ConnectionManager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
     if not pi_available:
@@ -1179,7 +1179,7 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
         
         # Use connection manager for consistent Pi checking and message handling
         from utils.connection_manager import ConnectionManager
-        connection_manager = get_connection_manager()
+        connection_manager =  ConnectionManager()
         
         # Use connection manager's send_message_with_retry which handles Pi checks automatically
         success, status_message = connection_manager.send_message_with_retry(
@@ -1603,7 +1603,7 @@ def _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details):
         
         # Use connection manager to send registration message with Pi checks
         from utils.connection_manager import ConnectionManager
-        connection_manager = get_connection_manager()
+        connection_manager =  ConnectionManager()
         
         # Check Pi availability before sending registration confirmation
         if not connection_manager.check_raspberry_pi_availability():
@@ -1852,7 +1852,7 @@ if __name__ == "__main__":
     
     # Initialize connection manager without Pi detection
     logger.info("🚀 Starting Barcode Scanner API in local mode...")
-    connection_manager = get_connection_manager()
+    connection_manager =  ConnectionManager()
     logger.info("✅ Connection manager initialized for local operation")
     
     # Auto IP detection disabled - using local MAC address mode
