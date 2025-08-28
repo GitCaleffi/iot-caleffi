@@ -75,7 +75,8 @@ from utils.dynamic_device_manager import device_manager
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.dynamic_device_id import generate_dynamic_device_id
 from utils.network_discovery import NetworkDiscovery
-from utils.connection_manager import get_connection_manager
+from utils.connection_manager import ConnectionManager
+
 from utils.mqtt_device_discovery import get_mqtt_discovery, discover_raspberry_pi_devices, get_primary_raspberry_pi_ip as mqtt_get_primary_pi_ip
 # Removed auto IP detection - not needed for local MAC address mode
 
@@ -403,7 +404,7 @@ def check_raspberry_pi_connection():
     
     try:
         # Get connection manager
-        connection_manager = get_connection_manager()
+        connection_manager = ConnectionManager()
         if not connection_manager:
             logger.error("Connection manager not available")
             return False
