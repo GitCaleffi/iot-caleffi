@@ -341,29 +341,39 @@ class ConnectionManager:
             logger.debug(f"Error checking IoT Hub Pi devices: {e}")
             return []
     
-    def _check_device_connection_state(self, registry_manager, device_id: str) -> bool:
-        """Check if a specific device is connected via IoT Hub device twin"""
+    def _check_device_connection_state(self, registry_manager, device_id: str, timeout: int = 60) -> bool:
+        """Check if a specific device is online via IoT Hub twin heartbeat"""
         try:
-            # Get device twin to check connection state
             twin = registry_manager.get_twin(device_id)
-            
-            if twin and hasattr(twin, 'connection_state'):
-                is_connected = twin.connection_state == 'Connected'
-                logger.debug(f"Device {device_id} connectionState: {twin.connection_state}")
-                return is_connected
+            if not twin:
+                return False
+
+            # Get reported properties
+            reported = twin.properties.reported
+            status = reported.get("status", "offline")
+            last_seen = reported.get("last_seen")
+
+            if status != "online" or not last_seen:
+                return False
+
+            # Parse last_seen timestamp
+            from datetime import datetime, timezone
+            import time
+            try:
+                last_seen_ts = datetime.strptime(last_seen, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+            except ValueError:
+                last_seen_ts = datetime.strptime(last_seen, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+            now = datetime.now(timezone.utc)
+            if (now - last_seen_ts).total_seconds() < timeout:
+                return True
             else:
-                # Fallback: check device status
-                device = registry_manager.get_device(device_id)
-                if device and hasattr(device, 'status'):
-                    is_enabled = device.status == 'enabled'
-                    logger.debug(f"Device {device_id} status: {device.status}")
-                    return is_enabled
-                    
-            return False
-            
+                return False
+
         except Exception as e:
-            logger.debug(f"Error checking device {device_id} connection state: {e}")
+            logger.debug(f"Error checking device {device_id} heartbeat: {e}")
             return False
+
     
     def _fallback_lan_pi_check(self) -> bool:
         """Fallback LAN check if IoT Hub method fails"""
