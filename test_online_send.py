@@ -8,7 +8,7 @@ import os
 import time
 sys.path.append('/var/www/html/abhimanyu/barcode_scanner_clean/src')
 
-from utils.connection_manager import get_connection_manager
+from utils.connection_manager import ConnectionManager
 from database.local_storage import LocalStorage
 
 # Override the Raspberry Pi detection to always return True for testing

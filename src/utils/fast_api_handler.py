@@ -15,7 +15,7 @@ from utils.fast_config_manager import get_fast_config_manager, get_config, get_d
 from database.local_storage import LocalStorage
 from api.api_client import ApiClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
-from utils.connection_manager import get_connection_manager
+from utils.connection_manager import ConnectionManager
 from utils.auto_retry_manager import get_auto_retry_manager
 from utils.connection_recovery import get_connection_recovery
 

@@ -10,7 +10,7 @@ from typing import Dict, Optional, Any, List
 import aiohttp
 
 from database.local_storage import LocalStorage
-from utils.connection_manager import get_connection_manager
+from utils.connection_manager import ConnectionManager
 from utils.dynamic_registration_service import get_dynamic_registration_service
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append('/var/www/html/abhimanyu/barcode_scanner_clean/src')
 
-from utils.connection_manager import get_connection_manager
+from utils.connection_manager import ConnectionManager
 import subprocess
 import time
 

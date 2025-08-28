@@ -536,7 +536,7 @@ def auto_connect_to_raspberry_pi():
 def process_unsent_messages_ui():
     """Process unsent messages with user-visible progress for Gradio UI."""
     # Check if Raspberry Pi is connected using connection manager for consistency
-    from utils.connection_manager import get_connection_manager
+    from utils.connection_manager import ConnectionManager
     connection_manager = get_connection_manager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
@@ -673,7 +673,7 @@ def generate_registration_token():
     """Prepare for device registration (no token required)"""
     
     # Check Raspberry Pi connection first using connection manager
-    from utils.connection_manager import get_connection_manager
+    from utils.connection_manager import ConnectionManager
     connection_manager = get_connection_manager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
@@ -724,7 +724,7 @@ def confirm_registration(registration_token, device_id):
     logger.info("🔒 REGISTRATION_IN_PROGRESS flag set to TRUE - blocking all quantity updates")
     
     # Check Raspberry Pi connection first
-    from utils.connection_manager import get_connection_manager
+    from utils.connection_manager import ConnectionManager
     connection_manager = get_connection_manager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
@@ -1134,7 +1134,7 @@ def process_barcode_scan(barcode, device_id=None):
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
     # Check Raspberry Pi connection first
-    from utils.connection_manager import get_connection_manager
+    from utils.connection_manager import ConnectionManager
     connection_manager = get_connection_manager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
@@ -1178,7 +1178,7 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
         logger.info(f"💾 Saved barcode scan locally: {barcode}")
         
         # Use connection manager for consistent Pi checking and message handling
-        from utils.connection_manager import get_connection_manager
+        from utils.connection_manager import ConnectionManager
         connection_manager = get_connection_manager()
         
         # Use connection manager's send_message_with_retry which handles Pi checks automatically
@@ -1602,7 +1602,7 @@ def _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details):
             }
         
         # Use connection manager to send registration message with Pi checks
-        from utils.connection_manager import get_connection_manager
+        from utils.connection_manager import ConnectionManager
         connection_manager = get_connection_manager()
         
         # Check Pi availability before sending registration confirmation

@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Callable
 from threading import Lock, Event
 
 from database.local_storage import LocalStorage
-from utils.connection_manager import get_connection_manager
+from utils.connection_manager import ConnectionManager
 from utils.fast_config_manager import get_config, get_device_status
 
 logger = logging.getLogger(__name__)
