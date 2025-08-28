@@ -269,6 +269,48 @@ class NetworkDiscovery:
         logger.warning("Could not detect server IP, using localhost")
         return "127.0.0.1"
     
+    def _detect_services(self, ip: str, port_timeout: float = 0.5) -> Dict[str, bool]:
+        """
+        Detect common services running on a device by checking open ports
+        Returns a dictionary of service names and their availability
+        """
+        import socket
+        from contextlib import closing
+        
+        services = {
+            'ssh': False,
+            'http': False,
+            'https': False,
+            'vnc': False,
+            'samba': False
+        }
+        
+        # Common ports for services
+        service_ports = {
+            'ssh': 22,
+            'http': 80,
+            'https': 443,
+            'vnc': 5900,
+            'samba': 445
+        }
+        
+        def is_port_open(ip: str, port: int) -> bool:
+            """Check if a port is open on the given IP"""
+            try:
+                with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+                    sock.settimeout(port_timeout)
+                    result = sock.connect_ex((ip, port))
+                    return result == 0
+            except Exception as e:
+                logger.debug(f"Error checking port {port} on {ip}: {e}")
+                return False
+        
+        # Check each service port
+        for service, port in service_ports.items():
+            services[service] = is_port_open(ip, port)
+        
+        return services
+    
     def _test_ip_connectivity(self, ip: str) -> bool:
         """Test IP connectivity using multiple methods"""
         # Method 1: Try ping
@@ -557,10 +599,10 @@ class NetworkDiscovery:
             
             logger.debug(f"Server exclusion - IP: {server_ip}, MAC: {server_mac}")
             
-            # Get ARP table entries
-            arp_entries = self._get_arp_entries()
+            # Get ARP table entries using the available method
+            arp_devices = self._discover_via_ip_neighbor()
             
-            for entry in arp_entries:
+            for entry in arp_devices:
                 ip = entry.get('ip')
                 mac = entry.get('mac', '').lower()
                 hostname = entry.get('hostname', '')
