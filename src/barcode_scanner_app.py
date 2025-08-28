@@ -1836,8 +1836,9 @@ def start_periodic_status_updates():
     status_update_thread.start()
     logger.info("🔄 Periodic status updates started (every 10 seconds)")
 
-# Update the main execution section to initialize the app instance
 if __name__ == "__main__":
+    import os
+    
     # Initialize connection manager without Pi detection
     logger.info("🚀 Starting Barcode Scanner API in local mode...")
     connection_manager = get_connection_manager()
@@ -1853,15 +1854,25 @@ if __name__ == "__main__":
     # Start periodic status updates
     start_periodic_status_updates()
     
-    app.launch(server_name="0.0.0.0", server_port=7861)
-
-if __name__ == "__main__":
-    # Initialize connection manager without Pi detection
-    logger.info("🚀 Starting Barcode Scanner API in local mode...")
-    connection_manager = get_connection_manager()
-    logger.info("✅ Connection manager initialized for local operation")
+    # Get port from environment variable or default to 7861
+    port = int(os.environ.get('GRADIO_SERVER_PORT', 7861))
+    logger.info(f"🌐 Starting Gradio server on port {port}")
     
-    # Auto IP detection disabled - using local MAC address mode
-    logger.info("✅ Local MAC address mode active - no network discovery needed")
-    
-    app.launch(server_name="0.0.0.0", server_port=7861)
+    try:
+        app.launch(server_name="0.0.0.0", server_port=port)
+    except OSError as e:
+        if "Cannot find empty port" in str(e):
+            logger.error(f"❌ Port {port} is already in use. Trying alternative ports...")
+            # Try alternative ports
+            for alt_port in [7862, 7863, 7864, 7865]:
+                try:
+                    logger.info(f"🔄 Attempting to start on port {alt_port}")
+                    app.launch(server_name="0.0.0.0", server_port=alt_port)
+                    break
+                except OSError:
+                    continue
+            else:
+                logger.error("❌ Could not find any available port. Please check for running services.")
+                raise
+        else:
+            raise
