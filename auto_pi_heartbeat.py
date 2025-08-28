@@ -3,7 +3,7 @@
 Automatic Pi IoT Hub Heartbeat Service
 Maintains Pi connection to IoT Hub using dynamic device registration
 """
-
+import psutil
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -166,7 +166,19 @@ class AutoPiHeartbeat:
         except Exception as e:
             logger.error(f"❌ Error sending heartbeat: {e}")
             return False
+    def is_network_connected(self):
+        """Check if either Ethernet or Wi-Fi is connected with an IP"""
+        stats = psutil.net_if_stats()
+        addrs = psutil.net_if_addrs()
 
+        connected = False
+        for iface in ["eth0", "wlan0"]:
+            if stats.get(iface) and stats[iface].isup:
+                ips = [a.address for a in addrs.get(iface, []) if a.family.name == "AF_INET"]
+                if ips:
+                    connected = True
+                    break
+        return connected
     def disconnect(self):
         """Gracefully disconnect from IoT Hub"""
         if self.client:
@@ -186,6 +198,13 @@ class AutoPiHeartbeat:
         while self.running:
             try:
                 # Check connection
+                # Check network before trying to connect
+                if not self.is_network_connected():
+                    logger.warning("⚠️ No network detected (eth0/wlan0 down), skipping heartbeat...")
+                    time.sleep(self.reconnect_interval)
+                    continue
+
+                # Check IoT Hub connection
                 if not self.client or not getattr(self.client, "connected", False):
                     logger.warning("⚠️ Client disconnected, reconnecting...")
                     self.client = None
@@ -193,6 +212,7 @@ class AutoPiHeartbeat:
                         logger.error(f"❌ Reconnection failed, retrying in {self.reconnect_interval}s...")
                         time.sleep(self.reconnect_interval)
                         continue
+
 
                 # Send heartbeat
                 if self.client and getattr(self.client, "connected", False):
