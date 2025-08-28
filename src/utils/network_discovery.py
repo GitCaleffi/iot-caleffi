@@ -352,51 +352,102 @@ class NetworkDiscovery:
         return False
     
     def _discover_via_ip_neighbor(self) -> List[Dict[str, str]]:
-        """Use arp command for network device discovery (more reliable than ip neighbor)"""
+        """
+        Discover devices on the local network using multiple methods.
+        Tries ARP command first, then falls back to other methods if needed.
+        """
         devices = []
+        found_any = False
         
-        # Method 1: Try arp command (more reliable)
+        # Method 1: Try arp command (most reliable)
         try:
+            logger.info("🔍 Running 'arp -a' command to discover local devices...")
             result = subprocess.run(
-                ["arp", "-a"], 
+                ["arp", "-a", "-n"],  # -n for numeric output (faster, no DNS lookups)
                 capture_output=True, 
                 text=True, 
-                timeout=5
+                timeout=10
             )
             
             if result.returncode == 0:
+                logger.debug(f"ARP command output:\n{result.stdout}")
+                
                 for line in result.stdout.splitlines():
-                    # Parse arp output: ? (192.168.1.18) at 2c:cf:67:6c:45:f2 [ether] on eno1
-                    if "at" in line and "[ether]" in line:
-                        parts = line.split()
-                        if len(parts) >= 4:
-                            # Extract IP (remove parentheses)
-                            ip_part = parts[1] if "(" in parts[1] else parts[0]
-                            ip = ip_part.strip("()")
+                    try:
+                        # Different ARP output formats to handle:
+                        # 1. ? (192.168.1.1) at ab:cd:ef:12:34:56 [ether] on eth0
+                        # 2. 192.168.1.1 ether ab:cd:ef:12:34:56 C eth0
+                        
+                        # Initialize variables
+                        ip = None
+                        mac = None
+                        
+                        # Try format 1: ? (192.168.1.1) at ab:cd:ef:12:34:56 [ether] on eth0
+                        if "(" in line and "at" in line and "[ether]" in line:
+                            parts = line.split()
+                            if len(parts) >= 4:
+                                ip = parts[1].strip("()")
+                                mac = parts[3].lower()
+                        # Try format 2: 192.168.1.1 ether ab:cd:ef:12:34:56 C eth0
+                        elif "ether" in line and not "(" in line:
+                            parts = line.split()
+                            if len(parts) >= 4:
+                                ip = parts[0]
+                                mac = parts[2].lower()
+                        
+                        # Skip if we didn't find both IP and MAC
+                        if not ip or not mac or mac in ["(incomplete)", "<incomplete>"]:
+                            continue
                             
-                            # Extract MAC address
-                            mac = parts[3] if len(parts) > 3 else "unknown"
+                        # Validate MAC address format
+                        import re
+                        if not re.match(r'^([0-9a-fA-F]{2}[:]){5}[0-9a-fA-F]{2}$', mac):
+                            logger.debug(f"Skipping invalid MAC address: {mac}")
+                            continue
                             
-                            # Check if MAC matches Pi prefixes
-                            is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                        # Get hostname if available
+                        try:
+                            hostname = socket.gethostbyaddr(ip)[0]
+                        except (socket.herror, socket.gaierror):
+                            hostname = "unknown"
+                        
+                        # Check if MAC matches Pi prefixes
+                        is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                        
+                        if is_pi:
+                            device_info = {
+                                "ip": ip,
+                                "mac": mac,
+                                "hostname": hostname,
+                                "is_raspberry_pi": True,
+                                "detection_reason": "MAC address matches known Pi prefix",
+                                "discovery_method": "arp"
+                            }
+                            devices.append(device_info)
+                            logger.info(f"🍓 Raspberry Pi found via arp: {ip} ({mac}) - {hostname}")
+                            found_any = True
                             
-                            if is_pi:
-                                device_info = {
-                                    "ip": ip,
-                                    "mac": mac,
-                                    "hostname": "raspberry-pi",
-                                    "is_raspberry_pi": True,
-                                    "detection_reason": "MAC",
-                                    "discovery_method": "arp"
-                                }
-                                devices.append(device_info)
-                                logger.info(f"🍓 Raspberry Pi found via arp: {ip} ({mac})")
+                    except Exception as e:
+                        logger.debug(f"Error processing ARP line '{line}': {str(e)}")
+                        continue
+                
+                # Log summary of ARP discovery
+                if found_any:
+                    logger.info(f"✅ Found {len(devices)} potential Raspberry Pi devices via ARP")
+                else:
+                    logger.warning("⚠️ No Raspberry Pi devices found via ARP scan")
+                    
         except Exception as e:
-            logger.debug(f"arp command failed: {e}")
+            logger.error(f"Error during ARP discovery: {str(e)}", exc_info=True)
+            if 'result' in locals():
+                logger.debug(f"ARP command output: {getattr(result, 'stderr', 'No stderr')}")
+            else:
+                logger.debug("ARP command failed before producing any output")
         
         # Method 2: Fallback to ip neighbor if arp didn't work
         if not devices:
             try:
+                logger.info("🔍 Falling back to 'ip neighbor show' command...")
                 result = subprocess.run(
                     ["ip", "neighbor", "show"], 
                     capture_output=True, 
@@ -405,30 +456,66 @@ class NetworkDiscovery:
                 )
                 
                 if result.returncode == 0:
+                    logger.debug(f"IP neighbor command output:\n{result.stdout}")
+                    
                     for line in result.stdout.splitlines():
-                        # Parse ip neighbor output: 192.168.1.18 dev eth0 lladdr 2c:cf:67:6c:45:f2 REACHABLE
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            ip = parts[0]
-                            mac = parts[4] if len(parts) > 4 else "unknown"
-                            
-                            # Check if MAC matches Pi
-                            is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
-                            
-                            if is_pi:
-                                device_info = {
-                                    "ip": ip,
-                                    "mac": mac,
-                                    "hostname": "raspberry-pi",
-                                    "is_raspberry_pi": True,
-                                    "detection_reason": "MAC",
-                                    "discovery_method": "ip_neighbor"
-                                }
-                                devices.append(device_info)
-                                logger.info(f"🍓 Raspberry Pi found via ip neighbor: {ip} ({mac})")
+                        try:
+                            # Parse ip neighbor output: 192.168.1.18 dev eth0 lladdr 2c:cf:67:6c:45:f2 REACHABLE
+                            parts = line.split()
+                            if len(parts) >= 5:
+                                ip = parts[0]
+                                mac = parts[4].lower()
+                                
+                                # Skip if we didn't get a valid MAC
+                                if not mac or mac in ["(incomplete)", "<incomplete>"]:
+                                    continue
+                                    
+                                # Validate MAC address format
+                                import re
+                                if not re.match(r'^([0-9a-fA-F]{2}[:]){5}[0-9a-fA-F]{2}$', mac):
+                                    logger.debug(f"Skipping invalid MAC address from ip neighbor: {mac}")
+                                    continue
+                                
+                                # Get hostname if available
+                                try:
+                                    hostname = socket.gethostbyaddr(ip)[0]
+                                except (socket.herror, socket.gaierror):
+                                    hostname = "unknown"
+                                
+                                # Check if MAC matches Pi prefixes
+                                is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                                
+                                if is_pi:
+                                    device_info = {
+                                        "ip": ip,
+                                        "mac": mac,
+                                        "hostname": hostname,
+                                        "is_raspberry_pi": True,
+                                        "detection_reason": "MAC address matches known Pi prefix (ip neighbor)",
+                                        "discovery_method": "ip_neighbor"
+                                    }
+                                    devices.append(device_info)
+                                    logger.info(f"🍓 Raspberry Pi found via ip neighbor: {ip} ({mac}) - {hostname}")
+                                    found_any = True
+                                    
+                        except Exception as e:
+                            logger.debug(f"Error processing ip neighbor line '{line}': {str(e)}")
+                            continue
+                    
+                    # Log summary of ip neighbor discovery
+                    if found_any:
+                        logger.info(f"✅ Found {len(devices)} potential Raspberry Pi devices via ip neighbor")
+                    else:
+                        logger.warning("⚠️ No Raspberry Pi devices found via ip neighbor scan")
+                        
             except Exception as e:
-                logger.debug(f"ip neighbor fallback failed: {e}")
+                logger.error(f"Error during ip neighbor discovery: {str(e)}", exc_info=True)
+                if 'result' in locals():
+                    logger.debug(f"IP neighbor command output: {getattr(result, 'stderr', 'No stderr')}")
+                else:
+                    logger.debug("IP neighbor command failed before producing any output")
         
+        # Return the list of discovered devices
         return devices
     
     def _discover_via_network_scan(self) -> List[Dict[str, str]]:
@@ -597,15 +684,25 @@ class NetworkDiscovery:
             server_ip = self._get_server_ip()
             server_mac = self._get_local_mac_address()
             
-            logger.debug(f"Server exclusion - IP: {server_ip}, MAC: {server_mac}")
+            logger.info(f"🔍 Starting Pi device discovery on local network...")
+            logger.info(f"📡 Server IP: {server_ip}, MAC: {server_mac}")
             
             # Get ARP table entries using the available method
+            logger.debug("Scanning ARP table for devices...")
             arp_devices = self._discover_via_ip_neighbor()
+            logger.info(f"Found {len(arp_devices)} devices in ARP table")
+            
+            # Log first few devices for debugging
+            if arp_devices:
+                sample = arp_devices[:3]  # Show first 3 devices
+                logger.debug(f"Sample ARP entries: {sample}")
             
             for entry in arp_devices:
                 ip = entry.get('ip')
                 mac = entry.get('mac', '').lower()
                 hostname = entry.get('hostname', '')
+                
+                logger.debug(f"Checking device - IP: {ip}, MAC: {mac}, Hostname: {hostname}")
                 
                 # CRITICAL: Exclude server itself from Pi detection
                 if ip == server_ip:
