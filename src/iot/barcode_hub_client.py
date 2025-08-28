@@ -155,11 +155,12 @@ class BarcodeHubClient:
                 # Wait for connection with timeout
                 start_time = time.time()
                 while time.time() - start_time < self.connection_timeout:
-                    if hasattr(self.client, 'connected') and self.client.connected:
-                        self.connected = True
-                        logger.info(f"✓ Successfully connected to Azure IoT Hub with barcode {self.current_barcode}")
-                        return True
-                    time.sleep(0.1)
+                    with self.connection_lock:
+                        if self.connected:
+                            logger.info(f"✓ Connected to IoT Hub with device {self.current_device_id}")
+                            return True
+                    time.sleep(0.2)
+
                 
                 logger.error("Connection to Azure IoT Hub timed out")
                 self._safe_disconnect()
@@ -284,22 +285,20 @@ class BarcodeHubClient:
     def _on_connection_state_change(self, *args):
         """Handle connection state changes"""
         try:
-            # Get connection status
-            if self.client and hasattr(self.client, 'connected'):
-                new_status = self.client.connected
-                
-                # Only log state changes
-                if new_status != self.connected:
-                    if new_status:
-                        logger.info("Successfully connected to Azure IoT Hub")
-                    else:
-                        logger.info("Disconnected from Azure IoT Hub")
-                    
-                    self.connected = new_status
-            
+            # SDK may call callback multiple ways, check connection property
+            connected = getattr(self.client, 'connected', False)
+            if connected:
+                if not getattr(self, 'connected', False):
+                    logger.info("✅ Connected to IoT Hub")
+                self.connected = True
+            else:
+                if getattr(self, 'connected', True):
+                    logger.warning("⚠️ Disconnected from IoT Hub")
+                self.connected = False
         except Exception as e:
             logger.error(f"Error in connection state change handler: {e}")
             self.connected = False
+
     
     def _on_message_sent(self, message_id):
         """Handle message sent confirmation"""
@@ -348,18 +347,22 @@ class BarcodeHubClient:
             return False
     
     def _safe_disconnect(self):
-        """Safely disconnect and clean up resources"""
-        if self.client:
-            try:
-                if hasattr(self.client, 'shutdown'):
-                    self.client.shutdown()
-                elif hasattr(self.client, 'disconnect'):
+        with self.connection_lock:
+            if self.client:
+                try:
+                    if self.connected:
+                        # Update Device Twin to offline
+                        self.client.patch_twin_reported_properties({
+                            "status": "offline",
+                            "last_seen": datetime.utcnow().isoformat() + "Z"
+                        })
                     self.client.disconnect()
-            except Exception as e:
-                logger.warning(f"Error during client shutdown: {e}")
-            finally:
-                self.client = None
-                self.connected = False
+                except Exception as e:
+                    logger.warning(f"⚠️ Error during disconnect: {e}")
+                finally:
+                    self.client = None
+                    self.connected = False
+
     
     def disconnect(self):
         """Disconnect from Azure IoT Hub completely"""
