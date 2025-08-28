@@ -46,6 +46,21 @@ class NetworkDiscovery:
         self._arp_cache = None
         self._cache_timestamp = None
         self._cache_duration = 30  # Cache for 30 seconds
+        
+        # Load configuration
+        self.config = self._load_config()
+        self.use_iot_hub = self.config.get('raspberry_pi', {}).get('use_iot_hub_detection', True)
+        self.detection_priority = self.config.get('raspberry_pi', {}).get('detection_priority', ['iot_hub', 'network_scan', 'static_ip'])
+        
+    def _load_config(self):
+        """Load configuration from config.json"""
+        try:
+            config_path = Path(__file__).parent.parent.parent / 'config.json'
+            with open(config_path) as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading config: {e}")
+            return {}
     
     def get_local_subnet(self) -> Optional[str]:
         """Get the local subnet for scanning"""
