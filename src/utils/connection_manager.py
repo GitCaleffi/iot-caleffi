@@ -812,14 +812,13 @@ class ConnectionManager:
 # Global connection manager instance
 _connection_manager = None
 
-def get_connection_manager() -> ConnectionManager:
-    """
-    Get the global connection manager instance.
+def get_connection_manager():
+    """Get connection manager with proper Pi checking."""
+    from utils.connection_manager import ConnectionManager
     
-    Returns:
-        ConnectionManager: Global connection manager
-    """
-    global _connection_manager
-    if _connection_manager is None:
-        _connection_manager = ConnectionManager()
-    return _connection_manager
+    # Initialize with actual Pi IP detection
+    pi_ip = get_primary_raspberry_pi_ip()
+    
+    # Create connection manager with real Pi IP
+    manager = ConnectionManager(pi_ip=pi_ip)
+    return manager
