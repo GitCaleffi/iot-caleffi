@@ -141,7 +141,15 @@ class NetworkDiscovery:
     
     def _get_local_mac_address(self) -> Optional[str]:
         """Get the MAC address of the local device dynamically."""
-        # Method 1: Use ip link command (most reliable for servers)
+        import subprocess
+        import re
+        import os
+
+        # Helper function to validate MAC
+        def is_valid_mac(mac: str) -> bool:
+            return bool(mac and mac != "00:00:00:00:00:00" and re.match(r'^([0-9a-f]{2}:){5}[0-9a-f]{2}$', mac.lower()))
+
+        # Method 1: ip link (most reliable)
         try:
             result = subprocess.run(
                 ["ip", "link", "show"],
@@ -150,16 +158,32 @@ class NetworkDiscovery:
                 timeout=5
             )
             if result.returncode == 0:
-                mac_pattern = r'link/ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
-                matches = re.findall(mac_pattern, result.stdout.lower())
+                matches = re.findall(r'link/ether ([0-9a-f:]{17})', result.stdout, re.IGNORECASE)
                 for mac in matches:
-                    if mac != "00:00:00:00:00:00":
-                        logger.debug(f"📍 Server MAC address detected via ip link: {mac}")
-                        return mac
+                    if is_valid_mac(mac):
+                        logger.debug(f"📍 Server MAC address detected via ip link: {mac.lower()}")
+                        return mac.lower()
         except Exception as e:
             logger.debug(f"ip link method failed: {e}")
 
-        # Method 2: Use ifconfig command (fallback)
+        # Method 2: /sys/class/net (Linux-specific, most robust)
+        try:
+            net_path = '/sys/class/net'
+            if os.path.exists(net_path):
+                for interface in os.listdir(net_path):
+                    if interface == 'lo':
+                        continue
+                    mac_file = os.path.join(net_path, interface, 'address')
+                    if os.path.exists(mac_file):
+                        with open(mac_file, 'r') as f:
+                            mac = f.read().strip().lower()
+                            if is_valid_mac(mac):
+                                logger.debug(f"📍 Server MAC address detected via /sys/class/net: {mac}")
+                                return mac
+        except Exception as e:
+            logger.debug(f"/sys/class/net method failed: {e}")
+
+        # Method 3: ifconfig (fallback)
         try:
             result = subprocess.run(
                 ["ifconfig"],
@@ -168,35 +192,17 @@ class NetworkDiscovery:
                 timeout=5
             )
             if result.returncode == 0:
-                mac_pattern = r'ether ([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})'
-                matches = re.findall(mac_pattern, result.stdout.lower())
+                matches = re.findall(r'(?:ether|HWaddr) ([0-9a-f:]{17})', result.stdout, re.IGNORECASE)
                 for mac in matches:
-                    if mac != "00:00:00:00:00:00":
-                        logger.debug(f"📍 Server MAC address detected via ifconfig: {mac}")
-                        return mac
+                    if is_valid_mac(mac):
+                        logger.debug(f"📍 Server MAC address detected via ifconfig: {mac.lower()}")
+                        return mac.lower()
         except Exception as e:
             logger.debug(f"ifconfig method failed: {e}")
 
-        # Method 3: Read from /sys/class/net interfaces (Linux-specific)
-        try:
-            import os
-            net_path = '/sys/class/net'
-            if os.path.exists(net_path):
-                for interface in os.listdir(net_path):
-                    if interface != 'lo':  # Skip loopback
-                        mac_file = f'{net_path}/{interface}/address'
-                        if os.path.exists(mac_file):
-                            with open(mac_file, 'r') as f:
-                                mac = f.read().strip().lower()
-                                if mac != "00:00:00:00:00:00" and ":" in mac:
-                                    logger.debug(f"📍 Server MAC address detected via /sys/class/net: {mac}")
-                                    return mac
-        except Exception as e:
-            logger.debug(f"/sys/class/net method failed: {e}")
-        
         logger.warning("❌ Could not detect server MAC address using any method")
         return None
-    
+
     def _get_server_ip(self) -> str:
         """Get the actual server IP address using Python socket methods"""
         import socket

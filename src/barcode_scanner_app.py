@@ -98,9 +98,9 @@ api_client = ApiClient()
 # Track all processed device IDs, even those not saved in the database
 processed_device_ids = set()
 
-# Auto-registration function
+# Auto-registration function with IoT Hub integration
 def auto_register_device_to_server():
-    """Automatically register device with live server using local MAC address"""
+    """Automatically register device with live server and IoT Hub using local MAC address"""
     try:
         mac_address = get_local_mac_address()
         if not mac_address:
@@ -109,6 +109,16 @@ def auto_register_device_to_server():
             
         # Generate device ID from MAC address
         device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
+        
+        # Check if already registered
+        registered_devices = local_db.get_registered_devices()
+        device_already_registered = any(device.get('device_id') == device_id for device in registered_devices)
+        
+        if device_already_registered:
+            logger.info(f"✅ Device {device_id} already registered - initializing IoT Hub connection")
+            # Initialize IoT Hub connection for existing device
+            _initialize_iot_hub_connection(device_id)
+            return True
         
         # Get local IP address
         import socket
@@ -121,7 +131,85 @@ def auto_register_device_to_server():
         except:
             local_ip = "127.0.0.1"
             
-        # Registration payload
+        logger.info(f"🚀 Auto-registering new device {device_id} (MAC: {mac_address}, IP: {local_ip})")
+        
+        # Step 1: Register with IoT Hub using dynamic registration service
+        try:
+            registration_service = get_dynamic_registration_service()
+            token = device_manager.generate_registration_token()
+            
+            device_info = {
+                "registration_method": "auto_plug_and_play",
+                "mac_address": mac_address,
+                "ip_address": local_ip,
+                "auto_registered": True,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            success, message = device_manager.register_device(token, device_id, device_info)
+            
+            if success:
+                logger.info(f"✅ Device {device_id} registered with IoT Hub successfully")
+                
+                # Save to local database
+                local_db.save_device_id(device_id)
+                
+                # Initialize IoT Hub connection
+                _initialize_iot_hub_connection(device_id)
+                
+                # Step 2: Register with live server API (optional)
+                _register_with_live_server(device_id, mac_address, local_ip)
+                
+                return True
+            else:
+                logger.error(f"❌ IoT Hub registration failed: {message}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ IoT Hub registration error: {e}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ Auto-registration error: {e}")
+        return False
+
+def _initialize_iot_hub_connection(device_id):
+    """Initialize IoT Hub connection for a registered device"""
+    try:
+        # Get device connection string from dynamic registration service
+        device_connection_string = device_manager.get_device_connection_string(device_id)
+        if device_connection_string:
+            # Initialize IoT Hub client with device-specific connection string
+            hub_client = HubClient(device_connection_string)
+            
+            # Send registration confirmation to IoT Hub
+            confirmation_msg = {
+                "deviceId": device_id,
+                "status": "auto_registered",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "message": "Device auto-registered via plug-and-play",
+                "messageType": "device_registration"
+            }
+            
+            hub_client.send_message(json.dumps(confirmation_msg), device_id)
+            logger.info("📡 Registration confirmation sent to IoT Hub")
+            
+            # Start heartbeat to IoT Hub
+            threading.Thread(
+                target=_send_iot_hub_heartbeat,
+                args=(device_id, device_connection_string),
+                daemon=True
+            ).start()
+            
+        else:
+            logger.error(f"❌ Could not get device connection string for {device_id}")
+            
+    except Exception as e:
+        logger.error(f"❌ IoT Hub connection initialization error: {e}")
+
+def _register_with_live_server(device_id, mac_address, local_ip):
+    """Register device with live server API (optional step)"""
+    try:
         registration_data = {
             "device_id": device_id,
             "mac_address": mac_address,
@@ -134,12 +222,10 @@ def auto_register_device_to_server():
             "https://iot.caleffionline.it/api/pi-device-register"  # Live server fallback
         ]
         
-        logger.info(f"📤 Auto-registering device {device_id} to server...")
-        
         # Try each URL until one works
         for url in live_server_urls:
             try:
-                logger.info(f"Trying registration URL: {url}")
+                logger.info(f"Trying live server registration: {url}")
                 response = requests.post(
                     url,
                     json=registration_data,
@@ -148,12 +234,9 @@ def auto_register_device_to_server():
                 )
                 
                 if response.status_code == 200:
-                    logger.info(f"✅ Device auto-registered successfully: {device_id} via {url}")
+                    logger.info(f"✅ Device registered with live server: {url}")
                     
-                    # Save to local database
-                    local_db.save_device_id(device_id)
-                    
-                    # Start heartbeat thread
+                    # Start heartbeat thread to live server
                     threading.Thread(
                         target=send_heartbeat_to_server,
                         args=(device_id, local_ip, url.replace('/api/pi-device-register', '/api/pi-device-heartbeat')),
@@ -162,18 +245,40 @@ def auto_register_device_to_server():
                     
                     return True
                 else:
-                    logger.warning(f"Registration failed for {url}: {response.status_code} - {response.text[:100]}")
+                    logger.warning(f"Live server registration failed for {url}: {response.status_code}")
                     
             except Exception as e:
-                logger.warning(f"Registration error for {url}: {e}")
+                logger.warning(f"Live server registration error for {url}: {e}")
                 continue
         
-        logger.error(f"❌ Auto-registration failed for all endpoints")
+        logger.warning("⚠️ Live server registration failed for all endpoints (IoT Hub registration still successful)")
         return False
-            
+        
     except Exception as e:
-        logger.error(f"❌ Auto-registration error: {e}")
+        logger.warning(f"⚠️ Live server registration error: {e}")
         return False
+
+def _send_iot_hub_heartbeat(device_id, device_connection_string):
+    """Send periodic heartbeat to IoT Hub"""
+    while True:
+        try:
+            hub_client = HubClient(device_connection_string)
+            
+            heartbeat_msg = {
+                "deviceId": device_id,
+                "status": "online",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "messageType": "heartbeat"
+            }
+            
+            hub_client.send_message(json.dumps(heartbeat_msg), device_id)
+            logger.debug(f"💓 IoT Hub heartbeat sent for {device_id}")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ IoT Hub heartbeat error: {e}")
+            
+        # Wait 60 seconds before next heartbeat
+        time.sleep(60)
 
 def send_heartbeat_to_server(device_id, ip_address, heartbeat_url):
     """Send periodic heartbeat to live server"""
@@ -399,34 +504,75 @@ REGISTRATION_IN_PROGRESS = False
 registration_lock = threading.Lock()
 
 def check_raspberry_pi_connection():
-    """Actually check if Raspberry Pi is connected and reachable."""
+    """Check if Raspberry Pi is connected with automatic discovery and IoT Hub integration."""
     global _pi_connection_status
     
     try:
-        # Get connection manager
-        connection_manager = ConnectionManager()
-        if not connection_manager:
-            logger.error("Connection manager not available")
-            return False
+        # Step 1: Try automatic Pi discovery first
+        pi_ip = None
+        pi_available = False
         
-        # Use connection manager to check Pi availability
-        pi_available = connection_manager.check_raspberry_pi_availability()
+        # If this IS a Raspberry Pi, consider it always available
+        if IS_RASPBERRY_PI:
+            logger.info("🔍 Running on Raspberry Pi - marking as available")
+            pi_available = True
+            pi_ip = "127.0.0.1"  # Local Pi
+        else:
+            # Try network discovery for external Pi devices
+            logger.info("🔍 Searching for external Raspberry Pi devices...")
+            
+            # Get connection manager
+            connection_manager = ConnectionManager()
+            if connection_manager:
+                pi_available = connection_manager.check_raspberry_pi_availability()
+                
+                if pi_available:
+                    # Try to get Pi IP from discovery
+                    pi_ip = get_primary_raspberry_pi_ip()
+                    logger.info(f"✅ External Raspberry Pi found at: {pi_ip}")
+                else:
+                    logger.info("❌ No external Raspberry Pi devices found on network")
+            else:
+                logger.error("Connection manager not available")
         
-        # Get Pi IP from config or discovery
-        config = load_config()
-        pi_config = config.get('raspberry_pi', {}) if config else {}
-        pi_ip = pi_config.get('auto_detected_ip') or get_known_raspberry_pi_ip()
+        # Step 2: Test connectivity if Pi IP is available
+        ssh_available = False
+        web_available = False
         
-        # Update status cache
+        if pi_available and pi_ip and pi_ip != "127.0.0.1":
+            try:
+                discovery = NetworkDiscovery()
+                ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22, timeout=3)
+                web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000, timeout=3)
+                logger.info(f"📡 Pi services - SSH: {'✅' if ssh_available else '❌'}, Web: {'✅' if web_available else '❌'}")
+            except Exception as e:
+                logger.warning(f"Service connectivity test failed: {e}")
+        
+        # Step 3: Update status cache
         _pi_connection_status.update({
             'connected': pi_available,
             'ip': pi_ip if pi_available else None,
             'last_check': datetime.now(),
-            'ssh_available': False,  # Test SSH if needed
-            'web_available': False   # Test web service if needed
+            'ssh_available': ssh_available,
+            'web_available': web_available
         })
         
-        logger.info(f"Pi connection check: {pi_available} (IP: {pi_ip})")
+        # Step 4: Update config with discovered IP
+        if pi_available and pi_ip and pi_ip != "127.0.0.1":
+            try:
+                config = load_config()
+                if config:
+                    pi_config = config.get('raspberry_pi', {})
+                    if pi_config.get('auto_detected_ip') != pi_ip:
+                        pi_config['auto_detected_ip'] = pi_ip
+                        pi_config['last_detection'] = datetime.now(timezone.utc).isoformat()
+                        config['raspberry_pi'] = pi_config
+                        save_config(config)
+                        logger.info(f"💾 Updated config with Pi IP: {pi_ip}")
+            except Exception as e:
+                logger.warning(f"Config update failed: {e}")
+        
+        logger.info(f"🔍 Pi connection check result: {pi_available} (IP: {pi_ip})")
         return pi_available
         
     except Exception as e:
@@ -434,7 +580,9 @@ def check_raspberry_pi_connection():
         _pi_connection_status.update({
             'connected': False,
             'ip': None,
-            'last_check': datetime.now()
+            'last_check': datetime.now(),
+            'ssh_available': False,
+            'web_available': False
         })
         return False
 
@@ -1803,10 +1951,39 @@ with gr.Blocks(title="Barcode Scanner") as app:
     )
     
 # Initialize device and auto-register on startup
-logger.info("🚀 Initializing automatic device registration...")
-check_raspberry_pi_connection()
-auto_register_device_to_server()
-logger.info(f"✅ Device ready for barcode scanning")
+logger.info("🚀 Initializing plug-and-play barcode scanner system...")
+
+# Step 1: Check if running on Raspberry Pi
+if IS_RASPBERRY_PI:
+    logger.info("🔍 Detected: Running on Raspberry Pi device")
+    logger.info("📱 Mode: Direct Pi operation (no network discovery needed)")
+else:
+    logger.info("🔍 Detected: Running on server/desktop (will search for external Pi devices)")
+    logger.info("📱 Mode: Network-based Pi discovery")
+
+# Step 2: Check Pi connection and discover devices
+logger.info("🔍 Checking Raspberry Pi connection...")
+pi_connected = check_raspberry_pi_connection()
+
+if pi_connected:
+    logger.info("✅ Raspberry Pi connection established")
+else:
+    logger.warning("⚠️ No Raspberry Pi connection found - will retry automatically")
+
+# Step 3: Auto-register device
+logger.info("🚀 Starting automatic device registration...")
+registration_success = auto_register_device_to_server()
+
+if registration_success:
+    logger.info("✅ Device registration completed successfully")
+    logger.info("📡 IoT Hub connection established")
+    logger.info("🎯 System ready for plug-and-play barcode scanning")
+else:
+    logger.warning("⚠️ Device registration failed - will retry automatically")
+    logger.info("💾 Local operation mode enabled (data will be stored locally)")
+
+logger.info("🚀 Plug-and-play barcode scanner system initialized")
+logger.info("📱 Just scan barcodes - no manual setup required!")
 
 # Start Pi status monitoring thread
 logger.info("🚀 Starting Pi status monitoring...")
