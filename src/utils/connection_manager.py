@@ -52,7 +52,7 @@ class ConnectionManager:
         # Start background retry worker
         self._start_retry_thread()
         
-        # Start auto-refresh worker for real-time status updates
+        # Start auto-refresh worker for connection monitoring (reduced frequency for plug-and-play)
         self._start_auto_refresh_worker()
         
     def check_internet_connectivity(self) -> bool:
@@ -453,38 +453,25 @@ class ConnectionManager:
                         
                         # Log status changes for real-time monitoring
                         if (old_internet != self.is_connected_to_internet or 
-                            old_iot_hub != self.is_connected_to_iot_hub or 
-                            old_pi != self.raspberry_pi_devices_available):
-                            
-                            internet_status = "✅" if self.is_connected_to_internet else "❌"
-                            iot_hub_status = "✅" if self.is_connected_to_iot_hub else "❌"
-                            pi_status = "✅" if self.raspberry_pi_devices_available else "❌"
-                            
-                            logger.info(f"🔄 Connection status changed - Internet: {internet_status}, IoT Hub: {iot_hub_status}, Pi: {pi_status}")
-                            
-                            # Special logging for Pi status changes
-                            if old_pi != self.raspberry_pi_devices_available:
-                                if self.raspberry_pi_devices_available:
-                                    logger.info("🍓 ✅ Raspberry Pi came ONLINE - Messages will now be sent immediately")
-                                else:
-                                    logger.info("🍓 ❌ Raspberry Pi went OFFLINE - Messages will be saved locally")
-                    
-                    # Wait before next refresh
+                            old_iot_hub != self.is_connected_to_iot_hub):
+                            status = self.get_connection_status()
+                            logger.info(f"🔄 Connection status changed - Internet: {'✅' if status['internet_connected'] else '❌'}, IoT Hub: {'✅' if status['iot_hub_connected'] else '❌'}")
+                        
                     time.sleep(self.auto_refresh_interval)
                     
                 except Exception as e:
-                    logger.error(f"Error in auto-refresh worker: {e}")
-                    time.sleep(30)  # Wait longer on error
+                    logger.error(f"Auto-refresh worker error: {e}")
+                    time.sleep(120)  # Wait longer on error
         
-        # Start background thread
-        self.auto_refresh_thread = threading.Thread(target=auto_refresh_loop, daemon=True)
-        self.auto_refresh_thread.start()
-        logger.info("🔄 Auto-refresh connection monitoring started")
+        # Start worker thread
+        refresh_thread = threading.Thread(target=auto_refresh_loop, daemon=True)
+        refresh_thread.start()
+        logger.info("🔄 Connection monitoring active (plug-and-play mode)")
     
     def stop_auto_refresh(self):
         """Stop the auto-refresh worker"""
         self.auto_refresh_enabled = False
-        if self.auto_refresh_thread:
+        if hasattr(self, 'auto_refresh_thread') and self.auto_refresh_thread:
             logger.info("🔄 Auto-refresh worker stopped")
     
     def send_message_with_retry(self, device_id: str, barcode: str, quantity: int = 1, 
