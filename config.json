@@ -9,7 +9,12 @@
   "barcode_scanner": {
     "scanner_type": "Handreader",
     "scan_timeout": 5000,
-    "valid_barcode_lengths": [8, 12, 13, 14]
+    "valid_barcode_lengths": [
+      8,
+      12,
+      13,
+      14
+    ]
   },
   "frontend": {
     "notification_url": "https://iot.caleffionline.it/api/registration-notification",
