@@ -1,10 +1,7 @@
 
 pyzbar
 pymongo
-# Commercial Barcode Scanner - Production Requirements
-# For Ubuntu server deployment with 1000+ device support
 
-# Core Azure IoT Hub dependencies
 azure-iot-device
 azure-iot-hub
 

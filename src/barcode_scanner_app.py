@@ -1410,6 +1410,25 @@ def process_unsent_messages(auto_retry=False):
     logger.info("process_unsent_messages is deprecated - connection manager handles automatic retry")
     return "✅ Automatic message retry is now handled by the connection manager in the background."
 
+def get_pi_connection_status_display():
+    """Get the current Pi connection status display string."""
+    try:
+        # Check if Pi is connected
+        connected = check_raspberry_pi_connection()
+        
+        if connected:
+            # Get Pi IP if available
+            pi_ip = get_primary_raspberry_pi_ip()
+            if pi_ip:
+                return f"✅ External Raspberry Pi connected: {pi_ip}"
+            else:
+                return "✅ Raspberry Pi connected"
+        else:
+            return "❌ No external Raspberry Pi devices found on network"
+    except Exception as e:
+        logger.error(f"Error getting Pi connection status: {e}")
+        return "⚠️ Error checking Pi connection status"
+
 def refresh_pi_connection():
     """Refresh Raspberry Pi connection status and return updated display."""
     logger.info("🔄 Refreshing Raspberry Pi connection...")
