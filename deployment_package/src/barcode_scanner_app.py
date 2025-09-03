@@ -1981,6 +1981,366 @@ logger.info("📱 System configured for Azure IoT Hub inventory tracking")
 # System initialization complete
 logger.info("✅ System initialization complete")
 
+# ==========================================
+# PI HEARTBEAT SYSTEM FOR PLUG-AND-PLAY
+# ==========================================
+
+class PiHeartbeatService:
+    """
+    Pi Heartbeat Service for cloud environments where LAN discovery fails.
+    Ensures server can always detect Pi devices regardless of network topology.
+    """
+    
+    def __init__(self, config):
+        self.config = config
+        self.device_id = None
+        self.server_url = None
+        self.heartbeat_interval = 30  # seconds
+        self.registration_interval = 300  # 5 minutes
+        self.running = False
+        self.heartbeat_thread = None
+        self.registration_thread = None
+        self.last_heartbeat = None
+        self.last_registration = None
+        self.connection_string = None
+        
+        # Get device info
+        self.device_info = self._get_device_info()
+        logger.info(f"🔄 Pi Heartbeat Service initialized for device: {self.device_info.get('device_id', 'unknown')}")
+    
+    def _get_device_info(self):
+        """Get comprehensive device information for heartbeat"""
+        try:
+            # Generate consistent device ID based on hardware
+            mac = get_local_device_mac()
+            if mac:
+                device_id = f"pi-{mac.replace(':', '').lower()[-8:]}"
+            else:
+                device_id = f"pi-{uuid.uuid4().hex[:8]}"
+            
+            # Get network info
+            hostname = socket.gethostname()
+            
+            # Get local IP addresses
+            local_ips = []
+            try:
+                # Get all network interfaces
+                result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    local_ips = result.stdout.strip().split()
+            except Exception as e:
+                logger.warning(f"Could not get local IPs: {e}")
+            
+            # Get system info
+            system_info = {
+                'platform': os.uname().sysname,
+                'architecture': os.uname().machine,
+                'hostname': hostname,
+                'python_version': sys.version.split()[0]
+            }
+            
+            return {
+                'device_id': device_id,
+                'mac_address': mac,
+                'hostname': hostname,
+                'local_ips': local_ips,
+                'system_info': system_info,
+                'services': {
+                    'barcode_scanner': True,
+                    'ssh': self._check_service_port(22),
+                    'web': self._check_service_port(5000)
+                }
+            }
+        except Exception as e:
+            logger.error(f"❌ Failed to get device info: {e}")
+            return {'device_id': f"pi-{uuid.uuid4().hex[:8]}"}
+    
+    def _check_service_port(self, port):
+        """Check if a service port is available"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('localhost', port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+    
+    def _discover_server(self):
+        """Discover the barcode scanner server"""
+        try:
+            # Try configured server URLs first
+            server_candidates = [
+                "https://iot.caleffionline.it",
+                "https://api2.caleffionline.it",
+                "http://localhost:7860",
+                "http://127.0.0.1:7860"
+            ]
+            
+            # Add any configured server URLs
+            if self.config:
+                frontend_config = self.config.get("frontend", {})
+                if frontend_config.get("base_url"):
+                    server_candidates.insert(0, frontend_config["base_url"])
+            
+            for server_url in server_candidates:
+                try:
+                    # Test server connectivity
+                    response = requests.get(f"{server_url}/api/health", timeout=10)
+                    if response.status_code == 200:
+                        health_data = response.json()
+                        if "barcode" in health_data.get("service", "").lower():
+                            logger.info(f"✅ Server discovered: {server_url}")
+                            return server_url
+                except Exception as e:
+                    logger.debug(f"Server {server_url} not reachable: {e}")
+                    continue
+            
+            logger.warning("⚠️ No barcode scanner server found")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Server discovery failed: {e}")
+            return None
+    
+    def _register_with_server(self):
+        """Register Pi device with the server"""
+        try:
+            if not self.server_url:
+                self.server_url = self._discover_server()
+                if not self.server_url:
+                    return False
+            
+            registration_data = {
+                "device_id": self.device_info["device_id"],
+                "device_type": "raspberry_pi",
+                "mac_address": self.device_info.get("mac_address"),
+                "hostname": self.device_info.get("hostname"),
+                "local_ips": self.device_info.get("local_ips", []),
+                "system_info": self.device_info.get("system_info", {}),
+                "services": self.device_info.get("services", {}),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "heartbeat_interval": self.heartbeat_interval,
+                "capabilities": ["barcode_scanning", "iot_hub_messaging", "local_storage"]
+            }
+            
+            # Register device
+            response = requests.post(
+                f"{self.server_url}/api/v1/raspberry/register",
+                json=registration_data,
+                timeout=30,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                self.connection_string = result.get("connection_string")
+                self.device_id = self.device_info["device_id"]
+                
+                logger.info(f"✅ Pi device registered successfully: {self.device_id}")
+                
+                # Save registration info to config
+                self._save_registration_info(result)
+                
+                return True
+            else:
+                logger.warning(f"⚠️ Registration failed: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Registration error: {e}")
+            return False
+    
+    def _save_registration_info(self, registration_result):
+        """Save registration information to config"""
+        try:
+            config = load_config()
+            if not config:
+                config = {}
+            
+            config["pi_heartbeat"] = {
+                "device_id": self.device_id,
+                "server_url": self.server_url,
+                "connection_string": self.connection_string,
+                "last_registration": datetime.now(timezone.utc).isoformat(),
+                "registration_result": registration_result
+            }
+            
+            save_config(config)
+            logger.info("💾 Pi heartbeat registration saved to config")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Could not save registration info: {e}")
+    
+    def _send_heartbeat(self):
+        """Send heartbeat to server"""
+        try:
+            if not self.server_url or not self.device_id:
+                return False
+            
+            # Get current status
+            current_status = {
+                "device_id": self.device_id,
+                "status": "online",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "local_ips": self.device_info.get("local_ips", []),
+                "services": {
+                    "barcode_scanner": True,
+                    "ssh": self._check_service_port(22),
+                    "web": self._check_service_port(5000)
+                },
+                "system_metrics": {
+                    "uptime": time.time(),
+                    "memory_available": True,  # Simplified for now
+                    "disk_space": True
+                }
+            }
+            
+            # Send heartbeat
+            response = requests.post(
+                f"{self.server_url}/api/v1/raspberry/heartbeat",
+                json=current_status,
+                timeout=15,
+                headers={"Content-Type": "application/json"}
+            )
+            
+            if response.status_code == 200:
+                self.last_heartbeat = datetime.now(timezone.utc)
+                logger.debug(f"💓 Heartbeat sent successfully")
+                return True
+            else:
+                logger.warning(f"⚠️ Heartbeat failed: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Heartbeat error: {e}")
+            return False
+    
+    def _heartbeat_worker(self):
+        """Background worker for sending heartbeats"""
+        logger.info("💓 Pi heartbeat worker started")
+        
+        while self.running:
+            try:
+                # Send heartbeat
+                success = self._send_heartbeat()
+                
+                if not success:
+                    # If heartbeat fails, try to re-register
+                    logger.info("🔄 Heartbeat failed, attempting re-registration...")
+                    self._register_with_server()
+                
+                # Wait for next heartbeat
+                time.sleep(self.heartbeat_interval)
+                
+            except Exception as e:
+                logger.error(f"❌ Heartbeat worker error: {e}")
+                time.sleep(self.heartbeat_interval)
+    
+    def _registration_worker(self):
+        """Background worker for periodic re-registration"""
+        logger.info("📝 Pi registration worker started")
+        
+        while self.running:
+            try:
+                # Wait for registration interval
+                time.sleep(self.registration_interval)
+                
+                # Re-register to ensure server has latest info
+                if self.running:
+                    logger.info("🔄 Periodic re-registration...")
+                    self._register_with_server()
+                    
+            except Exception as e:
+                logger.error(f"❌ Registration worker error: {e}")
+                time.sleep(60)  # Wait 1 minute on error
+    
+    def start(self):
+        """Start the Pi heartbeat service"""
+        try:
+            if self.running:
+                logger.warning("⚠️ Pi heartbeat service already running")
+                return
+            
+            logger.info("🚀 Starting Pi heartbeat service...")
+            
+            # Initial registration
+            registration_success = self._register_with_server()
+            if not registration_success:
+                logger.warning("⚠️ Initial registration failed, will retry in background")
+            
+            # Start background workers
+            self.running = True
+            
+            # Start heartbeat thread
+            self.heartbeat_thread = threading.Thread(
+                target=self._heartbeat_worker,
+                name="PiHeartbeatWorker",
+                daemon=True
+            )
+            self.heartbeat_thread.start()
+            
+            # Start registration thread
+            self.registration_thread = threading.Thread(
+                target=self._registration_worker,
+                name="PiRegistrationWorker", 
+                daemon=True
+            )
+            self.registration_thread.start()
+            
+            logger.info("✅ Pi heartbeat service started successfully")
+            logger.info(f"💓 Heartbeat interval: {self.heartbeat_interval}s")
+            logger.info(f"📝 Registration interval: {self.registration_interval}s")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to start Pi heartbeat service: {e}")
+            self.running = False
+    
+    def stop(self):
+        """Stop the Pi heartbeat service"""
+        try:
+            logger.info("🛑 Stopping Pi heartbeat service...")
+            self.running = False
+            
+            # Send final offline status
+            if self.server_url and self.device_id:
+                try:
+                    offline_status = {
+                        "device_id": self.device_id,
+                        "status": "offline",
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    requests.post(
+                        f"{self.server_url}/api/v1/raspberry/heartbeat",
+                        json=offline_status,
+                        timeout=10
+                    )
+                    logger.info("📤 Offline status sent")
+                except Exception as e:
+                    logger.warning(f"⚠️ Could not send offline status: {e}")
+            
+            # Wait for threads to finish
+            if self.heartbeat_thread and self.heartbeat_thread.is_alive():
+                self.heartbeat_thread.join(timeout=5)
+            
+            if self.registration_thread and self.registration_thread.is_alive():
+                self.registration_thread.join(timeout=5)
+            
+            logger.info("✅ Pi heartbeat service stopped")
+            
+        except Exception as e:
+            logger.error(f"❌ Error stopping Pi heartbeat service: {e}")
+
+# Initialize Pi Heartbeat Service
+pi_heartbeat_service = None
+try:
+    config = load_config()
+    pi_heartbeat_service = PiHeartbeatService(config)
+    pi_heartbeat_service.start()
+    logger.info("🔄 Pi heartbeat system enabled for plug-and-play discovery")
+except Exception as e:
+    logger.error(f"❌ Failed to initialize Pi heartbeat service: {e}")
+
 # Initialize Pi connectivity monitoring
 config = load_config()
 raspberry_pi_config = config.get("raspberry_pi", {})
