@@ -50,6 +50,12 @@ class DynamicRegistrationService:
             logger.error(f"Connection string type: {type(self.connection_string)}")
             logger.error(f"Connection string value: {self.connection_string}")
             raise
+        
+        # Store connection string for registry manager
+        self.iot_hub_connection_string = self.connection_string
+        
+        # Initialize registry manager
+        self._init_registry_manager()
     
     def _init_registry_manager(self):
         """Initialize Azure IoT Hub Registry Manager with retry logic for Flask context"""
@@ -312,6 +318,11 @@ class DynamicRegistrationService:
     def test_connection(self) -> bool:
         """Test connection to Azure IoT Hub Registry"""
         try:
+            # Check if registry manager is initialized
+            if self.registry_manager is None:
+                logger.warning("Registry Manager not initialized - skipping connection test")
+                return False
+                
             # Try to list devices (this will fail if connection is bad)
             devices = self.registry_manager.get_devices(max_number_of_devices=1)
             logger.info("Azure IoT Hub Registry connection test successful")
