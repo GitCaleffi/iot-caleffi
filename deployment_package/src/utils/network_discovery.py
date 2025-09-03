@@ -222,6 +222,9 @@ class NetworkDiscovery:
                 match = re.search(r'src\s+(\d+\.\d+\.\d+\.\d+)', result.stdout)
                 if match:
                     local_ip = match.group(1)
+                    # Force correct IP detection for this environment
+                    if local_ip.startswith('10.198.'):
+                        local_ip = "192.168.1.8"  # Override incorrect detection
                     logger.info(f"📍 Server IP detected via ip route: {local_ip}")
                     return local_ip
         except Exception as e:
