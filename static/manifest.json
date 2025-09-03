@@ -1,8 +1,0 @@
-{
-  "name": "Barcode Scanner",
-  "short_name": "Scanner",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#ffffff",
-  "description": "A barcode scanner application."
-}
