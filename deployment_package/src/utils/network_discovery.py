@@ -423,37 +423,28 @@ class NetworkDiscovery:
             if result.returncode == 0:
                 logger.debug(f"ARP command output:\n{result.stdout}")
                 
+                # Debug: Show what we're looking for
+                logger.info(f"🔍 Looking for Pi MAC prefixes: {self.RASPBERRY_PI_MAC_PREFIXES}")
+                
                 for line in result.stdout.splitlines():
+                    logger.debug(f"Processing ARP line: {line}")
                     try:
-                        # Different ARP output formats to handle:
-                        # 1. ? (192.168.1.1) at ab:cd:ef:12:34:56 [ether] on eth0
-                        # 2. 192.168.1.1 ether ab:cd:ef:12:34:56 C eth0
+                        # Use regex to extract IP and MAC from any ARP format
+                        import re
                         
-                        # Initialize variables
-                        ip = None
-                        mac = None
+                        # Extract IP address (any format)
+                        ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+                        # Extract MAC address (any format)
+                        mac_match = re.search(r'([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}', line, re.IGNORECASE)
                         
-                        # Try format 1: ? (192.168.1.1) at ab:cd:ef:12:34:56 [ether] on eth0
-                        if "(" in line and "at" in line and "[ether]" in line:
-                            parts = line.split()
-                            if len(parts) >= 4:
-                                ip = parts[1].strip("()")
-                                mac = parts[3].lower()
-                        # Try format 2: 192.168.1.1 ether ab:cd:ef:12:34:56 C eth0
-                        elif "ether" in line and not "(" in line:
-                            parts = line.split()
-                            if len(parts) >= 4:
-                                ip = parts[0]
-                                mac = parts[2].lower()
-                        
-                        # Skip if we didn't find both IP and MAC
-                        if not ip or not mac or mac in ["(incomplete)", "<incomplete>"]:
+                        if not ip_match or not mac_match:
                             continue
                             
-                        # Validate MAC address format
-                        import re
-                        if not re.match(r'^([0-9a-fA-F]{2}[:]){5}[0-9a-fA-F]{2}$', mac):
-                            logger.debug(f"Skipping invalid MAC address: {mac}")
+                        ip = ip_match.group(1)
+                        mac = mac_match.group(0).lower().replace('-', ':')
+                        
+                        # Skip incomplete entries
+                        if mac in ["(incomplete)", "<incomplete>"] or "incomplete" in line.lower():
                             continue
                             
                         # Get hostname if available
@@ -464,6 +455,7 @@ class NetworkDiscovery:
                         
                         # Check if MAC matches Pi prefixes
                         is_pi = any(mac.lower().startswith(prefix.lower()) for prefix in self.RASPBERRY_PI_MAC_PREFIXES)
+                        logger.debug(f"Checking MAC {mac} against Pi prefixes - Is Pi: {is_pi}")
                         
                         if is_pi:
                             device_info = {
@@ -477,6 +469,8 @@ class NetworkDiscovery:
                             devices.append(device_info)
                             logger.info(f"🍓 Raspberry Pi found via arp: {ip} ({mac}) - {hostname}")
                             found_any = True
+                        else:
+                            logger.debug(f"Device {ip} ({mac}) is not a Pi - MAC doesn't match known prefixes")
                             
                     except Exception as e:
                         logger.debug(f"Error processing ARP line '{line}': {str(e)}")
