@@ -2100,16 +2100,19 @@ def register_with_barcode(server_url, registration_barcode):
             logger.info(f"🔗 IoT Hub connection received")
             
             # Save config
-            config_data = {
+            config = load_config()
+            if not config:
+                config = {}
+            
+            # Update config with device registration info
+            config["device_registration"] = {
                 "device_id": device_id,
                 "server_url": server_url,
                 "connection_string": connection_string,
-                "registered": True,
                 "registration_time": datetime.now().isoformat()
             }
             
-            with open("/etc/pi_barcode_config.json", 'w') as f:
-                json.dump(config_data, f, indent=2)
+            save_config(config)
             
             return device_id, connection_string
         else:
@@ -2164,13 +2167,11 @@ def plug_and_play_mode():
         return False
 
 def load_pi_config():
-    """Load Pi configuration if exists"""
+    """Load Pi configuration from main config.json"""
     try:
-        config_file = "/etc/pi_barcode_config.json"
-        if os.path.exists(config_file):
-            with open(config_file, 'r') as f:
-                config = json.load(f)
-                return config
+        config = load_config()
+        if config and "device_registration" in config:
+            return config["device_registration"]
     except Exception as e:
         logger.warning(f"⚠️ Could not load Pi config: {e}")
     return None
