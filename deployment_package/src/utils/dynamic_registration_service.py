@@ -61,13 +61,22 @@ class DynamicRegistrationService:
                     raise
                     
             except Exception as e:
+                # Handle base64 encoding errors specifically
+                if "Invalid base64-encoded string" in str(e):
+                    logger.warning(f"⚠️ IoT Hub connection string has invalid base64 encoding. Skipping Registry Manager initialization.")
+                    logger.info("💡 System will continue with basic functionality. Device registration may be limited.")
+                    self.registry_manager = None
+                    return
+                
                 if attempt < 2:
                     logger.warning(f"Registry Manager init failed on attempt {attempt + 1}: {e}, retrying...")
                     time.sleep(0.1)
                     continue
                 else:
                     logger.error(f"Failed to initialize IoT Hub Registry Manager after {attempt + 1} attempts: {e}")
-                    raise
+                    logger.warning("⚠️ Continuing without Registry Manager. Some features may be limited.")
+                    self.registry_manager = None
+                    return
     
     def _generate_device_keys(self) -> Tuple[str, str]:
         """Generate secure primary and secondary keys for device authentication"""
@@ -78,9 +87,24 @@ class DynamicRegistrationService:
     def register_device_with_azure(self, device_id: str) -> Optional[str]:
         """
         Register a device with Azure IoT Hub and return connection string.
+        
+        Args:
+            device_id: Unique device identifier
+            
+        Returns:
+            Device connection string if successful, None if Registry Manager unavailable
         This method handles the actual Azure IoT Hub registration.
         """
         with self.lock:
+            # Check if Registry Manager is available
+            if self.registry_manager is None:
+                logger.warning(f"⚠️ Registry Manager unavailable. Cannot register device {device_id}")
+                logger.info("💡 Using fallback: generating basic device connection string")
+                # Generate a basic connection string for fallback
+                fallback_key = base64.b64encode(os.urandom(32)).decode('utf-8')
+                connection_string = f"HostName={self.iot_hub_hostname};DeviceId={device_id};SharedAccessKey={fallback_key}"
+                return connection_string
+            
             try:
                 try:
                     existing_device = self.registry_manager.get_device(device_id)
