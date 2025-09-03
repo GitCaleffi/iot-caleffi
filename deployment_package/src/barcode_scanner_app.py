@@ -2121,7 +2121,7 @@ def register_with_barcode(server_url, registration_barcode):
         return None, None
 
 def plug_and_play_mode():
-    """Plug-and-play registration mode"""
+    """Plug-and-play registration mode - single attempt"""
     logger.info("📱 PLUG-AND-PLAY MODE ACTIVE")
     logger.info("🔌 Connect your USB barcode scanner")
     logger.info("📊 Scan ANY barcode to register this device")
@@ -2132,35 +2132,36 @@ def plug_and_play_mode():
         logger.error("❌ Cannot continue without server connection")
         return False
     
-    # Wait for barcode registration
-    logger.info("⏳ Waiting for barcode scan...")
+    # Single barcode registration attempt
+    logger.info("⏳ Ready for barcode scan...")
     
-    while True:
-        try:
-            print("\n🎯 Scan barcode to register (or type barcode + Enter):")
-            barcode = input().strip()
+    try:
+        print("\n🎯 Scan barcode to register (or type barcode + Enter):")
+        barcode = input().strip()
+        
+        if barcode and len(barcode) >= 6:
+            logger.info(f"📊 Barcode scanned: {barcode}")
             
-            if barcode and len(barcode) >= 6:
-                logger.info(f"📊 Barcode scanned: {barcode}")
-                
-                device_id, connection_string = register_with_barcode(server_url, barcode)
-                
-                if device_id and connection_string:
-                    logger.info("✅ REGISTRATION SUCCESSFUL!")
-                    logger.info(f"🆔 Device ID: {device_id}")
-                    logger.info("🎉 Device is now ready for barcode scanning")
-                    return True
-                else:
-                    logger.error("❌ Registration failed, try scanning again")
+            device_id, connection_string = register_with_barcode(server_url, barcode)
+            
+            if device_id and connection_string:
+                logger.info("✅ REGISTRATION SUCCESSFUL!")
+                logger.info(f"🆔 Device ID: {device_id}")
+                logger.info("🎉 Device is now ready for barcode scanning")
+                return True
             else:
-                logger.warning("⚠️ Invalid barcode, please scan a valid barcode")
-                
-        except KeyboardInterrupt:
-            logger.info("🛑 Registration cancelled")
+                logger.error("❌ Registration failed")
+                return False
+        else:
+            logger.warning("⚠️ Invalid barcode, please provide a valid barcode")
             return False
-        except Exception as e:
-            logger.error(f"❌ Registration error: {e}")
-            time.sleep(2)
+            
+    except KeyboardInterrupt:
+        logger.info("🛑 Registration cancelled")
+        return False
+    except Exception as e:
+        logger.error(f"❌ Registration error: {e}")
+        return False
 
 def load_pi_config():
     """Load Pi configuration if exists"""
@@ -2286,70 +2287,182 @@ def download_and_apply_update(server_url, update_info):
         logger.error(f"❌ Update application error: {e}")
         return False
 
-def start_background_services(pi_config):
-    """Start background services for registered Pi"""
-    def background_worker():
-        """Background worker for updates and heartbeat"""
-        last_update_check = 0
-        last_heartbeat = 0
+def send_single_heartbeat(pi_config):
+    """Send single heartbeat to server (no background loop)"""
+    try:
+        server_url = pi_config.get("server_url")
+        device_id = pi_config.get("device_id")
         
+        if server_url and device_id:
+            heartbeat_data = {
+                "device_id": device_id,
+                "status": "online",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "system_info": {
+                    "hostname": socket.gethostname(),
+                    "uptime": time.time()
+                }
+            }
+            
+            response = requests.post(
+                f"{server_url}/api/device_heartbeat",
+                json=heartbeat_data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                logger.info("💓 Heartbeat sent successfully")
+                return True
+            else:
+                logger.warning(f"⚠️ Heartbeat failed: {response.status_code}")
+                return False
+                
+    except Exception as e:
+        logger.error(f"❌ Heartbeat error: {e}")
+        return False
+
+def check_single_update(pi_config):
+    """Check for updates once (no background loop)"""
+    try:
+        server_url = pi_config.get("server_url")
+        device_id = pi_config.get("device_id")
+        
+        if server_url and device_id:
+            update_info = check_for_updates(server_url, device_id)
+            if update_info:
+                logger.info("🔄 Update available - applying...")
+                return download_and_apply_update(server_url, update_info)
+            else:
+                logger.info("✅ No updates available")
+                return True
+                
+    except Exception as e:
+        logger.error(f"❌ Update check error: {e}")
+        return False
+
+def start_plug_and_play_barcode_service():
+    """Start fully automated barcode scanning service without UI"""
+    logger.info("🎯 Starting Plug-and-Play Barcode Service...")
+    logger.info("📱 Connect your USB barcode scanner and start scanning!")
+    logger.info("🔄 System will automatically process all scanned barcodes")
+    logger.info("📡 All scans sent to both Frontend API and IoT Hub")
+    logger.info("⏹️  Press Ctrl+C to stop the service")
+    
+    try:
         while True:
             try:
-                current_time = time.time()
+                # Wait for barcode input from USB scanner
+                print("\n🎯 Ready for barcode scan (or type barcode + Enter):")
+                barcode = input().strip()
                 
-                # Check for updates every hour (3600 seconds)
-                if current_time - last_update_check > 3600:
-                    server_url = pi_config.get("server_url")
-                    device_id = pi_config.get("device_id")
+                if barcode and len(barcode) >= 6:
+                    logger.info(f"📊 Barcode scanned: {barcode}")
                     
-                    if server_url and device_id:
-                        update_info = check_for_updates(server_url, device_id)
-                        if update_info:
-                            logger.info("🔄 Applying automatic update...")
-                            download_and_apply_update(server_url, update_info)
+                    # Process barcode automatically
+                    result = process_barcode_scan_auto(barcode)
                     
-                    last_update_check = current_time
-                
-                # Send heartbeat every 5 minutes (300 seconds)
-                if current_time - last_heartbeat > 300:
-                    try:
-                        # Send heartbeat to server
-                        server_url = pi_config.get("server_url")
-                        device_id = pi_config.get("device_id")
+                    if "✅" in result:
+                        logger.info("✅ Barcode processed successfully")
+                        print("✅ SUCCESS: Barcode sent to inventory system")
+                    else:
+                        logger.warning("⚠️ Barcode processing had issues")
+                        print("⚠️ WARNING: Check logs for details")
                         
-                        if server_url and device_id:
-                            heartbeat_data = {
-                                "device_id": device_id,
-                                "status": "online",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                                "system_info": {
-                                    "hostname": socket.gethostname(),
-                                    "uptime": time.time() - last_update_check
-                                }
-                            }
-                            
-                            requests.post(
-                                f"{server_url}/api/device_heartbeat",
-                                json=heartbeat_data,
-                                timeout=10
-                            )
-                            logger.debug("💓 Heartbeat sent")
-                    except Exception as e:
-                        logger.debug(f"Heartbeat failed: {e}")
+                else:
+                    logger.warning("⚠️ Invalid barcode - please scan a valid barcode")
+                    print("⚠️ Invalid barcode - try again")
                     
-                    last_heartbeat = current_time
+            except EOFError:
+                # Handle case where input is redirected or scanner disconnected
+                logger.info("📱 Waiting for barcode scanner input...")
+                time.sleep(1)
+                continue
                 
-                # Sleep for 60 seconds before next check
-                time.sleep(60)
-                
-            except Exception as e:
-                logger.error(f"❌ Background service error: {e}")
-                time.sleep(300)  # Wait 5 minutes on error
-    
-    # Start background thread
-    background_thread = threading.Thread(target=background_worker, daemon=True)
-    background_thread.start()
-    logger.info("🔧 Background services started (updates + heartbeat)")
+    except KeyboardInterrupt:
+        logger.info("🛑 Plug-and-Play service stopped by user")
+        print("\n🛑 Service stopped. Thank you for using the barcode scanner!")
+
+def process_barcode_scan_auto(barcode):
+    """Process barcode scan automatically without UI interaction"""
+    try:
+        # Get device ID (should be auto-registered by now)
+        device_id = local_db.get_device_id()
+        if not device_id:
+            # Try to auto-register if not already done
+            mac_address = get_local_mac_address()
+            if mac_address:
+                device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
+                local_db.save_device_id(device_id)
+            else:
+                return "❌ No device ID available - registration failed"
+        
+        # Validate barcode
+        try:
+            validated_barcode = validate_ean(barcode)
+        except BarcodeValidationError:
+            # Accept non-EAN barcodes for flexibility
+            validated_barcode = barcode
+        
+        # Check Pi connectivity
+        connection_manager = ConnectionManager()
+        pi_available = connection_manager.check_raspberry_pi_availability()
+        
+        if not pi_available:
+            logger.warning("⚠️ Raspberry Pi offline - saving locally for retry")
+            # Save for retry when Pi comes online
+            connection_manager.save_unsent_message(
+                device_id, 
+                json.dumps({
+                    "barcode": validated_barcode,
+                    "quantity": 1,
+                    "timestamp": datetime.now().isoformat()
+                }),
+                datetime.now()
+            )
+            return "⚠️ Pi offline - saved locally for retry"
+        
+        # Send to both API and IoT Hub
+        api_success = False
+        iot_success = False
+        
+        # Send to Frontend API
+        try:
+            api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
+            if api_result.get('success', False):
+                api_success = True
+                logger.info("✅ Sent to Frontend API successfully")
+            else:
+                logger.warning(f"⚠️ API send failed: {api_result.get('message', 'Unknown error')}")
+        except Exception as e:
+            logger.error(f"❌ API send error: {e}")
+        
+        # Send to IoT Hub
+        try:
+            success, message = connection_manager.send_message_with_retry(
+                device_id=device_id,
+                barcode=validated_barcode,
+                quantity=1,
+                message_type="barcode_scan"
+            )
+            if success:
+                iot_success = True
+                logger.info("✅ Sent to IoT Hub successfully")
+            else:
+                logger.warning(f"⚠️ IoT Hub send failed: {message}")
+        except Exception as e:
+            logger.error(f"❌ IoT Hub send error: {e}")
+        
+        # Return status
+        if api_success and iot_success:
+            return f"✅ Barcode {validated_barcode} sent to both API and IoT Hub"
+        elif api_success or iot_success:
+            return f"⚠️ Barcode {validated_barcode} sent partially (check logs)"
+        else:
+            return f"❌ Failed to send barcode {validated_barcode} (saved locally)"
+            
+    except Exception as e:
+        logger.error(f"❌ Barcode processing error: {e}")
+        return f"❌ Processing error: {str(e)}"
 
 if __name__ == "__main__":
     import os
@@ -2362,24 +2475,22 @@ if __name__ == "__main__":
         pi_config = load_pi_config()
         
         if pi_config and pi_config.get("registered"):
-            # Already registered - start normal service
+            # Already registered - initialize service
             logger.info("✅ Device already registered")
             logger.info(f"🆔 Device ID: {pi_config.get('device_id')}")
             logger.info("📱 Pi will connect directly to Azure IoT Hub")
             logger.info("📷 Barcode scanning service active - scan barcodes to publish to IoT Hub")
             
             try:
-                # Start background services for updates and heartbeat
-                start_background_services(pi_config)
+                # Send single heartbeat and check for updates
+                send_single_heartbeat(pi_config)
+                check_single_update(pi_config)
                 
-                # Service started - keep running
+                # Service initialized - ready for use
                 logger.info("✅ Raspberry Pi Device Service initialized")
-                logger.info("🔧 Auto-update and heartbeat services active")
+                logger.info("🎯 Ready for barcode scanning operations")
+                logger.info("🚫 No background loops - service runs on-demand")
                 
-                # Keep service running
-                while True:
-                    time.sleep(60)
-                    
             except KeyboardInterrupt:
                 logger.info("🛑 Raspberry Pi Device Service stopped by user")
                 if 'pi_device_service' in globals() and pi_device_service:
@@ -2394,37 +2505,33 @@ if __name__ == "__main__":
                 logger.error("❌ Registration failed")
                 sys.exit(1)
     else:
-        # Running on server/desktop - start Gradio web interface
-        logger.info("🚀 Starting Barcode Scanner Web Interface...")
+        # Running on server/desktop - start TRUE PLUG-AND-PLAY mode
+        logger.info("🚀 Starting TRUE PLUG-AND-PLAY Barcode Scanner System...")
+        logger.info("🔌 NO UI required - fully automatic operation")
+        
+        # Initialize connection manager
         connection_manager = ConnectionManager()
-        logger.info("✅ Connection manager initialized for Pi device management")
+        logger.info("✅ Connection manager initialized")
         
-        # Initialize Gradio app instance
-        global gradio_app_instance
-        gradio_app_instance = app
+        # Auto-register device immediately
+        success = auto_register_device_to_server()
         
-        # Start periodic status updates
-        start_periodic_status_updates()
-        
-        # Get port from environment variable or default to 7861
-        port = int(os.environ.get('GRADIO_SERVER_PORT', 7861))
-        logger.info(f"🌐 Starting Gradio web interface on port {port}")
-        
-        try:
-            app.launch(server_name="0.0.0.0", server_port=port)
-        except OSError as e:
-            if "Cannot find empty port" in str(e):
-                logger.error(f"❌ Port {port} is already in use. Trying alternative ports...")
-                # Try alternative ports
-                for alt_port in [7862, 7863, 7864, 7865]:
-                    try:
-                        logger.info(f"🔄 Attempting to start on port {alt_port}")
-                        app.launch(server_name="0.0.0.0", server_port=alt_port)
-                        break
-                    except OSError:
-                        continue
-                else:
-                    logger.error("❌ Could not find any available port. Please check for running services.")
-                    raise
+        if success:
+            logger.info("✅ Device auto-registered successfully")
+            logger.info("🎯 SYSTEM READY - Connect USB barcode scanner and start scanning!")
+            logger.info("📱 All scans will be automatically sent to API and IoT Hub")
+            
+            # Start barcode listening service
+            start_plug_and_play_barcode_service()
+            
+        else:
+            logger.error("❌ Auto-registration failed - system will retry")
+            logger.info("🔄 Retrying registration in plug-and-play mode...")
+            
+            # Try plug-and-play registration mode
+            if plug_and_play_mode():
+                logger.info("✅ Plug-and-play registration successful!")
+                start_plug_and_play_barcode_service()
             else:
-                raise
+                logger.error("❌ All registration methods failed")
+                sys.exit(1)

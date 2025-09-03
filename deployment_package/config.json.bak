@@ -1,0 +1,83 @@
+{
+  "iot_hub": {
+    "connection_string": "HostName=YourIoTHub.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=YOUR_ACTUAL_KEY_HERE",
+    "deviceId": "auto-generated-from-barcode"
+  },
+  "barcode_scanner": {
+    "scanner_type": "Handreader",
+    "scan_timeout": 5000
+  },
+  "api": {
+    "base_url": "https://api2.caleffionline.it/api/v1",
+    "timeout": 30
+  },
+  "web_server": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false
+  },
+  "database": {
+    "path": "barcode_scans.db"
+  },
+  "deployment": {
+    "mode": "commercial",
+    "auto_device_registration": true,
+    "device_prefix": "scanner"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "barcode_scanner.log"
+  },
+  "raspberry_pi": {
+    "dynamic_discovery": true,
+    "remote_connectivity_monitoring": true,
+    "auto_registration": true,
+    "server_urls": [
+      "https://iot.caleffionline.it",
+      "http://10.0.0.4:5000",
+      "http://192.168.1.1:5000"
+    ],
+    "auto_detected_ip": "192.168.1.18",
+    "last_detection": "2025-09-03T16:04:47.564418",
+    "status": "connected",
+    "connectivity_methods": {
+      "tcp": {
+        "ports": {
+          "22": true,
+          "5000": false,
+          "80": true
+        },
+        "any_port_open": true
+      },
+      "ping": {
+        "reachable": true,
+        "output": "PING 192.168.1.18 (192.168.1.18) 56(84) bytes of data.\n64 bytes from 192.168.1.18: icmp_seq=1 ttl=64 time=0.157 ms\n\n--- 192.168.1.18 ping statistics ---\n1 packets transmitted, 1 received, 0% packet loss, time 0ms\nrtt min/avg/max/mdev = 0.157/0.157/0.157/0.000 ms\n"
+      },
+      "http": {
+        "accessible": true,
+        "services": {
+          "http://192.168.1.18:5000": {
+            "accessible": false,
+            "error": "HTTPConnectionPool(host='192.168.1.18', port=5000): Max retries exceeded with url: / (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7b10c86fb730>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+          },
+          "http://192.168.1.18:80": {
+            "accessible": true,
+            "status_code": 200
+          },
+          "https://192.168.1.18:443": {
+            "accessible": false,
+            "error": "HTTPSConnectionPool(host='192.168.1.18', port=443): Max retries exceeded with url: / (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x7b10c7dacc40>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+          },
+          "http://192.168.1.18:8080": {
+            "accessible": false,
+            "error": "HTTPConnectionPool(host='192.168.1.18', port=8080): Max retries exceeded with url: / (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7b10c86fbb50>: Failed to establish a new connection: [Errno 111] Connection refused'))"
+          }
+        }
+      },
+      "ssh": {
+        "accessible": true,
+        "port": 22
+      }
+    }
+  }
+}

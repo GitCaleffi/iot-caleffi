@@ -308,17 +308,13 @@ class DynamicPiDiscovery:
             logger.error(f"Error sending notification: {e}")
             
     def _notify_barcode_scanner(self, device_ip: str, status: str):
-        """Notify the barcode scanner system about device changes"""
+        """Notify the barcode scanner system about device changes (no recursive calls)"""
         try:
-            # Import here to avoid circular imports
-            from barcode_scanner_app import refresh_pi_connection
-            
-            # Trigger immediate refresh
-            refresh_pi_connection()
-            logger.info(f"🔄 Barcode scanner notified of Pi {status}: {device_ip}")
+            # Just log the notification - avoid recursive calls to prevent infinite loops
+            logger.info(f"🔄 Pi device {status}: {device_ip} (notification logged)")
             
         except Exception as e:
-            logger.error(f"Error notifying barcode scanner: {e}")
+            logger.error(f"Error logging Pi notification: {e}")
             
     def get_current_devices(self) -> List[Dict]:
         """Get list of currently discovered Pi devices"""

@@ -1,0 +1,21 @@
+
+pyzbar
+pymongo
+
+azure-iot-device
+azure-iot-hub
+
+# Web framework
+Werkzeug
+Jinja2
+
+# HTTP requests
+requests
+
+# Utilities
+colorama
+fastapi
+uvicorn
+python-multipart
+tabulate
+opencv-python
