@@ -727,10 +727,18 @@ class NetworkDiscovery:
         # Check for forced detection first
         try:
             import json
-            with open('config.json', 'r') as f:
-                config = json.load(f)
+            config_paths = ['config.json', '../config.json', 'src/config.json']
+            config = None
             
-            if config.get('raspberry_pi', {}).get('force_detection'):
+            for config_path in config_paths:
+                try:
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    break
+                except FileNotFoundError:
+                    continue
+            
+            if config and config.get('raspberry_pi', {}).get('force_detection'):
                 # Use scan_ips list if available, otherwise use default IPs
                 scan_ips = config.get('raspberry_pi', {}).get('scan_ips', ["192.168.1.18"])
                 
