@@ -21,22 +21,34 @@ class DynamicRegistrationService:
     Registers devices dynamically based on barcode scans without manual intervention.
     """
     
-    def __init__(self, iot_hub_connection_string: str):
+    def __init__(self, config):
         """Initialize the dynamic registration service"""
-        self.iot_hub_connection_string = iot_hub_connection_string
-        self.registry_manager = None
+        self.config = config
         self.lock = threading.RLock()
-        self._init_registry_manager()
+        self.registry_manager = None
         
-        # Extract IoT Hub hostname for device connection strings
+        # Extract connection string and hostname
+        iot_hub_config = config.get("iot_hub", {})
+        self.connection_string = iot_hub_config.get("connection_string")
+        
+        # Handle case where connection_string might be passed directly
+        if isinstance(self.connection_string, dict):
+            logger.error("Connection string is a dict, expected string")
+            raise ValueError("IoT Hub connection string must be a string, not dict")
+        
+        if not self.connection_string:
+            raise ValueError("IoT Hub connection string not found in config")
+        
+        # Parse hostname from connection string
         try:
-            parts = dict(part.split('=', 1) for part in iot_hub_connection_string.split(';'))
+            parts = dict(part.split('=', 1) for part in self.connection_string.split(';'))
             self.iot_hub_hostname = parts.get('HostName')
             if not self.iot_hub_hostname:
-                raise ValueError("HostName not found in IoT Hub connection string")
-            logger.info(f"IoT Hub hostname: {self.iot_hub_hostname}")
+                raise ValueError("HostName not found in connection string")
         except Exception as e:
             logger.error(f"Error parsing IoT Hub connection string: {e}")
+            logger.error(f"Connection string type: {type(self.connection_string)}")
+            logger.error(f"Connection string value: {self.connection_string}")
             raise
     
     def _init_registry_manager(self):
