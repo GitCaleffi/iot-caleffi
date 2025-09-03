@@ -78,6 +78,7 @@
         "accessible": true,
         "port": 22
       }
-    }
+    },
+    "force_detection": true
   }
 }

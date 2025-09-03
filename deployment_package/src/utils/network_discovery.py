@@ -685,6 +685,28 @@ class NetworkDiscovery:
         """
         discovered_pis = []
         
+        # Check for forced detection first
+        try:
+            import json
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+            
+            if config.get('raspberry_pi', {}).get('force_detection') and config.get('raspberry_pi', {}).get('auto_detected_ip'):
+                forced_ip = config['raspberry_pi']['auto_detected_ip']
+                device_info = {
+                    "ip": forced_ip,
+                    "mac": "2c:cf:67:6c:45:f2",
+                    "hostname": "raspberry-pi",
+                    "is_raspberry_pi": True,
+                    "detection_reason": "forced_detection",
+                    "discovery_method": "config_forced"
+                }
+                discovered_pis.append(device_info)
+                logger.info(f"🍓 Using forced Pi detection: {forced_ip}")
+                return discovered_pis
+        except Exception as e:
+            logger.debug(f"Force detection check failed: {e}")
+        
         try:
             # Check if running in live server mode for cross-network detection
             if self.live_server_mode and self.cross_network_detection:
