@@ -1,13 +1,12 @@
 from flask import Flask, render_template, request, jsonify
 import json
 import logging
-import sys
-import os
-from datetime import datetime, timezone
-import threading
-import time
-import sqlite3
-from pathlib import Path
+from datetime import datetime
+from src.database.local_storage import LocalStorage
+from src.api.api_client import ApiClient
+from src.iot.hub_client import HubClient
+from src.utils.config import load_config
+from src.api.pi_registration_api import pi_api
 
 # Add src directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
@@ -105,6 +104,9 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = 'commercial-barcode-scanner-2025'
+
+# Register Pi API Blueprint
+app.register_blueprint(pi_api)
 
 # Global variables
 barcode_client = None
