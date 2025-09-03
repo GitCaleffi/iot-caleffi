@@ -40,6 +40,8 @@
     "auto_detected_ip": "192.168.1.18",
     "last_detection": "2025-09-03T16:04:47.567648",
     "status": "connected",
+    "force_detection": true,
+    "scan_ips": ["192.168.1.18", "192.168.1.100", "192.168.1.101", "10.198.0.18"],
     "connectivity_methods": {
       "tcp": {
         "ports": {
@@ -78,7 +80,6 @@
         "accessible": true,
         "port": 22
       }
-    },
-    "force_detection": true
+    }
   }
 }

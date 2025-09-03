@@ -692,9 +692,10 @@ class NetworkDiscovery:
                 config = json.load(f)
             
             if config.get('raspberry_pi', {}).get('force_detection'):
-                # Scan common Pi IPs instead of just one
-                common_pi_ips = ["192.168.1.18", "192.168.1.100", "192.168.1.101", "192.168.1.19"]
-                for ip in common_pi_ips:
+                # Use scan_ips list if available, otherwise use default IPs
+                scan_ips = config.get('raspberry_pi', {}).get('scan_ips', ["192.168.1.18"])
+                
+                for ip in scan_ips:
                     try:
                         import subprocess
                         result = subprocess.run(["ping", "-c", "1", "-W", "1", ip], 
