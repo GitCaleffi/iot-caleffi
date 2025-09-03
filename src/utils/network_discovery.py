@@ -48,19 +48,19 @@ class NetworkDiscovery:
         self._cache_duration = 30  # Cache for 30 seconds
         
         # Load configuration
-        self.config = self._load_config()
-        self.use_iot_hub = self.config.get('raspberry_pi', {}).get('use_iot_hub_detection', True)
-        self.detection_priority = self.config.get('raspberry_pi', {}).get('detection_priority', ['iot_hub', 'network_scan', 'static_ip'])
-        
-    def _load_config(self):
-        """Load configuration from config.json"""
         try:
-            config_path = Path(__file__).parent.parent.parent / 'config.json'
-            with open(config_path) as f:
-                return json.load(f)
+            from utils.config import load_config
+            self.config = load_config()
         except Exception as e:
             logger.error(f"Error loading config: {e}")
-            return {}
+            self.config = {}
+        
+        # Check if running in live server mode for cross-network detection
+        self.raspberry_pi_config = self.config.get("raspberry_pi", {})
+        self.live_server_mode = self.raspberry_pi_config.get("live_server_mode", False)
+        self.cross_network_detection = self.raspberry_pi_config.get("cross_network_detection", False)
+        self.use_iot_hub = self.raspberry_pi_config.get('use_iot_hub_detection', True)
+        self.detection_priority = self.raspberry_pi_config.get('detection_priority', ['iot_hub', 'network_scan', 'static_ip'])
     
     def get_local_subnet(self) -> Optional[str]:
         """Get the local subnet for scanning"""
@@ -686,6 +686,11 @@ class NetworkDiscovery:
         discovered_pis = []
         
         try:
+            # Check if running in live server mode for cross-network detection
+            if self.live_server_mode and self.cross_network_detection:
+                logger.info("🌐 Live server mode: Using cross-network detection")
+                return self._discover_devices_cross_network()
+            
             # Get server's own IP and MAC to exclude from Pi detection
             server_ip = self._get_server_ip()
             server_mac = self._get_local_mac_address()
@@ -747,6 +752,108 @@ class NetworkDiscovery:
             logger.error(f"Error during Pi discovery: {e}")
             
         return discovered_pis
+    
+    def _discover_devices_cross_network(self) -> List[Dict[str, str]]:
+        """
+        Cross-network Pi device discovery for live server environments
+        Uses known device registry and remote connectivity testing
+        """
+        discovered_pis = []
+        
+        try:
+            # Get known Pi devices from device registry
+            device_registry = self.raspberry_pi_config.get("device_registry", [])
+            
+            if not device_registry:
+                logger.warning("❌ No device registry found for cross-network detection")
+                return []
+            
+            logger.info(f"🌐 Testing {len(device_registry)} known Pi devices for cross-network connectivity")
+            
+            for device in device_registry:
+                ip = device.get("ip")
+                device_type = device.get("type", "unknown")
+                ports = device.get("ports", [22, 80, 5000])
+                description = device.get("description", "Pi device")
+                
+                if not ip:
+                    continue
+                
+                logger.info(f"🔍 Testing cross-network connectivity to {ip} ({description})")
+                
+                # Test multiple connectivity methods
+                connectivity_results = self._test_cross_network_connectivity(ip, ports)
+                
+                if connectivity_results["connected"]:
+                    pi_device = {
+                        'ip': ip,
+                        'mac': 'unknown',  # MAC not available in cross-network detection
+                        'hostname': description,
+                        'detection_method': 'cross_network',
+                        'services': connectivity_results.get("services", []),
+                        'connectivity': connectivity_results
+                    }
+                    discovered_pis.append(pi_device)
+                    logger.info(f"✅ Cross-network Pi CONNECTED: {ip} ({description})")
+                else:
+                    logger.warning(f"❌ Cross-network Pi NOT REACHABLE: {ip} ({description})")
+            
+            if discovered_pis:
+                logger.info(f"✅ Found {len(discovered_pis)} cross-network Pi device(s)")
+            else:
+                logger.info("❌ No cross-network Pi devices found")
+                
+        except Exception as e:
+            logger.error(f"Error during cross-network Pi discovery: {e}")
+        
+        return discovered_pis
+    
+    def _test_cross_network_connectivity(self, ip: str, ports: List[int]) -> Dict:
+        """Test connectivity to Pi device across networks using multiple methods"""
+        connectivity = {
+            'connected': False,
+            'methods': {},
+            'services': []
+        }
+        
+        # Test TCP port connectivity
+        tcp_results = {}
+        for port in ports:
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                result = sock.connect_ex((ip, port))
+                sock.close()
+                tcp_results[port] = (result == 0)
+                if result == 0:
+                    connectivity['services'].append(f"tcp:{port}")
+            except Exception as e:
+                tcp_results[port] = False
+        
+        connectivity['methods']['tcp'] = tcp_results
+        
+        # Test ICMP ping
+        try:
+            ping_result = subprocess.run(
+                ["ping", "-c", "1", "-W", "3", ip],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            ping_success = ping_result.returncode == 0
+            connectivity['methods']['ping'] = ping_success
+            if ping_success:
+                connectivity['services'].append("icmp")
+        except Exception as e:
+            connectivity['methods']['ping'] = False
+        
+        # Determine overall connectivity
+        connectivity['connected'] = (
+            any(tcp_results.values()) or 
+            connectivity['methods'].get('ping', False)
+        )
+        
+        return connectivity
     
     def discover_raspberry_pi_devices_with_nmap(self, use_nmap: bool = False) -> List[Dict[str, str]]:
         """
