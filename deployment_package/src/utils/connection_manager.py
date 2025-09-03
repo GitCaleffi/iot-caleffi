@@ -352,6 +352,17 @@ class ConnectionManager:
                     ip = device.get('ip')
                     if not ip:
                         continue
+                    
+                    # Bypass connectivity test for forced detection
+                    if device.get('discovery_method') == 'config_forced':
+                        device_data = {
+                            'ip': ip,
+                            'mac': device.get('mac', 'unknown'),
+                            'hostname': device.get('hostname', 'unknown')
+                        }
+                        logger.info(f"✅ Found responsive Pi (forced): {device_data}")
+                        responsive_pis.append(device_data)
+                        continue
                         
                     logger.debug(f"🔌 Testing connectivity to Pi at {ip}...")
                     if self._test_real_pi_connectivity(ip):
