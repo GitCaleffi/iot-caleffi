@@ -204,11 +204,53 @@ class NetworkDiscovery:
         return None
 
     def _get_server_ip(self) -> str:
-        """Get the actual server IP address using Python socket methods"""
+        """Get the actual server IP address using reliable methods"""
         import socket
+        import subprocess
+        import re
         
+        # Method 1: Use ip route to get the default interface IP (most reliable)
         try:
-            # Method 1: Use Python socket to connect to external IP
+            result = subprocess.run(
+                ["ip", "route", "get", "1.1.1.1"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                # Parse output like: "1.1.1.1 via 192.168.1.1 dev eno1 src 192.168.1.8"
+                match = re.search(r'src\s+(\d+\.\d+\.\d+\.\d+)', result.stdout)
+                if match:
+                    local_ip = match.group(1)
+                    logger.info(f"📍 Server IP detected via ip route: {local_ip}")
+                    return local_ip
+        except Exception as e:
+            logger.debug(f"ip route method failed: {e}")
+        
+        # Method 2: Use ip addr show to get interface IPs
+        try:
+            result = subprocess.run(
+                ["ip", "addr", "show"],
+                capture_output=True,
+                text=True,
+                timeout=3
+            )
+            if result.returncode == 0:
+                # Look for inet addresses that are not loopback
+                for line in result.stdout.splitlines():
+                    if 'inet ' in line and 'scope global' in line:
+                        match = re.search(r'inet\s+(\d+\.\d+\.\d+\.\d+)', line)
+                        if match:
+                            local_ip = match.group(1)
+                            if not local_ip.startswith('127.'):
+                                logger.info(f"📍 Server IP detected via ip addr: {local_ip}")
+                                return local_ip
+        except Exception as e:
+            logger.debug(f"ip addr method failed: {e}")
+        
+        # Method 3: Fallback to socket method
+        try:
+            # Use Python socket to connect to external IP
             with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
                 # Connect to Google DNS (doesn't actually send data)
                 s.connect(("8.8.8.8", 80))
