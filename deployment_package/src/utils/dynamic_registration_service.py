@@ -325,14 +325,16 @@ class DynamicRegistrationService:
 _dynamic_registration_service = None
 _service_lock = threading.Lock()
 
-def get_dynamic_registration_service(iot_hub_connection_string: str = None) -> Optional[DynamicRegistrationService]:
-    """Get global instance of dynamic registration service"""
+def get_dynamic_registration_service(iot_hub_connection_string: str = None) -> DynamicRegistrationService:
+    """Get or create the global dynamic registration service instance"""
     global _dynamic_registration_service
     
     with _service_lock:
         if _dynamic_registration_service is None and iot_hub_connection_string:
             try:
-                _dynamic_registration_service = DynamicRegistrationService(iot_hub_connection_string)
+                # Create config dict from connection string
+                config = {"iot_hub": {"connection_string": iot_hub_connection_string}}
+                _dynamic_registration_service = DynamicRegistrationService(config)
                 logger.info("Dynamic registration service initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize dynamic registration service: {e}")
