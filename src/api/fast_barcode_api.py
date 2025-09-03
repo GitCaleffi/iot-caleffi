@@ -35,7 +35,7 @@ app.add_middleware(
 
 # Global instances
 local_db = LocalStorage()
-connection_manager = get_connection_manager()
+connection_manager = ConnectionManager()
 registration_service = get_dynamic_registration_service()
 
 # Cache for API responses

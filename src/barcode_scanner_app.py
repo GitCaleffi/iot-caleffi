@@ -111,6 +111,8 @@ from utils.config import load_config, save_config
 from iot.hub_client import HubClient
 from database.local_storage import LocalStorage
 from api.api_client import ApiClient
+# FastBarcodeAPI is a separate FastAPI application - not imported here
+from api.pi_device_notification import create_pi_notification_endpoint
 from utils.dynamic_device_manager import device_manager
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.dynamic_device_id import generate_dynamic_device_id
@@ -234,12 +236,8 @@ def _initialize_iot_hub_connection(device_id):
             hub_client.send_message(json.dumps(confirmation_msg), device_id)
             logger.info("📡 Registration confirmation sent to IoT Hub")
             
-            # Start heartbeat to IoT Hub
-            threading.Thread(
-                target=_send_iot_hub_heartbeat,
-                args=(device_id, device_connection_string),
-                daemon=True
-            ).start()
+            # Send single heartbeat to IoT Hub (no background thread)
+            _send_iot_hub_heartbeat(device_id, device_connection_string)
             
         else:
             logger.error(f"❌ Could not get device connection string for {device_id}")
@@ -276,12 +274,9 @@ def _register_with_live_server(device_id, mac_address, local_ip):
                 if response.status_code == 200:
                     logger.info(f"✅ Device registered with live server: {url}")
                     
-                    # Start heartbeat thread to live server
-                    threading.Thread(
-                        target=send_heartbeat_to_server,
-                        args=(device_id, local_ip, url.replace('/api/pi-device-register', '/api/pi-device-heartbeat')),
-                        daemon=True
-                    ).start()
+                    # Send single heartbeat to live server (no background thread)
+                    heartbeat_url = url.replace('/api/pi-device-register', '/api/pi-device-heartbeat')
+                    send_heartbeat_to_server(device_id, local_ip, heartbeat_url)
                     
                     return True
                 else:
@@ -299,27 +294,23 @@ def _register_with_live_server(device_id, mac_address, local_ip):
         return False
 
 def _send_iot_hub_heartbeat(device_id, device_connection_string):
-    """Send periodic heartbeat to IoT Hub"""
-    while True:
-        try:
-            hub_client = HubClient(device_connection_string)
-            
-            heartbeat_msg = {
-                "deviceId": device_id,
-                "status": "online",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "messageType": "heartbeat"
-            }
-            
-            hub_client.send_message(json.dumps(heartbeat_msg), device_id)
-            logger.debug(f"💓 IoT Hub heartbeat sent for {device_id}")
-            
-        except Exception as e:
-            logger.warning(f"⚠️ IoT Hub heartbeat error: {e}")
-            
-        # Wait 60 seconds before next heartbeat
-        time.sleep(60)
-
+    """Send single heartbeat to IoT Hub (no loop)"""
+    try:
+        hub_client = HubClient(device_connection_string)
+        
+        # Send heartbeat message
+        heartbeat_message = {
+            "deviceId": device_id,
+            "messageType": "heartbeat",
+            "timestamp": datetime.now().isoformat(),
+            "status": "active"
+        }
+        
+        hub_client.send_message(heartbeat_message)
+        logger.info(f"💓 Heartbeat sent to IoT Hub for device: {device_id}")
+        
+    except Exception as e:
+        logger.error(f"Heartbeat error: {e}")
 
 def is_raspberry_pi():
     """Check if the current system is a Raspberry Pi using multiple methods."""
@@ -661,81 +652,64 @@ class RaspberryPiDeviceService:
                 logger.info("📡 Registration confirmation sent to IoT Hub")
             else:
                 logger.warning("⚠️ Failed to send registration confirmation")
-                
         except Exception as e:
-            logger.error(f"Registration confirmation failed: {e}")
+            logger.warning(f"Registration confirmation error: {e}")
     
     def _start_heartbeat_service(self):
-        """Start background heartbeat service to IoT Hub"""
-        def heartbeat_worker():
-            while self.running:
-                try:
-                    if self.hub_client and self.network_connected:
-                        heartbeat_payload = {
-                            "deviceId": self.device_id,
-                            "messageType": "heartbeat",
-                            "status": "online",
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                            "networkInfo": self._get_network_info()
-                        }
-                        
-                        self.hub_client.send_message(json.dumps(heartbeat_payload), self.device_id)
-                        logger.debug(f"💓 Heartbeat sent to IoT Hub")
-                    
-                    # Wait 60 seconds before next heartbeat
-                    time.sleep(60)
-                    
-                except Exception as e:
-                    logger.warning(f"Heartbeat error: {e}")
-                    time.sleep(60)
+        """Send single heartbeat (no background service)"""
+        try:
+            if self.hub_client and self.network_connected:
+                heartbeat_payload = {
+                    "deviceId": self.device_id,
+                    "messageType": "heartbeat",
+                    "status": "online",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "networkInfo": self._get_network_info()
+                }
+                
+                self.hub_client.send_message(json.dumps(heartbeat_payload), self.device_id)
+                logger.info(f"💓 Single heartbeat sent to IoT Hub for device: {self.device_id}")
+                
+        except Exception as e:
+            logger.warning(f"Heartbeat error: {e}")
         
-        self.heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
-        self.heartbeat_thread.start()
-        logger.info("💓 Heartbeat service started (60s interval)")
+        logger.info("💓 Heartbeat service disabled (no background threads)")
     
     def start_barcode_scanning_service(self):
-        """Start the barcode scanning service"""
+        """Start the barcode scanning service (no background threads)"""
         try:
             logger.info("📱 Starting barcode scanning service...")
             self.running = True
             
-            # Start barcode scanner input thread
-            self.scanner_thread = threading.Thread(target=self._barcode_scanner_worker, daemon=True)
-            self.scanner_thread.start()
-            
-            # Start network monitoring thread
-            self.network_monitor_thread = threading.Thread(target=self._network_monitor_worker, daemon=True)
-            self.network_monitor_thread.start()
+            # Perform single network check instead of background monitoring
+            self._network_monitor_worker()
             
             logger.info("✅ Barcode scanning service started")
             logger.info("📱 Ready to scan barcodes - data will be sent to Azure IoT Hub")
+            logger.info("🚫 Background threads disabled for stability")
             
         except Exception as e:
             logger.error(f"Failed to start barcode scanning service: {e}")
     
     def _network_monitor_worker(self):
-        """Background worker to monitor network connectivity"""
-        while self.running:
-            try:
-                # Check network connectivity every 30 seconds
-                previous_status = self.network_connected
-                self._check_network_connectivity()
-                
-                # If network was restored, try to reconnect to IoT Hub
-                if not previous_status and self.network_connected:
-                    logger.info("🌐 Network connectivity restored - reconnecting to IoT Hub")
-                    if not self.hub_client:
-                        self._register_with_iot_hub()
-                
-                # If network was lost, log the status
-                elif previous_status and not self.network_connected:
-                    logger.warning("⚠️ Network connectivity lost - barcodes will be stored locally")
-                
-                time.sleep(30)  # Check every 30 seconds
-                
-            except Exception as e:
-                logger.error(f"Network monitoring error: {e}")
-                time.sleep(30)
+        """Single network connectivity check (no background loop)"""
+        try:
+            # Check network connectivity once
+            previous_status = self.network_connected
+            self._check_network_connectivity()
+            
+            # If network was restored, try to reconnect to IoT Hub
+            if not previous_status and self.network_connected:
+                logger.info("🌐 Network connectivity restored - reconnecting to IoT Hub")
+                if not self.hub_client:
+                    self._register_with_iot_hub()
+            
+            # If network was lost, log the status
+            elif previous_status and not self.network_connected:
+                logger.warning("⚠️ Network connectivity lost - barcodes will be stored locally")
+            
+        except Exception as e:
+            logger.error(f"Network monitoring error: {e}")
     
     def stop(self):
         """Stop the barcode scanning service"""
@@ -768,38 +742,73 @@ def is_scanner_connected():
         return True
 
 def get_primary_raspberry_pi_ip():
-    """Actually discover Raspberry Pi devices on network."""
+    """
+    Get the primary Raspberry Pi IP address using dynamic discovery.
+    Returns the IP of the first Pi device found with web services available.
+    
+    Returns:
+        str: IP address of primary Pi device, or None if not found
+    """
     try:
-        logger.info("Starting network discovery for Raspberry Pi devices...")
-        
-        # First try known/configured IP
         config = load_config()
-        pi_config = config.get('raspberry_pi', {}) if config else {}
-        known_ip = pi_config.get('auto_detected_ip')
+        raspberry_pi_config = config.get("raspberry_pi", {})
         
-        if known_ip and known_ip != "127.0.0.1":
-            # Test the known IP first
-            discovery = NetworkDiscovery()
-            if discovery.test_raspberry_pi_connection(known_ip, 22, timeout=3):
-                logger.info(f"Known Pi IP {known_ip} is reachable")
-                return known_ip
+        # Check if dynamic discovery is enabled
+        if raspberry_pi_config.get("dynamic_discovery", False):
+            # Use dynamic discovery system
+            from utils.dynamic_pi_discovery import DynamicPiDiscovery
+            
+            dynamic_discovery = DynamicPiDiscovery(config)
+            current_devices = dynamic_discovery.get_current_devices()
+            
+            if current_devices:
+                # Return first device with web services
+                for device in current_devices:
+                    if 'web' in device.get('services', []):
+                        logger.info(f"🔍 Dynamic discovery found Pi with web service: {device['ip']}")
+                        return device['ip']
+                
+                # Fallback to first device
+                first_device = current_devices[0]
+                logger.info(f"🔍 Dynamic discovery found Pi: {first_device['ip']}")
+                return first_device['ip']
+            
+            # Force a scan if no devices found
+            logger.info("🔍 No devices found, forcing scan...")
+            scan_results = dynamic_discovery.force_scan()
+            if scan_results:
+                first_device = scan_results[0]
+                logger.info(f"🔍 Force scan found Pi: {first_device['ip']}")
+                return first_device['ip']
         
-        # Fall back to network discovery
+        # Check for auto-detected IP from previous discoveries
+        auto_detected_ip = raspberry_pi_config.get("auto_detected_ip")
+        if auto_detected_ip:
+            logger.info(f"📍 Using auto-detected Pi IP: {auto_detected_ip}")
+            return auto_detected_ip
+        
+        # Fallback to manual IP if configured
+        if raspberry_pi_config.get("use_manual_ip", False):
+            manual_ip = raspberry_pi_config.get("manual_ip")
+            if manual_ip:
+                logger.info(f"📍 Using manual Pi IP from config: {manual_ip}")
+                return manual_ip
+        
+        # Final fallback to network discovery
+        from utils.network_discovery import NetworkDiscovery
         discovery = NetworkDiscovery()
-        devices = discovery.discover_raspberry_pi_devices(use_nmap=False)
+        devices = discovery.discover_raspberry_pi_devices()
         
         if devices:
-            # Return the first reachable Pi
-            for device in devices:
-                if device.get('is_raspberry_pi'):
-                    logger.info(f"Discovered Pi at {device['ip']}")
-                    return device['ip']
+            primary_device = devices[0]
+            logger.info(f"✅ Network discovery found Pi: {primary_device['ip']}")
+            return primary_device['ip']
         
-        # Final fallback to known IP
-        return "192.168.1.18"
+        logger.warning("❌ No Pi devices found via any discovery method")
+        return None
         
     except Exception as e:
-        logger.error(f"Pi discovery error: {e}")
+        logger.error(f"Error discovering Pi devices: {e}")
         return None
 
 
@@ -807,12 +816,11 @@ def get_primary_raspberry_pi_ip():
 # PI CONNECTION MANAGEMENT
 # ============================================================================
 
-# Global variable to track Pi connection status
+# Global variable to track Pi connection status (no caching)
 _pi_connection_status = {
     'connected': False,
     'ip': None,
-    'last_check': None,
-    'cache_duration': 30  # seconds
+    'last_check': None
 }
 
 
@@ -1973,6 +1981,32 @@ logger.info("📱 System configured for Azure IoT Hub inventory tracking")
 # System initialization complete
 logger.info("✅ System initialization complete")
 
+# Initialize Pi connectivity monitoring
+config = load_config()
+raspberry_pi_config = config.get("raspberry_pi", {})
+
+# Start dynamic discovery for local network scanning
+if raspberry_pi_config.get("dynamic_discovery", False):
+    try:
+        from utils.dynamic_pi_discovery import DynamicPiDiscovery
+        global dynamic_pi_discovery
+        dynamic_pi_discovery = DynamicPiDiscovery(config)
+        dynamic_pi_discovery.start_discovery()
+        logger.info("🔍 Dynamic Pi discovery system started")
+    except Exception as e:
+        logger.error(f"Failed to start dynamic Pi discovery: {e}")
+
+# Start remote connectivity monitoring for cross-network detection
+if raspberry_pi_config.get("remote_connectivity_monitoring", False):
+    try:
+        from utils.remote_pi_connectivity import RemotePiConnectivity
+        global remote_pi_connectivity
+        remote_pi_connectivity = RemotePiConnectivity(config)
+        remote_pi_connectivity.start_monitoring()
+        logger.info("🌐 Remote Pi connectivity monitoring started")
+    except Exception as e:
+        logger.error(f"Failed to start remote Pi connectivity monitoring: {e}")
+
 # Global variable for Gradio app instance
 
 
@@ -1991,20 +2025,12 @@ def update_pi_status_display():
             logger.error(f"Error updating Pi status display: {e}")
 
 def start_periodic_status_updates():
-    """Start background thread for periodic status updates"""
-    def status_update_loop():
-        while True:
-            try:
-                update_pi_status_display()
-                time.sleep(10)  # Update every 10 seconds
-            except Exception as e:
-                logger.error(f"Error in status update loop: {e}")
-                time.sleep(30)  # Wait longer on error
-    
-    # Start background thread for periodic updates
-    status_update_thread = threading.Thread(target=status_update_loop, daemon=True)
-    status_update_thread.start()
-    logger.info("🔄 Periodic status updates started (every 10 seconds)")
+    """Single status update (no background thread)"""
+    try:
+        update_pi_status_display()
+        logger.info("📊 Single status update completed")
+    except Exception as e:
+        logger.error(f"Status update error: {e}")
 
 if __name__ == "__main__":
     import os
@@ -2016,9 +2042,9 @@ if __name__ == "__main__":
         logger.info("📷 Barcode scanning service active - scan barcodes to publish to IoT Hub")
         
         try:
-            # Keep the service running
-            while True:
-                time.sleep(1)
+            # Service started - no infinite loop
+            logger.info("✅ Raspberry Pi Device Service initialized")
+            logger.info("🚫 Background loops disabled for stability")
         except KeyboardInterrupt:
             logger.info("🛑 Raspberry Pi Device Service stopped by user")
             if pi_device_service:
