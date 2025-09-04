@@ -130,30 +130,47 @@ class ConnectionManager:
             if result == 0:
                 logger.debug("Method 1 SUCCESS - Basic internet connected")
                 
-                # Method 1.5: Test IoT Hub connectivity specifically
-                logger.debug("Testing IoT Hub connectivity...")
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as iot_sock:
-                        iot_sock.settimeout(3)
-                        iot_result = iot_sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
-                    
-                    if iot_result == 0:
-                        logger.debug("IoT Hub connectivity SUCCESS")
-                        self.is_connected_to_internet = True
-                        self.last_connection_check = current_time
-                        # Set LED to green for internet connected
-                        if hasattr(self, 'led_manager'):
-                            self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
-                        return True
-                    else:
-                        logger.warning(f"⚠️ IoT Hub unreachable - connection error {iot_result}")
-                        # Continue to other methods
-                        
-                except Exception as iot_e:
-                    logger.warning(f"⚠️ IoT Hub test failed: {iot_e}")
-                    # Continue to other methods
+                # Method 1.5: Test IoT Hub connectivity specifically with multiple attempts
+                logger.debug("Testing IoT Hub connectivity with stability check...")
+                iot_hub_stable = True
+                iot_hub_attempts = 3
+                iot_hub_failures = 0
                 
-            logger.debug("Method 1 FAILED or IoT Hub unreachable - Trying Method 2")
+                for attempt in range(iot_hub_attempts):
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as iot_sock:
+                            iot_sock.settimeout(2)  # Very short timeout to detect instability
+                            iot_result = iot_sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
+                        
+                        if iot_result != 0:
+                            iot_hub_failures += 1
+                            logger.debug(f"IoT Hub attempt {attempt+1} failed with error {iot_result}")
+                        else:
+                            logger.debug(f"IoT Hub attempt {attempt+1} succeeded")
+                            
+                    except Exception as iot_e:
+                        iot_hub_failures += 1
+                        logger.debug(f"IoT Hub attempt {attempt+1} exception: {iot_e}")
+                
+                # If more than 1 failure out of 3 attempts, consider IoT Hub unstable
+                if iot_hub_failures > 1:
+                    logger.warning(f"⚠️ IoT Hub unstable - {iot_hub_failures}/{iot_hub_attempts} attempts failed")
+                    iot_hub_stable = False
+                else:
+                    logger.debug(f"IoT Hub stable - {iot_hub_failures}/{iot_hub_attempts} attempts failed")
+                
+                if iot_hub_stable:
+                    self.is_connected_to_internet = True
+                    self.last_connection_check = current_time
+                    # Set LED to green for internet connected
+                    if hasattr(self, 'led_manager'):
+                        self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
+                    return True
+                else:
+                    logger.warning("⚠️ IoT Hub connectivity issues detected - marking as disconnected")
+                    # Continue to other methods or fail
+                        
+            logger.debug("Method 1 FAILED or IoT Hub unstable - Trying Method 2")
             
             # Method 2: HTTP request to reliable endpoint
             logger.debug("Trying Method 2: HTTP request to Google")
