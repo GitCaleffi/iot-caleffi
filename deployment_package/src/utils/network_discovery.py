@@ -410,15 +410,29 @@ class NetworkDiscovery:
         devices = []
         found_any = False
         
-        # Method 1: Try arp command (most reliable)
-        try:
-            logger.info("🔍 Running 'arp -a' command to discover local devices...")
-            result = subprocess.run(
-                ["arp", "-a", "-n"],  # -n for numeric output (faster, no DNS lookups)
-                capture_output=True, 
-                text=True, 
-                timeout=10
-            )
+        # Method 1: Try arp command (most reliable) - try multiple paths
+        arp_paths = ["/usr/sbin/arp", "/sbin/arp", "arp"]
+        arp_success = False
+        
+        for arp_path in arp_paths:
+            try:
+                logger.info(f"🔍 Running '{arp_path} -a' command to discover local devices...")
+                result = subprocess.run(
+                    [arp_path, "-a", "-n"],  # -n for numeric output (faster, no DNS lookups)
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+                arp_success = True
+                break
+            except FileNotFoundError:
+                logger.debug(f"ARP command not found at {arp_path}, trying next path...")
+                continue
+            except Exception as e:
+                logger.debug(f"ARP command failed at {arp_path}: {e}")
+                continue
+        
+        if arp_success:
             
             if result.returncode == 0:
                 logger.debug(f"ARP command output:\n{result.stdout}")
@@ -481,13 +495,12 @@ class NetworkDiscovery:
                     logger.info(f"✅ Found {len(devices)} potential Raspberry Pi devices via ARP")
                 else:
                     logger.warning("⚠️ No Raspberry Pi devices found via ARP scan")
+        else:
+            logger.warning("⚠️ ARP command not found in any standard location")
                     
-        except Exception as e:
-            logger.error(f"Error during ARP discovery: {str(e)}", exc_info=True)
-            if 'result' in locals():
-                logger.debug(f"ARP command output: {getattr(result, 'stderr', 'No stderr')}")
-            else:
-                logger.debug("ARP command failed before producing any output")
+        # Handle any ARP-related exceptions
+        if not arp_success:
+            logger.debug("ARP discovery failed - proceeding to fallback methods")
         
         # Method 2: Fallback to ip neighbor if arp didn't work
         if not devices:
