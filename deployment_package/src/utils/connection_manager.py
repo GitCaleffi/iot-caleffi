@@ -128,15 +128,32 @@ class ConnectionManager:
                 result = sock.connect_ex(("8.8.8.8", 53))  # DNS port
                 
             if result == 0:
-                logger.debug("Method 1 SUCCESS - Internet connected via socket")
-                self.is_connected_to_internet = True
-                self.last_connection_check = current_time
-                # Set LED to green for internet connected
-                if hasattr(self, 'led_manager'):
-                    self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
-                return True
+                logger.debug("Method 1 SUCCESS - Basic internet connected")
                 
-            logger.debug("Method 1 FAILED - Trying Method 2")
+                # Method 1.5: Test IoT Hub connectivity specifically
+                logger.debug("Testing IoT Hub connectivity...")
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as iot_sock:
+                        iot_sock.settimeout(3)
+                        iot_result = iot_sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
+                    
+                    if iot_result == 0:
+                        logger.debug("IoT Hub connectivity SUCCESS")
+                        self.is_connected_to_internet = True
+                        self.last_connection_check = current_time
+                        # Set LED to green for internet connected
+                        if hasattr(self, 'led_manager'):
+                            self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
+                        return True
+                    else:
+                        logger.warning(f"⚠️ IoT Hub unreachable - connection error {iot_result}")
+                        # Continue to other methods
+                        
+                except Exception as iot_e:
+                    logger.warning(f"⚠️ IoT Hub test failed: {iot_e}")
+                    # Continue to other methods
+                
+            logger.debug("Method 1 FAILED or IoT Hub unreachable - Trying Method 2")
             
             # Method 2: HTTP request to reliable endpoint
             logger.debug("Trying Method 2: HTTP request to Google")
