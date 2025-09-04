@@ -1068,26 +1068,7 @@ def confirm_registration(registration_token, device_id):
     logger.info("🔒 This is REGISTRATION ONLY operation - no barcode scans or inventory changes")
     logger.info("🔒 REGISTRATION_IN_PROGRESS flag set to TRUE - blocking all quantity updates")
     
-    # Check Raspberry Pi connection first
-    from utils.connection_manager import ConnectionManager
-    connection_manager =  ConnectionManager()
-    pi_available = connection_manager.check_raspberry_pi_availability()
-    
-    if not pi_available:
-        logger.warning("Device registration blocked: Raspberry Pi not connected")
-        # Clear registration flag on error
-        with registration_lock:
-            REGISTRATION_IN_PROGRESS = False
-        led_controller.blink_led("red")
-        return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
-
-**Device ID:** {device_id}
-**Status:** Registration cancelled - Pi not reachable
-
-Please ensure the Raspberry Pi device is connected and reachable on the network before registration.
-
-🔴 Red LED indicates Pi connection failure"""
-    # On live server, we don't want to check actual Pi connectivity
+    # For live servers, skip Pi detection and proceed with registration
     
     # 1. First check Raspberry Pi connection before proceeding
     # connection_manager =  ConnectionManager()
