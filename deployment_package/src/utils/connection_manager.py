@@ -11,6 +11,7 @@ from iot.hub_client import HubClient
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.config import load_config
 from utils.network_discovery import NetworkDiscovery
+from utils.led_status_manager import LEDStatusManager
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,39 @@ class ConnectionManager:
         
         # Initialize dynamic registration service for IoT Hub Pi detection
         self.dynamic_registration_service = None
+        
+        # Initialize LED status manager
+        try:
+            # Check if we're on a Raspberry Pi first
+            import platform
+            import os
+            
+            # Check multiple indicators for Raspberry Pi
+            is_pi = (
+                os.path.exists('/proc/device-tree/model') and 
+                'raspberry pi' in open('/proc/device-tree/model', 'r').read().lower()
+            ) or (
+                'arm' in platform.machine().lower() and 
+                os.path.exists('/sys/class/gpio')
+            )
+            
+            if is_pi:
+                # Only try to import GPIO on actual Raspberry Pi
+                import RPi.GPIO as GPIO
+                self.led_manager = LEDStatusManager(gpio_available=True)
+                logger.info("✅ LED status manager initialized with GPIO support")
+            else:
+                self.led_manager = LEDStatusManager(gpio_available=False)
+                logger.info("ℹ️ LED status manager initialized in simulation mode (no GPIO)")
+        except Exception as e:
+            self.led_manager = LEDStatusManager(gpio_available=False)
+            logger.info(f"ℹ️ LED status manager initialized in simulation mode: {e}")
+        
+        # Start continuous internet monitoring
+        self.internet_monitor_running = True
+        self.internet_monitor_thread = threading.Thread(target=self._continuous_internet_monitor, daemon=True)
+        self.internet_monitor_thread.start()
+        logger.info("🔄 Continuous internet monitoring started")
         self._initialize_registration_service()
         
         # Start background retry worker
@@ -72,6 +106,9 @@ class ConnectionManager:
             
         logger.debug("Performing fresh internet connectivity check...")
         
+        # Store previous state to detect changes
+        previous_internet_state = self.is_connected_to_internet
+        
         try:
             # Method 1: Python socket connection (works on live servers)
             import socket
@@ -85,6 +122,9 @@ class ConnectionManager:
                 logger.debug("Method 1 SUCCESS - Internet connected via socket")
                 self.is_connected_to_internet = True
                 self.last_connection_check = current_time
+                # Set LED to green for internet connected
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
                 return True
                 
             logger.debug("Method 1 FAILED - Trying Method 2")
@@ -97,6 +137,9 @@ class ConnectionManager:
                 logger.debug("Method 2 SUCCESS - Internet connected via HTTP")
                 self.is_connected_to_internet = True
                 self.last_connection_check = current_time
+                # Set LED to green for internet connected
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
                 return True
             except Exception as http_e:
                 logger.debug(f"Method 2 FAILED: {http_e}")
@@ -113,11 +156,22 @@ class ConnectionManager:
                 logger.debug("Method 3 SUCCESS - Internet connected via ping")
                 self.is_connected_to_internet = True
                 self.last_connection_check = current_time
+                # Set LED to green for internet connected
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
                 return True
             
             logger.debug("All methods FAILED - No internet connectivity")
             self.is_connected_to_internet = False
             self.last_connection_check = current_time
+            # Set LED to red blinking for no internet
+            if hasattr(self, 'led_manager'):
+                self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+            
+            # Check if internet just went down (state change from connected to disconnected)
+            if previous_internet_state and not self.is_connected_to_internet:
+                self.handle_internet_disconnection()
+            
             return False
             
         except Exception as e:
@@ -126,7 +180,84 @@ class ConnectionManager:
             logger.debug(f"Exception traceback: {traceback.format_exc()}")
             self.is_connected_to_internet = False
             self.last_connection_check = current_time
+            # Set LED to red blinking for connection error
+            if hasattr(self, 'led_manager'):
+                self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+            
+            # Check if internet just went down (state change from connected to disconnected)
+            if previous_internet_state and not self.is_connected_to_internet:
+                self.handle_internet_disconnection()
+            
             return False
+    
+    def _continuous_internet_monitor(self) -> None:
+        """
+        Continuously monitor internet connectivity in background thread
+        Updates LED status and triggers disconnection handler when needed
+        """
+        logger.info("🔄 Starting continuous internet connectivity monitoring...")
+        
+        while self.internet_monitor_running:
+            try:
+                # Force fresh check by resetting cache
+                self.last_connection_check = 0
+                
+                # Check internet connectivity (this will trigger LED updates)
+                current_status = self.check_internet_connectivity()
+                
+                logger.debug(f"🔍 Internet monitor check: {current_status} | LED: {self.led_manager.current_status}")
+                
+                # Sleep for 3 seconds before next check (faster for testing)
+                time.sleep(3)
+                
+            except Exception as e:
+                logger.error(f"Error in internet monitoring thread: {e}")
+                time.sleep(5)  # Wait shorter on error
+    
+    def stop_monitoring(self) -> None:
+        """Stop the continuous internet monitoring"""
+        self.internet_monitor_running = False
+        if hasattr(self, 'internet_monitor_thread'):
+            self.internet_monitor_thread.join(timeout=2)
+        logger.info("🛑 Internet monitoring stopped")
+    
+    def handle_internet_disconnection(self, device_id: str = None) -> None:
+        """
+        Handle internet disconnection events:
+        1. Send alert message to queue for later delivery
+        2. Blink red LED to indicate no internet
+        3. Log the disconnection event
+        """
+        try:
+            # Generate device ID if not provided
+            if not device_id:
+                from utils.dynamic_device_id import generate_dynamic_device_id
+                device_id = generate_dynamic_device_id()
+            
+            # Create alert message for internet disconnection
+            alert_message = {
+                'device_id': device_id,
+                'alert_type': 'internet_disconnected',
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'message': 'Internet connection lost - device offline'
+            }
+            
+            # Queue the alert message for later delivery
+            logger.warning("🔴 Internet disconnected - queuing alert message")
+            self.local_db.store_unsent_message(
+                device_id=device_id,
+                barcode="INTERNET_ALERT",
+                quantity=1,
+                additional_data=alert_message
+            )
+            
+            # Set LED to red blinking
+            if hasattr(self, 'led_manager'):
+                self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+                logger.info("🔴 Red LED blinking - Internet connection lost")
+            
+        except Exception as e:
+            logger.error(f"Error handling internet disconnection: {e}")
     
     def check_iot_hub_connectivity(self, device_id: str = None) -> bool:
         """
