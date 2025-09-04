@@ -3092,14 +3092,14 @@ def start_plug_and_play_barcode_service():
     try:
         while True:
             try:
-                # Wait for barcode input from USB scanner
+         
                 print("\n🎯 Ready for barcode scan (or type barcode + Enter):")
                 barcode = input().strip()
                 
                 if barcode and len(barcode) >= 6:
                     logger.info(f"📊 Barcode scanned: {barcode}")
                     
-                    # Process barcode automatically
+
                     result = process_barcode_scan_auto(barcode)
                     
                     if "✅" in result:
@@ -3114,7 +3114,7 @@ def start_plug_and_play_barcode_service():
                     print("⚠️ Invalid barcode - try again")
                     
             except EOFError:
-                # Handle case where input is redirected or scanner disconnected
+            
                 logger.info("📱 Waiting for barcode scanner input...")
                 time.sleep(1)
                 continue
@@ -3126,10 +3126,10 @@ def start_plug_and_play_barcode_service():
 def process_barcode_scan_auto(barcode):
     """Process barcode scan automatically without UI interaction"""
     try:
-        # Get device ID (should be auto-registered by now)
+
         device_id = local_db.get_device_id()
         if not device_id:
-            # Try to auto-register if not already done
+          
             mac_address = get_local_mac_address()
             if mac_address:
                 device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
@@ -3137,20 +3137,20 @@ def process_barcode_scan_auto(barcode):
             else:
                 return "❌ No device ID available - registration failed"
         
-        # Validate barcode
+
         try:
             validated_barcode = validate_ean(barcode)
         except BarcodeValidationError:
-            # Accept non-EAN barcodes for flexibility
+         
             validated_barcode = barcode
         
-        # Check Pi connectivity
+
         connection_manager = ConnectionManager()
         pi_available = connection_manager.check_raspberry_pi_availability()
         
         if not pi_available:
             logger.warning("⚠️ Raspberry Pi offline - saving locally for retry")
-            # Save for retry when Pi comes online
+   
             connection_manager.save_unsent_message(
                 device_id, 
                 json.dumps({
@@ -3162,11 +3162,10 @@ def process_barcode_scan_auto(barcode):
             )
             return "⚠️ Pi offline - saved locally for retry"
         
-        # Send to both API and IoT Hub
+
         api_success = False
         iot_success = False
-        
-        # Send to Frontend API
+
         try:
             api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
             if api_result.get('success', False):
@@ -3205,78 +3204,293 @@ def process_barcode_scan_auto(barcode):
         logger.error(f"❌ Barcode processing error: {e}")
         return f"❌ Processing error: {str(e)}"
 
-if __name__ == "__main__":
-    import os
+def start_automatic_plug_and_play_service():
+    """Start fully automatic plug-and-play barcode scanner service"""
+    logger.info("🚀 Starting AUTOMATIC Plug-and-Play Barcode Scanner Service...")
+    logger.info("🔌 Connect ethernet cable and USB barcode scanner")
+    logger.info("📊 Just scan any barcode to test connection and auto-register!")
+    logger.info("⚡ All operations are automatic - no buttons needed")
     
-    if IS_RASPBERRY_PI:
-        # Running on Raspberry Pi - check if registered
-        logger.info("🚀 Starting Raspberry Pi Plug-and-Play Service...")
-        
-        # Load existing config
-        pi_config = load_pi_config()
-        
-        if pi_config and pi_config.get("registered"):
-            # Already registered - initialize service
-            logger.info("✅ Device already registered")
-            logger.info(f"🆔 Device ID: {pi_config.get('device_id')}")
-            logger.info("📱 Pi will connect directly to Azure IoT Hub")
-            logger.info("📷 Barcode scanning service active - scan barcodes to publish to IoT Hub")
-            
+
+    connection_manager = ConnectionManager()
+
+    device_id = get_auto_device_id()
+    logger.info(f"🆔 Auto-generated Device ID: {device_id}")
+
+    logger.info("🔄 Starting automatic unsent message processing...")
+    
+    try:
+        while True:
             try:
-                # Send single heartbeat and check for updates
-                send_single_heartbeat(pi_config)
-                check_single_update(pi_config)
+                print("\n🎯 Ready for barcode scan (connect ethernet + scan barcode):")
+                barcode = input().strip()
                 
-                # Service initialized - ready for use
-                logger.info("✅ Raspberry Pi Device Service initialized")
-                logger.info("🎯 Ready for barcode scanning operations")
-                logger.info("🚫 No background loops - service runs on-demand")
+                if barcode and len(barcode) >= 6:
+                    logger.info(f"📊 Barcode scanned: {barcode}")
+                    
+                    # Check ethernet connection automatically
+                    ethernet_connected = check_ethernet_connection()
+                    
+                    if ethernet_connected:
+                        logger.info("✅ Ethernet connection detected")
+                        
+                        # Auto-register device if not already registered
+                        if not is_device_registered(device_id):
+                            logger.info("📝 Auto-registering device...")
+                            registration_success = auto_register_device(device_id, barcode)
+                            
+                            if registration_success:
+                                logger.info("✅ Device auto-registered successfully!")
+                                print("✅ SUCCESS: Device registered automatically")
+                            else:
+                                logger.warning("⚠️ Auto-registration failed, but continuing...")
+                                print("⚠️ WARNING: Registration failed, check logs")
+                        
+                        # Process barcode automatically
+                        result = process_barcode_automatically(barcode, device_id)
+                        
+                        if "✅" in result:
+                            logger.info("✅ Barcode processed successfully")
+                            print("✅ SUCCESS: Barcode sent to inventory system")
+                            
+                            # Auto-process any unsent messages when connection is good
+                            auto_process_unsent_messages()
+                        else:
+                            logger.warning("⚠️ Barcode processing had issues")
+                            print("⚠️ WARNING: Check logs for details")
+                    else:
+                        logger.warning("❌ No ethernet connection - saving locally")
+                        print("❌ NO ETHERNET: Connect ethernet cable and try again")
+                        
+                        # Save barcode locally for retry
+                        save_barcode_for_retry(barcode, device_id)
+                        
+                else:
+                    logger.warning("⚠️ Invalid barcode - please scan a valid barcode")
+                    print("⚠️ Invalid barcode - try again")
+                    
+            except EOFError:
+                logger.info("📱 Waiting for barcode scanner input...")
+                time.sleep(1)
+                continue
                 
-            except KeyboardInterrupt:
-                logger.info("🛑 Raspberry Pi Device Service stopped by user")
-                if 'pi_device_service' in globals() and pi_device_service:
-                    pi_device_service.stop()
+    except KeyboardInterrupt:
+        logger.info("🛑 Automatic service stopped by user")
+        print("\n🛑 Service stopped. Thank you for using the barcode scanner!")
+
+def get_auto_device_id():
+    """Generate automatic device ID from hardware"""
+    try:
+        mac_address = get_local_mac_address()
+        if mac_address:
+            return f"auto-{mac_address.replace(':', '')[-8:]}"
         else:
-            # Not registered - enter plug-and-play mode
-            logger.info("📱 Device not registered - entering plug-and-play mode")
-            
-            if plug_and_play_mode():
-                logger.info("🎉 Registration complete! Restart service to begin scanning.")
-            else:
-                logger.error("❌ Registration failed")
-                sys.exit(1)
-    else:
-        # Running on server/desktop - start TRUE PLUG-AND-PLAY mode
-        logger.info("🚀 Starting TRUE PLUG-AND-PLAY Barcode Scanner System...")
-        logger.info("🔌 NO UI required - fully automatic operation")
+            import uuid
+            return f"auto-{uuid.uuid4().hex[:8]}"
+    except Exception as e:
+        logger.error(f"Error generating device ID: {e}")
+        return f"auto-{int(time.time())}"
+
+def check_ethernet_connection():
+    """Check if ethernet connection is available"""
+    try:
+        from utils.network_discovery import NetworkDiscovery
+        network_discovery = NetworkDiscovery()
+        pi_devices = network_discovery.discover_raspberry_pi_devices()
         
-        # Initialize connection manager
+        # Also check internet connectivity
         connection_manager = ConnectionManager()
-        logger.info("✅ Connection manager initialized")
+        internet_connected = connection_manager.check_internet_connectivity()
         
-        # Start Pi status monitoring with IoT Hub reporting
-        start_pi_status_monitoring()
-        logger.info("📡 Pi status monitoring started (LAN detection + IoT Hub reporting)")
+        return len(pi_devices) > 0 or internet_connected
+    except Exception as e:
+        logger.error(f"Error checking ethernet connection: {e}")
+        return False
+
+def is_device_registered(device_id):
+    """Check if device is already registered"""
+    try:
+        # Check local database
+        registered_devices = local_db.get_registered_devices()
+        if any(dev.get('device_id') == device_id for dev in registered_devices):
+            return True
+            
+        # Check device manager
+        if device_manager.is_device_registered(device_id):
+            return True
+            
+        return False
+    except Exception as e:
+        logger.error(f"Error checking device registration: {e}")
+        return False
+
+def auto_register_device(device_id, test_barcode):
+    """Automatically register device using test barcode"""
+    try:
+        logger.info(f"🔧 Auto-registering device {device_id} with test barcode {test_barcode}")
         
-        # Auto-register device immediately
-        success = auto_register_device_to_server()
+        # Get Pi IP
+        pi_ip = get_primary_raspberry_pi_ip() or "auto-detected"
+        
+        # Register device automatically
+        device_info = {
+            "registration_method": "auto_plug_and_play",
+            "test_barcode": test_barcode,
+            "pi_ip": pi_ip,
+            "auto_registered": True
+        }
+        
+        success, message = device_manager.register_device_without_token(device_id, device_info)
         
         if success:
-            logger.info("✅ Device auto-registered successfully")
-            logger.info("🎯 SYSTEM READY - Connect USB barcode scanner and start scanning!")
-            logger.info("📱 All scans will be automatically sent to API and IoT Hub")
+            # Save locally
+            local_db.save_device_registration(device_id, {
+                'registration_date': datetime.now(timezone.utc).isoformat(),
+                'pi_ip': pi_ip,
+                'registration_method': 'auto_plug_and_play',
+                'test_barcode': test_barcode
+            })
             
-            # Start barcode listening service
-            start_plug_and_play_barcode_service()
+            # Confirm with API
+            try:
+                api_result = api_client.confirm_registration(device_id, pi_ip)
+                if api_result.get('success', False):
+                    logger.info("✅ API registration confirmed")
+                else:
+                    logger.warning("⚠️ API registration failed but continuing")
+            except Exception as e:
+                logger.warning(f"⚠️ API registration error: {e}")
             
+            return True
         else:
-            logger.error("❌ Auto-registration failed - system will retry")
-            logger.info("🔄 Retrying registration in plug-and-play mode...")
+            logger.error(f"❌ Auto-registration failed: {message}")
+            return False
             
-            # Try plug-and-play registration mode
-            if plug_and_play_mode():
-                logger.info("✅ Plug-and-play registration successful!")
-                start_plug_and_play_barcode_service()
-            else:
-                logger.error("❌ All registration methods failed")
-                sys.exit(1)
+    except Exception as e:
+        logger.error(f"❌ Auto-registration error: {e}")
+        return False
+
+def process_barcode_automatically(barcode, device_id):
+    """Process barcode automatically without UI"""
+    try:
+        # Validate barcode
+        try:
+            validated_barcode = validate_ean(barcode)
+        except BarcodeValidationError:
+            validated_barcode = barcode  # Accept non-EAN barcodes
+        
+        # Check connection
+        connection_manager = ConnectionManager()
+        pi_available = connection_manager.check_raspberry_pi_availability()
+        
+        if not pi_available:
+            logger.warning("⚠️ Pi offline - saving locally for retry")
+            save_barcode_for_retry(validated_barcode, device_id)
+            return "⚠️ Pi offline - saved locally for retry"
+        
+        # Send to both API and IoT Hub
+        api_success = False
+        iot_success = False
+        
+        # Send to Frontend API
+        try:
+            api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
+            if api_result.get('success', False):
+                api_success = True
+                logger.info("✅ Sent to Frontend API successfully")
+        except Exception as e:
+            logger.error(f"❌ API send error: {e}")
+        
+        # Send to IoT Hub
+        try:
+            success, message = connection_manager.send_message_with_retry(
+                device_id=device_id,
+                barcode=validated_barcode,
+                quantity=1,
+                message_type="barcode_scan"
+            )
+            if success:
+                iot_success = True
+                logger.info("✅ Sent to IoT Hub successfully")
+        except Exception as e:
+            logger.error(f"❌ IoT Hub send error: {e}")
+        
+        # Return status
+        if api_success and iot_success:
+            return f"✅ Barcode {validated_barcode} sent to both API and IoT Hub"
+        elif api_success or iot_success:
+            return f"⚠️ Barcode {validated_barcode} sent partially (check logs)"
+        else:
+            return f"❌ Failed to send barcode {validated_barcode} (saved locally)"
+            
+    except Exception as e:
+        logger.error(f"❌ Barcode processing error: {e}")
+        return f"❌ Processing error: {str(e)}"
+
+def save_barcode_for_retry(barcode, device_id):
+    """Save barcode locally for retry when connection is restored"""
+    try:
+        timestamp = datetime.now(timezone.utc)
+        
+        # Save to local database
+        local_db.save_barcode_scan(device_id, barcode, timestamp)
+        
+        # Save as unsent message
+        message_data = {
+            "deviceId": device_id,
+            "barcode": barcode,
+            "timestamp": timestamp.isoformat(),
+            "quantity": 1,
+            "messageType": "barcode_scan"
+        }
+        local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
+        
+        logger.info(f"💾 Barcode {barcode} saved locally for retry")
+        
+    except Exception as e:
+        logger.error(f"❌ Error saving barcode for retry: {e}")
+
+def auto_process_unsent_messages():
+    """Automatically process unsent messages when connection is good"""
+    try:
+        unsent_messages = local_db.get_unsent_messages()
+        
+        if not unsent_messages:
+            return
+        
+        logger.info(f"🔄 Auto-processing {len(unsent_messages)} unsent messages...")
+        
+        connection_manager = ConnectionManager()
+        processed_count = 0
+        
+        for message in unsent_messages[:10]:  # Process max 10 at a time
+            try:
+                message_data = json.loads(message.get('message', '{}'))
+                device_id = message_data.get('deviceId', 'unknown')
+                barcode = message_data.get('barcode', '')
+                
+                success, status_msg = connection_manager.send_message_with_retry(
+                    device_id=device_id,
+                    barcode=barcode,
+                    quantity=message_data.get('quantity', 1),
+                    message_type=message_data.get('messageType', 'barcode_scan')
+                )
+                
+                if success:
+                    local_db.remove_unsent_message(message['id'])
+                    processed_count += 1
+                    logger.info(f"✅ Auto-sent unsent message: {barcode}")
+                    
+            except Exception as e:
+                logger.error(f"❌ Error auto-processing message: {e}")
+        
+        if processed_count > 0:
+            logger.info(f"✅ Auto-processed {processed_count} unsent messages")
+            print(f"✅ AUTO-SENT: {processed_count} previously saved barcodes")
+            
+    except Exception as e:
+        logger.error(f"❌ Error in auto-processing unsent messages: {e}")
+
+if __name__ == "__main__":
+    # Start automatic plug-and-play service
+    start_automatic_plug_and_play_service()
