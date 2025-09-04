@@ -1984,7 +1984,7 @@ def get_device_ip():
     try:
         # Method 3: Use ip route (fallback)
         result = subprocess.run(
-            "ip route get 8.8.8.8 | awk '{print $7}' | head -1",
+            "/sbin/ip route get 8.8.8.8 | awk '{print $7}' | head -1",
             shell=True, 
             capture_output=True, 
             text=True, 

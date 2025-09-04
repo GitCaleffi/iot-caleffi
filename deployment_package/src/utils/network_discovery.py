@@ -212,7 +212,7 @@ class NetworkDiscovery:
         # Method 1: Use ip route to get the default interface IP (most reliable)
         try:
             result = subprocess.run(
-                ["ip", "route", "get", "1.1.1.1"],
+                ["/sbin/ip", "route", "get", "1.1.1.1"],
                 capture_output=True,
                 text=True,
                 timeout=3
@@ -494,7 +494,7 @@ class NetworkDiscovery:
             try:
                 logger.info("🔍 Falling back to 'ip neighbor show' command...")
                 result = subprocess.run(
-                    ["ip", "neighbor", "show"], 
+                    ["/sbin/ip", "neighbor", "show"], 
                     capture_output=True, 
                     text=True, 
                     timeout=3
