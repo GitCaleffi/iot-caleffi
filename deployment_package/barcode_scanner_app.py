@@ -1006,7 +1006,7 @@ def generate_registration_token():
     
     try:
         # Get actual connectivity status with error handling
-        internet_connected = connection_manager.check_internet_connectivity()
+        # Connectivity already checked above in pi_status
         
         # Simple IoT Hub connectivity check for live servers
         iot_hub_connected = False
