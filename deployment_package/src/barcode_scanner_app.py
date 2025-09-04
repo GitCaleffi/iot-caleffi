@@ -160,10 +160,23 @@ def send_pi_status_to_iot_hub(pi_status: dict, device_id: str = None) -> bool:
     """
     Send Raspberry Pi connection status to IoT Hub using Device Twin properties.
     This implements the 'twining technique' to report true/false Pi status.
+    Only sends when Pi is actually connected (for connected=true) or when reporting disconnection.
     """
     try:
         from utils.dynamic_registration_service import get_dynamic_registration_service
         from iot.hub_client import HubClient
+        from utils.connection_manager import ConnectionManager
+        
+        # Check real Pi connectivity before sending
+        connection_manager = ConnectionManager()
+        real_pi_connected = connection_manager.check_raspberry_pi_availability()
+        
+        # Only send if:
+        # 1. Pi is actually connected and we're reporting connected=true, OR
+        # 2. Pi is disconnected and we're reporting connected=false
+        if pi_status['connected'] and not real_pi_connected:
+            logger.warning("🚫 BLOCKING Pi status send - Pi shows connected but is actually disconnected")
+            return False
         
         # Get device ID if not provided
         if not device_id:
@@ -184,14 +197,14 @@ def send_pi_status_to_iot_hub(pi_status: dict, device_id: str = None) -> bool:
         # Create Device Twin properties payload
         twin_properties = {
             "pi_connection_status": {
-                "connected": pi_status['connected'],
+                "connected": real_pi_connected,  # Use real connectivity status
                 "ip_address": pi_status.get('ip'),
                 "mac_address": pi_status.get('mac'),
                 "hostname": pi_status.get('hostname'),
                 "services_available": pi_status.get('services', []),
                 "device_count": pi_status.get('device_count', 0),
                 "last_check": datetime.now(timezone.utc).isoformat(),
-                "detection_method": "lan_discovery"
+                "detection_method": "real_time_check"
             }
         }
         
@@ -201,8 +214,8 @@ def send_pi_status_to_iot_hub(pi_status: dict, device_id: str = None) -> bool:
             # Send as Device Twin reported properties
             success = hub_client.send_device_twin_update(twin_properties)
             if success:
-                status_emoji = "✅" if pi_status['connected'] else "❌"
-                logger.info(f"📡 Pi status sent to IoT Hub: Connected={pi_status['connected']} {status_emoji}")
+                status_emoji = "✅" if real_pi_connected else "❌"
+                logger.info(f"📡 Pi status sent to IoT Hub: Connected={real_pi_connected} {status_emoji}")
                 return True
             else:
                 logger.warning("⚠️ Failed to send Device Twin update")
@@ -529,6 +542,14 @@ def _initialize_iot_hub_connection(device_id):
         # Get device connection string from dynamic registration service
         device_connection_string = device_manager.get_device_connection_string(device_id)
         if device_connection_string:
+            # Check Pi connectivity before sending to IoT Hub
+            from utils.connection_manager import ConnectionManager
+            connection_manager = ConnectionManager()
+            
+            if not connection_manager.check_raspberry_pi_availability():
+                logger.warning("🚫 BLOCKING IoT Hub send - Pi device not connected")
+                return True  # Registration saved locally, will send when Pi reconnects
+            
             # Initialize IoT Hub client with device-specific connection string
             hub_client = HubClient(device_connection_string)
             
@@ -604,6 +625,14 @@ def _register_with_live_server(device_id, mac_address, local_ip):
 def _send_iot_hub_heartbeat(device_id, device_connection_string):
     """Send single heartbeat to IoT Hub (no loop)"""
     try:
+        # Check Pi connectivity before sending heartbeat
+        from utils.connection_manager import ConnectionManager
+        connection_manager = ConnectionManager()
+        
+        if not connection_manager.check_raspberry_pi_availability():
+            logger.warning("🚫 BLOCKING heartbeat send - Pi device not connected")
+            return False
+        
         hub_client = HubClient(device_connection_string)
         
         # Send heartbeat message
@@ -1292,10 +1321,14 @@ def generate_registration_token():
         return "⚠️ No barcode scanner detected. Please connect your device."
     
     try:
+        # Get real-time Pi status
+        pi_status = "Connected ✅" if pi_available else "Disconnected ❌"
+        scanner_status = "Connected ✅" if is_scanner_connected() else "Disconnected ❌"
+        
         response_msg = f"""✅ Ready for Device Registration!
 
-**Pi Status:** Connected ✅
-**Scanner Status:** Connected ✅
+**Pi Status:** {pi_status}
+**Scanner Status:** {scanner_status}
 
 **Instructions:**
 1. Enter your desired Device ID in the field below
