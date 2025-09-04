@@ -13,7 +13,7 @@ import requests
 import re
 import socket
 from datetime import datetime, timezone, timedelta
-from barcode_validator import validate_ean, BarcodeValidationError
+from src.barcode_validator import validate_ean, BarcodeValidationError
 
 # GPIO LED Control for Raspberry Pi - Import only when actually on Pi
 GPIO_AVAILABLE = False
