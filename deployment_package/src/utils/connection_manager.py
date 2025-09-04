@@ -92,30 +92,39 @@ class ConnectionManager:
     def check_internet_connectivity(self) -> bool:
         """
         Check if device has internet connectivity using multiple methods.
-        For live server deployment, prioritize Python-based checks.
+        Enhanced to detect network interface status first.
         
         Returns:
             bool: True if online, False otherwise
         """
         current_time = time.time()
         
-        # Use cached result if recent check
-        if current_time - self.last_connection_check < self.connection_check_interval:
-            logger.debug(f"Using cached connectivity result: {self.is_connected_to_internet}")
-            return self.is_connected_to_internet
-            
-        logger.debug("Performing fresh internet connectivity check...")
-        
         # Store previous state to detect changes
         previous_internet_state = self.is_connected_to_internet
         
         try:
+            # Method 0: Check network interface status first
+            logger.debug("Checking network interface status...")
+            if not self._check_network_interface():
+                logger.debug("Network interface is down - no internet connectivity")
+                self.is_connected_to_internet = False
+                self.last_connection_check = current_time
+                # Set LED to red blinking for no network
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+                
+                # Check if internet just went down
+                if previous_internet_state and not self.is_connected_to_internet:
+                    self.handle_internet_disconnection()
+                
+                return False
+            
             # Method 1: Python socket connection (works on live servers)
             import socket
             logger.debug("Trying Method 1: Python socket connection to Google DNS")
             
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(5)
+                sock.settimeout(3)  # Shorter timeout for faster detection
                 result = sock.connect_ex(("8.8.8.8", 53))  # DNS port
                 
             if result == 0:
@@ -133,7 +142,7 @@ class ConnectionManager:
             logger.debug("Trying Method 2: HTTP request to Google")
             try:
                 import urllib.request
-                urllib.request.urlopen('http://www.google.com', timeout=5)
+                urllib.request.urlopen('http://www.google.com', timeout=3)
                 logger.debug("Method 2 SUCCESS - Internet connected via HTTP")
                 self.is_connected_to_internet = True
                 self.last_connection_check = current_time
@@ -147,9 +156,9 @@ class ConnectionManager:
             # Method 3: Fallback to ping (if available)
             logger.debug("Trying Method 3: ping 8.8.8.8")
             result = subprocess.run(
-                ["ping", "-c", "1", "-W", "3", "8.8.8.8"], 
+                ["ping", "-c", "1", "-W", "2", "8.8.8.8"], 
                 capture_output=True, 
-                timeout=5
+                timeout=3
             )
             
             if result.returncode == 0:
@@ -189,6 +198,73 @@ class ConnectionManager:
                 self.handle_internet_disconnection()
             
             return False
+    
+    def _check_network_interface(self) -> bool:
+        """
+        Check if network interfaces are up and have IP addresses
+        Returns True if at least one interface is up with an IP
+        """
+        try:
+            import netifaces
+            
+            # Get all network interfaces
+            interfaces = netifaces.interfaces()
+            
+            for interface in interfaces:
+                # Skip loopback interface
+                if interface == 'lo':
+                    continue
+                    
+                try:
+                    # Get interface addresses
+                    addrs = netifaces.ifaddresses(interface)
+                    
+                    # Check if interface has IPv4 address
+                    if netifaces.AF_INET in addrs:
+                        ipv4_addrs = addrs[netifaces.AF_INET]
+                        for addr_info in ipv4_addrs:
+                            ip = addr_info.get('addr')
+                            if ip and not ip.startswith('127.'):  # Not localhost
+                                logger.debug(f"Active interface found: {interface} - {ip}")
+                                return True
+                                
+                except Exception as e:
+                    logger.debug(f"Error checking interface {interface}: {e}")
+                    continue
+            
+            logger.debug("No active network interfaces found")
+            return False
+            
+        except ImportError:
+            # Fallback method using ip command if netifaces not available
+            try:
+                result = subprocess.run(['ip', 'addr', 'show'], capture_output=True, text=True, timeout=2)
+                if result.returncode == 0:
+                    # Look for UP interfaces with inet addresses (not 127.x.x.x)
+                    lines = result.stdout.split('\n')
+                    current_interface = None
+                    interface_up = False
+                    
+                    for line in lines:
+                        if ': ' in line and 'UP' in line:
+                            interface_up = True
+                            current_interface = line.split(':')[1].strip()
+                        elif 'inet ' in line and interface_up and current_interface != 'lo':
+                            ip = line.strip().split()[1].split('/')[0]
+                            if not ip.startswith('127.'):
+                                logger.debug(f"Active interface found: {current_interface} - {ip}")
+                                return True
+                        elif line.strip() == '':
+                            interface_up = False
+                            current_interface = None
+                
+                logger.debug("No active network interfaces found via ip command")
+                return False
+                
+            except Exception as e:
+                logger.debug(f"Network interface check failed: {e}")
+                # If we can't check interfaces, assume they're up
+                return True
     
     def _continuous_internet_monitor(self) -> None:
         """
