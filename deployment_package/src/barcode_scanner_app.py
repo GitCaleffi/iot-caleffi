@@ -3476,5 +3476,19 @@ def auto_process_unsent_messages():
         logger.error(f"❌ Error in auto-processing unsent messages: {e}")
 
 if __name__ == "__main__":
-    # Start automatic plug-and-play service
-    start_automatic_plug_and_play_service()
+    # Check if user wants web interface or command line
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "--cli":
+        # Start command-line version
+        start_automatic_plug_and_play_service()
+    else:
+        # Start web interface (default)
+        logger.info("🌐 Starting web interface at http://localhost:7860")
+        logger.info("💡 Use --cli argument for command-line mode")
+        app.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=False,
+            show_error=True,
+            quiet=False
+        )
