@@ -13,7 +13,31 @@ import requests
 import re
 import socket
 from datetime import datetime, timezone, timedelta
-from barcode_validator import validate_ean, BarcodeValidationError
+from typing import Optional, Dict, Any, List, Tuple, Union
+import hashlib
+import uuid
+from .barcode_validator import validate_ean, BarcodeValidationError
+
+def generate_device_id() -> str:
+    """Generate a unique device ID based on system information."""
+    try:
+        # Get system information
+        hostname = socket.gethostname()
+        mac = uuid.getnode()
+        
+        # Create a unique string from system info
+        unique_str = f"{hostname}-{mac}"
+        
+        # Create a hash of the unique string
+        device_id = hashlib.md5(unique_str.encode('utf-8')).hexdigest()
+        
+        # Use first 12 characters of the hash
+        return f"device-{device_id[:12]}"
+        
+    except Exception as e:
+        logging.warning(f"Error generating device ID: {e}")
+        # Fallback to a random UUID if anything fails
+        return f"device-{str(uuid.uuid4())[:12]}"
 
 # GPIO LED Control for Raspberry Pi - Import only when actually on Pi
 GPIO_AVAILABLE = False
