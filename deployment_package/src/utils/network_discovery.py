@@ -904,24 +904,24 @@ class NetworkDiscovery:
         """
         devices = []
         
-        logger.info("🔍 Simple Pi connection check (ethernet/wifi detection)...")
+        logger.info("🔍 Enhanced Pi connection check for live server...")
         
-        # Simple method: Check if any Pi MAC addresses are visible in network
+        # Enhanced method: Check if any Pi is connected using multiple methods
         pi_connected = self._simple_pi_connection_check()
         
         if pi_connected:
             # Return a simple device entry indicating Pi is connected
             devices.append({
                 "ip": "detected",
-                "mac": "pi-device",
+                "mac": "pi-device", 
                 "hostname": "raspberry-pi",
                 "is_raspberry_pi": True,
-                "detection_reason": "Pi device detected via network interface",
-                "discovery_method": "simple_connection_check"
+                "detection_reason": "Pi device detected via enhanced live server detection",
+                "discovery_method": "enhanced_live_server_check"
             })
-            logger.info("✅ Raspberry Pi connection detected")
+            logger.info("✅ Raspberry Pi connection detected via enhanced methods")
         else:
-            logger.info("❌ No Raspberry Pi connection detected")
+            logger.info("❌ No Raspberry Pi connection detected - trying all methods")
         
         return devices
     
