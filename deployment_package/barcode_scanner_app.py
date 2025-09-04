@@ -969,25 +969,50 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
 def generate_registration_token():
     """Prepare for device registration (no token required)"""
     
-    # For live servers with missing system commands, use simple connectivity check
+    # REAL-TIME connectivity check - detects IoT Hub instability like your live server
     try:
-        # Simple IoT Hub connectivity test
         import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(3)
-        iot_hub_result = sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
-        sock.close()
+        import time
         
-        # Basic internet test
+        # Test 1: Basic internet (quick test)
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(3)
+        sock.settimeout(2)
         internet_result = sock.connect_ex(("8.8.8.8", 53))
         sock.close()
-        
         internet_connected = (internet_result == 0)
-        iot_hub_connected = (iot_hub_result == 0)
         
-        logger.info(f"Connectivity check - Internet: {'✅' if internet_connected else '❌'}, IoT Hub: {'✅' if iot_hub_connected else '❌'}")
+        # Test 2: IoT Hub connectivity (multiple rapid attempts to detect connection drops)
+        iot_hub_connected = True
+        failures = 0
+        
+        for i in range(3):  # Test 3 times rapidly to catch instability
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(1)  # Very short timeout to catch "result code: 7" issues
+                result = sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
+                sock.close()
+                
+                if result != 0:
+                    failures += 1
+                    
+            except Exception:
+                failures += 1
+        
+        # If 2+ failures out of 3 attempts, IoT Hub is unstable (like your live server)
+        if failures >= 2:
+            iot_hub_connected = False
+            
+        # Real-time status with timestamp to show it's dynamic
+        current_time = time.strftime('%H:%M:%S')
+        
+        if internet_connected and iot_hub_connected:
+            pi_status = f"Connected ✅ (Checked: {current_time})"
+        elif internet_connected:
+            pi_status = f"Internet OK, IoT Hub Issues ⚠️ (Checked: {current_time})"
+        else:
+            pi_status = f"Disconnected ❌ (Checked: {current_time})"
+            
+        logger.info(f"🔍 REAL-TIME STATUS: Internet={internet_connected}, IoT Hub={iot_hub_connected}, Failures={failures}/3, Time={current_time}")
         
         # Determine status
         if internet_connected and iot_hub_connected:
