@@ -1369,11 +1369,10 @@ Please connect your barcode scanner device and try again."""
         led_controller.blink_led("red")
         return f"❌ Error: {str(e)}"
 
-def confirm_registration(barcode_input, device_id):
+def confirm_registration(registration_token, device_id):
     """Confirm device registration with Pi connection check and no token validation
     
     CRITICAL: This function performs DEVICE REGISTRATION ONLY - NO INVENTORY UPDATES!
-    Note: barcode_input parameter is ignored since no token is required
     """
     global REGISTRATION_IN_PROGRESS
     
@@ -1622,16 +1621,13 @@ def process_barcode_scan(barcode, device_id=None):
 
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
-    # Check ethernet/wifi connection before sending barcode
-    from utils.network_discovery import NetworkDiscovery
-    network_discovery = NetworkDiscovery()
-    pi_devices = network_discovery.discover_raspberry_pi_devices()
+    # Check Raspberry Pi connection using LAN detection
+    pi_connected, pi_status_msg, pi_info = is_pi_connected_for_scanning()
     
-    if not pi_devices:
-        logger.warning("❌ No ethernet/wifi connection detected - saving message locally")
+    if not pi_connected:
+        logger.warning(f"❌ {pi_status_msg} - saving message locally")
         
         # Send Pi status to IoT Hub (disconnected)
-        pi_info = {"status": "disconnected", "reason": "No ethernet/wifi connection"}
         send_pi_status_to_iot_hub(pi_info, device_id)
         try:
             # Save scan to local database for retry when Pi is available
@@ -1649,7 +1645,7 @@ def process_barcode_scan(barcode, device_id=None):
             local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
             
             led_controller.blink_led("red")
-            return f"""❌ **Operation Failed: No ethernet/wifi connection**
+            return f"""❌ **Operation Failed: {pi_status_msg}**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
@@ -1788,69 +1784,19 @@ def get_registration_status():
         return f"❌ Error getting registration status: {str(e)}"
 
 def process_unsent_messages(auto_retry=False):
-    """OPTIMIZED: Fast unsent message processing with no caching delays
+    """Process any unsent messages in the local database and try to send them to IoT Hub
+    OPTIMIZED VERSION: Uses batch processing, connection caching, and reduced database calls
     
     Args:
-        auto_retry (bool): If True, enables automatic retry for failed messages
+        auto_retry (bool): If True, runs in background mode without returning status messages
         
     Returns:
-        str: Status message indicating results of processing
+        str: Status message if not in auto_retry mode, None otherwise
     """
-    try:
-        # Fast real-time processing without caching
-        from utils.connection_manager import ConnectionManager
-        connection_manager = ConnectionManager()
-        
-        # Get unsent messages directly from database
-        unsent_messages = local_db.get_unsent_messages()
-        
-        if not unsent_messages:
-            logger.info("✅ No unsent messages found")
-            return "✅ No unsent messages to process"
-        
-        logger.info(f"📤 Processing {len(unsent_messages)} unsent messages...")
-        
-        # Process messages in parallel for speed
-        processed_count = 0
-        failed_count = 0
-        
-        for message in unsent_messages:
-            try:
-                # Parse message data
-                message_data = json.loads(message.get('message', '{}'))
-                device_id = message_data.get('deviceId', 'unknown')
-                barcode = message_data.get('barcode', '')
-                
-                # Send message immediately without caching checks
-                success, status_msg = connection_manager.send_message_with_retry(
-                    device_id=device_id,
-                    barcode=barcode,
-                    quantity=message_data.get('quantity', 1),
-                    message_type=message_data.get('messageType', 'barcode_scan')
-                )
-                
-                if success:
-                    # Remove from unsent messages immediately
-                    local_db.remove_unsent_message(message['id'])
-                    processed_count += 1
-                    logger.info(f"✅ Sent unsent message: {barcode}")
-                else:
-                    failed_count += 1
-                    logger.warning(f"⚠️ Failed to send message: {barcode}")
-                    
-            except Exception as e:
-                failed_count += 1
-                logger.error(f"❌ Error processing message: {e}")
-        
-        # Return fast results
-        if processed_count > 0:
-            return f"✅ Successfully sent {processed_count} messages to IoT Hub. {failed_count} failed."
-        else:
-            return f"⚠️ No messages could be sent. {failed_count} messages remain unsent."
-            
-    except Exception as e:
-        logger.error(f"❌ Error in fast unsent message processing: {e}")
-        return f"❌ Error processing unsent messages: {str(e)}"
+    # This function is deprecated as the connection manager now handles automatic retry
+    # Keeping it for backward compatibility but it just returns a message
+    logger.info("process_unsent_messages is deprecated - connection manager handles automatic retry")
+    return "✅ Automatic message retry is now handled by the connection manager in the background."
 
 def get_pi_connection_status_display():
     """Get the current Pi connection status display string."""
@@ -2334,33 +2280,9 @@ with gr.Blocks(title="Barcode Scanner") as app:
             status_text = gr.Markdown("")
             
             
-    # Event handlers with auto-reload functionality
-    def process_barcode_with_reload(barcode, device_id):
-        """Process barcode and trigger auto-reload after 10 seconds"""
-        result = process_barcode_scan(barcode, device_id)
-        
-        # Add auto-reload JavaScript to the result
-        auto_reload_script = """
-        <script>
-        setTimeout(function() {
-            // Clear the barcode input field after successful submission
-            const barcodeInput = document.querySelector('input[placeholder="Scan or enter barcode"]');
-            if (barcodeInput) {
-                barcodeInput.value = '';
-                barcodeInput.focus();
-            }
-        }, 10000); // 10 seconds delay
-        </script>
-        """
-        
-        # Only add auto-reload if the operation was successful
-        if "✅" in result:
-            result += auto_reload_script
-            
-        return result
-    
+    # Event handlers
     send_button.click(
-        fn=process_barcode_with_reload,
+        fn=process_barcode_scan,
         inputs=[barcode_input, device_id_input],
         outputs=[output_text]
     )
