@@ -24,28 +24,27 @@ class ConnectionManager:
     def __init__(self):
         self.local_db = LocalStorage()
         self.last_connection_check = 0
-        # Remove caching for real-time performance - no cached status
+        # Connection status (cached for performance) - faster intervals for auto-refresh
         self.is_connected_to_internet = False
         self.is_connected_to_iot_hub = False
         self.raspberry_pi_devices_available = False
+        self.last_connectivity_check = 0
+        self.last_pi_check = 0
+        self.connectivity_check_interval = 10  # seconds (faster for real-time updates)
+        self.connection_check_interval = 10  # Alias for backward compatibility
+        self.pi_check_interval = 15  # seconds (faster Pi discovery for auto-refresh)
         
-        # No caching intervals - always check in real-time for optimal performance
-        self.connectivity_check_interval = 0  # No caching
-        self.connection_check_interval = 0    # No caching
-        self.pi_check_interval = 0           # No caching
-        
-        # Disable auto-refresh for faster API responses
-        self.auto_refresh_enabled = False
-        self.auto_refresh_interval = 30  # Keep for backward compatibility
-        self.consecutive_failures = 0    # Keep for backward compatibility
+        # Auto-refresh settings - optimized for performance
+        self.auto_refresh_enabled = True
+        self.auto_refresh_interval = 30  # seconds (balanced for performance)
         self.auto_refresh_thread = None
         self.retry_thread = None
         self.retry_running = False
         self.lock = RLock()
         self.network_discovery = NetworkDiscovery()
         
-        # Remove all caching mechanisms for maximum speed
-        # No fast_pi_cache - always perform real-time checks
+        # Fast local cache for immediate responses
+        self.fast_pi_cache = {'available': False, 'last_check': 0, 'cache_duration': 5}
         
         # Initialize dynamic registration service for IoT Hub Pi detection
         self.dynamic_registration_service = None
@@ -91,29 +90,144 @@ class ConnectionManager:
         self._start_auto_refresh_worker()
         
     def check_internet_connectivity(self) -> bool:
-        """Check internet connectivity using optimized methods - no caching for speed"""
-        # Always perform real-time check for maximum API speed
-        # Remove all caching and time-based checks for optimal performance
+        """Check internet connectivity using multiple methods with caching"""
+        current_time = time.time()
+        
+        # Store previous state to detect changes
+        previous_internet_state = self.is_connected_to_internet
+        
+        # Force fresh check every time for real-time status
+        logger.debug(f"🔍 REAL-TIME CONNECTIVITY CHECK: Previous={previous_internet_state}, Time={time.strftime('%H:%M:%S')}")
         
         try:
-            # Fast internet connectivity check - no caching for optimal speed
-            import socket
+            # Method 0: Check network interface status first
+            logger.debug("Checking network interface status...")
+            if not self._check_network_interface():
+                logger.debug("Network interface is down - no internet connectivity")
+                self.is_connected_to_internet = False
+                self.last_connection_check = current_time
+                # Set LED to red blinking for no network
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+                
+                # Check if internet just went down
+                if previous_internet_state and not self.is_connected_to_internet:
+                    self.handle_internet_disconnection()
+                
+                return False
             
-            # Single fast socket test to Google DNS
+            # Method 1: Python socket connection (works on live servers)
+            import socket
+            logger.debug("Trying Method 1: Python socket connection to Google DNS")
+            
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(2)  # Fast timeout for speed
-                result = sock.connect_ex(("8.8.8.8", 53))
+                sock.settimeout(3)  # Shorter timeout for faster detection
+                result = sock.connect_ex(("8.8.8.8", 53))  # DNS port
                 
             if result == 0:
+                logger.debug("Method 1 SUCCESS - Basic internet connected")
+                
+                # Method 1.5: Test IoT Hub connectivity specifically with multiple attempts
+                logger.debug("Testing IoT Hub connectivity with stability check...")
+                iot_hub_stable = True
+                iot_hub_attempts = 3
+                iot_hub_failures = 0
+                
+                for attempt in range(iot_hub_attempts):
+                    try:
+                        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as iot_sock:
+                            iot_sock.settimeout(2)  # Very short timeout to detect instability
+                            iot_result = iot_sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
+                        
+                        if iot_result != 0:
+                            iot_hub_failures += 1
+                            logger.debug(f"IoT Hub attempt {attempt+1} failed with error {iot_result}")
+                        else:
+                            logger.debug(f"IoT Hub attempt {attempt+1} succeeded")
+                            
+                    except Exception as iot_e:
+                        iot_hub_failures += 1
+                        logger.debug(f"IoT Hub attempt {attempt+1} exception: {iot_e}")
+                
+                # If more than 1 failure out of 3 attempts, consider IoT Hub unstable
+                if iot_hub_failures > 1:
+                    logger.warning(f"⚠️ IoT Hub unstable - {iot_hub_failures}/{iot_hub_attempts} attempts failed")
+                    iot_hub_stable = False
+                else:
+                    logger.debug(f"IoT Hub stable - {iot_hub_failures}/{iot_hub_attempts} attempts failed")
+                
+                if iot_hub_stable:
+                    self.is_connected_to_internet = True
+                    self.last_connection_check = current_time
+                    # Set LED to green for internet connected
+                    if hasattr(self, 'led_manager'):
+                        self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
+                    return True
+                else:
+                    logger.warning("⚠️ IoT Hub connectivity issues detected - marking as disconnected")
+                    # Continue to other methods or fail
+                        
+            logger.debug("Method 1 FAILED or IoT Hub unstable - Trying Method 2")
+            
+            # Method 2: HTTP request to reliable endpoint
+            logger.debug("Trying Method 2: HTTP request to Google")
+            try:
+                import urllib.request
+                urllib.request.urlopen('http://www.google.com', timeout=3)
+                logger.debug("Method 2 SUCCESS - Internet connected via HTTP")
                 self.is_connected_to_internet = True
+                self.last_connection_check = current_time
+                # Set LED to green for internet connected
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
                 return True
-            else:
-                self.is_connected_to_internet = False
-                return False
+            except Exception as http_e:
+                logger.debug(f"Method 2 FAILED: {http_e}")
+            
+            # Method 3: Fallback to ping (if available)
+            logger.debug("Trying Method 3: ping 8.8.8.8")
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "2", "8.8.8.8"], 
+                capture_output=True, 
+                timeout=3
+            )
+            
+            if result.returncode == 0:
+                logger.debug("Method 3 SUCCESS - Internet connected via ping")
+                self.is_connected_to_internet = True
+                self.last_connection_check = current_time
+                # Set LED to green for internet connected
+                if hasattr(self, 'led_manager'):
+                    self.led_manager.set_status(self.led_manager.STATUS_ONLINE)
+                return True
+            
+            logger.debug("All methods FAILED - No internet connectivity")
+            self.is_connected_to_internet = False
+            self.last_connection_check = current_time
+            # Set LED to red blinking for no internet
+            if hasattr(self, 'led_manager'):
+                self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+            
+            # Check if internet just went down (state change from connected to disconnected)
+            if previous_internet_state and not self.is_connected_to_internet:
+                self.handle_internet_disconnection()
+            
+            return False
             
         except Exception as e:
             logger.debug(f"Internet connectivity check failed with exception: {e}")
+            import traceback
+            logger.debug(f"Exception traceback: {traceback.format_exc()}")
             self.is_connected_to_internet = False
+            self.last_connection_check = current_time
+            # Set LED to red blinking for connection error
+            if hasattr(self, 'led_manager'):
+                self.led_manager.set_status(self.led_manager.STATUS_ERROR)
+            
+            # Check if internet just went down (state change from connected to disconnected)
+            if previous_internet_state and not self.is_connected_to_internet:
+                self.handle_internet_disconnection()
+            
             return False
     
     def _check_network_interface(self) -> bool:
