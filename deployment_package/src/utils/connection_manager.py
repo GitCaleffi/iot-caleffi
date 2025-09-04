@@ -593,24 +593,8 @@ class ConnectionManager:
         Enhanced with better error handling and logging.
         """
         try:
-            # Check IoT connection status first - if connected, skip network discovery
-            if self.is_connected_to_iot_hub:
-                logger.info("✅ IoT Hub connected - starting registration instead of device discovery")
-                # Start registration process instead of network discovery
-                try:
-                    from utils.dynamic_registration_service import get_dynamic_registration_service
-                    registration_service = get_dynamic_registration_service()
-                    if registration_service:
-                        registration_service.start_registration_process()
-                except Exception as e:
-                    logger.debug(f"Registration service not available: {e}")
-                
-                # Return a mock connected device to indicate system is ready
-                return [{
-                    'ip': 'localhost',
-                    'mac': 'local-device',
-                    'hostname': 'iot-hub-connected'
-                }]
+            # Always perform real Pi device discovery regardless of IoT Hub status
+            logger.debug("🔍 Performing real Pi device discovery...")
             
             logger.info("🔍 Starting LAN-based Pi device discovery...")
             

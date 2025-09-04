@@ -1307,23 +1307,47 @@ def generate_registration_token():
     
     # Check Raspberry Pi connection first using connection manager
     from utils.connection_manager import ConnectionManager
-    connection_manager = manager = ConnectionManager()
+    connection_manager = ConnectionManager()
     pi_available = connection_manager.check_raspberry_pi_availability()
     
-    if not pi_available:
-        logger.warning("Device registration blocked: Raspberry Pi not connected")
-        led_controller.blink_led("red")
-        return "❌ **Operation Failed: Raspberry Pi Not Connected**\n\nPlease ensure the Raspberry Pi device is connected and reachable on the network before attempting device registration."
+    logger.info(f"🔍 Pi availability check result: {pi_available}")
     
-    logger.info(f"✅ Raspberry Pi connected - proceeding with device registration")
-
-    if not is_scanner_connected():
-        return "⚠️ No barcode scanner detected. Please connect your device."
+    # Always show current status, but block registration if Pi not available
+    scanner_connected = is_scanner_connected()
     
     try:
-        # Get real-time Pi status
+        # Get real-time status for display
         pi_status = "Connected ✅" if pi_available else "Disconnected ❌"
-        scanner_status = "Connected ✅" if is_scanner_connected() else "Disconnected ❌"
+        scanner_status = "Connected ✅" if scanner_connected else "Disconnected ❌"
+        
+        if not pi_available:
+            # Show status but indicate registration is blocked
+            response_msg = f"""❌ **Device Registration Blocked: Raspberry Pi Not Connected**
+
+**Pi Status:** {pi_status}
+**Scanner Status:** {scanner_status}
+
+**Error:** Cannot proceed with device registration while Raspberry Pi is offline.
+
+**Instructions:**
+1. Connect your Raspberry Pi to ethernet/wifi
+2. Wait for Pi Status to show "Connected ✅"
+3. Try registration again
+
+Please ensure the Raspberry Pi device is connected and reachable on the network."""
+            
+            logger.warning("Device registration blocked: Raspberry Pi not connected")
+            led_controller.blink_led("red")
+            return response_msg
+        
+        if not scanner_connected:
+            response_msg = f"""⚠️ **Scanner Not Detected**
+
+**Pi Status:** {pi_status}
+**Scanner Status:** {scanner_status}
+
+Please connect your barcode scanner device and try again."""
+            return response_msg
         
         response_msg = f"""✅ Ready for Device Registration!
 
