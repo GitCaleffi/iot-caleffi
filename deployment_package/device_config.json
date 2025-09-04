@@ -13,6 +13,19 @@
         "auto_registered": true,
         "timestamp": "2025-09-03T10:24:36.936854+00:00"
       }
+    },
+    "2579b387441e": {
+      "device_id": "2579b387441e",
+      "registered_at": "2025-09-04T05:24:28.575411+00:00",
+      "last_seen": "2025-09-04T05:24:28.575418+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "direct_registration",
+        "online_at_registration": true,
+        "user_agent": "Barcode Scanner App v2.0",
+        "pi_ip": "192.168.1.18"
+      }
     }
   },
   "registration_tokens": {
@@ -23,5 +36,5 @@
       "used": true
     }
   },
-  "last_updated": "2025-09-03T10:24:36.936871+00:00"
+  "last_updated": "2025-09-04T05:24:28.575422+00:00"
 }

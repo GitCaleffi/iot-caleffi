@@ -50,6 +50,8 @@ except (ImportError, RuntimeError, FileNotFoundError) as e:
 pi_status_thread = None
 last_pi_status = None
 pi_status_queue = queue.Queue()
+pi_status_reporting_enabled = True
+pi_status_lock = threading.Lock()
 
 # Registration control
 REGISTRATION_IN_PROGRESS = False
@@ -59,6 +61,263 @@ processed_device_ids = set()
 # ============================================================================
 # UTILITY FUNCTIONS
 # ============================================================================
+
+def detect_lan_raspberry_pi() -> dict:
+    """
+    Detect Raspberry Pi devices on LAN using network discovery.
+    Returns connection status and device information.
+    """
+    try:
+        from utils.network_discovery import NetworkDiscovery
+        
+        network_discovery = NetworkDiscovery()
+        pi_devices = network_discovery.discover_raspberry_pi_devices()
+        
+        if pi_devices:
+            primary_pi = pi_devices[0]  # Get first available Pi
+            logger.info(f"✅ LAN Pi detected: {primary_pi.get('ip', 'unknown')} (MAC: {primary_pi.get('mac', 'unknown')})")
+            return {
+                'connected': True,
+                'ip': primary_pi.get('ip'),
+                'mac': primary_pi.get('mac'),
+                'hostname': primary_pi.get('hostname', 'raspberry-pi'),
+                'services': primary_pi.get('services', []),
+                'device_count': len(pi_devices)
+            }
+        else:
+            logger.debug("❌ No external Raspberry Pi devices found on network")
+            return {
+                'connected': False,
+                'ip': None,
+                'mac': None,
+                'hostname': None,
+                'services': [],
+                'device_count': 0
+            }
+            
+    except Exception as e:
+        logger.error(f"Error detecting LAN Pi devices: {e}")
+        return {
+            'connected': False,
+            'ip': None,
+            'mac': None,
+            'hostname': None,
+            'services': [],
+            'device_count': 0,
+            'error': str(e)
+        }
+
+def send_pi_status_to_iot_hub(pi_status: dict, device_id: str = None) -> bool:
+    """
+    Send Raspberry Pi connection status to IoT Hub using Device Twin properties.
+    This implements the 'twining technique' to report true/false Pi status.
+    """
+    try:
+        from utils.dynamic_registration_service import get_dynamic_registration_service
+        from iot.hub_client import HubClient
+        
+        # Get device ID if not provided
+        if not device_id:
+            device_id = generate_device_id()
+        
+        # Get dynamic registration service
+        registration_service = get_dynamic_registration_service()
+        if not registration_service:
+            logger.warning("⚠️ Dynamic registration service not available")
+            return False
+        
+        # Get device connection string
+        connection_string = registration_service.get_device_connection_string(device_id)
+        if not connection_string:
+            logger.warning(f"⚠️ No connection string for device {device_id}")
+            return False
+        
+        # Create Device Twin properties payload
+        twin_properties = {
+            "pi_connection_status": {
+                "connected": pi_status['connected'],
+                "ip_address": pi_status.get('ip'),
+                "mac_address": pi_status.get('mac'),
+                "hostname": pi_status.get('hostname'),
+                "services_available": pi_status.get('services', []),
+                "device_count": pi_status.get('device_count', 0),
+                "last_check": datetime.now(timezone.utc).isoformat(),
+                "detection_method": "lan_discovery"
+            }
+        }
+        
+        # Send Device Twin update
+        hub_client = HubClient(connection_string)
+        if hub_client.connect():
+            # Send as Device Twin reported properties
+            success = hub_client.send_device_twin_update(twin_properties)
+            if success:
+                status_emoji = "✅" if pi_status['connected'] else "❌"
+                logger.info(f"📡 Pi status sent to IoT Hub: Connected={pi_status['connected']} {status_emoji}")
+                return True
+            else:
+                logger.warning("⚠️ Failed to send Device Twin update")
+                return False
+        else:
+            logger.warning("⚠️ Failed to connect to IoT Hub for Device Twin update")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error sending Pi status to IoT Hub: {e}")
+        return False
+
+def start_pi_status_monitoring():
+    """
+    Start background monitoring of Raspberry Pi LAN connection status.
+    Sends periodic updates to IoT Hub about Pi connectivity.
+    """
+    global pi_status_thread, pi_status_reporting_enabled
+    
+    def pi_status_worker():
+        """Background worker to monitor Pi status and report to IoT Hub"""
+        logger.info("🔄 Pi status monitoring started (LAN detection + IoT Hub reporting)")
+        
+        last_status = None
+        check_interval = 30  # Check every 30 seconds
+        
+        while pi_status_reporting_enabled:
+            try:
+                with pi_status_lock:
+                    # Detect Pi on LAN
+                    current_status = detect_lan_raspberry_pi()
+                    
+                    # Only send update if status changed or every 5 minutes
+                    status_changed = (last_status is None or 
+                                    last_status.get('connected') != current_status.get('connected'))
+                    
+                    if status_changed:
+                        # Send status update to IoT Hub
+                        device_id = generate_device_id()
+                        success = send_pi_status_to_iot_hub(current_status, device_id)
+                        
+                        if success:
+                            last_status = current_status.copy()
+                            
+                            # Log status change
+                            if current_status['connected']:
+                                logger.info(f"🟢 Pi CONNECTED on LAN: {current_status.get('ip', 'unknown IP')}")
+                            else:
+                                logger.info("🔴 Pi DISCONNECTED from LAN")
+                        else:
+                            logger.warning("⚠️ Failed to report Pi status to IoT Hub")
+                    
+                time.sleep(check_interval)
+                
+            except Exception as e:
+                logger.error(f"Pi status monitoring error: {e}")
+                time.sleep(60)  # Wait longer on error
+    
+    # Start monitoring thread
+    if not pi_status_thread or not pi_status_thread.is_alive():
+        pi_status_thread = threading.Thread(target=pi_status_worker, daemon=True)
+        pi_status_thread.start()
+        logger.info("📡 Pi status monitoring thread started")
+
+def stop_pi_status_monitoring():
+    """
+    Stop the Pi status monitoring thread.
+    """
+    global pi_status_reporting_enabled
+    pi_status_reporting_enabled = False
+    logger.info("📡 Pi status monitoring stopped")
+
+def is_pi_connected_for_scanning() -> tuple:
+    """
+    Check if Raspberry Pi is connected and ready for barcode scanning.
+    Returns (is_connected: bool, status_message: str, pi_info: dict)
+    """
+    try:
+        # Get current Pi status from LAN detection
+        pi_status = detect_lan_raspberry_pi()
+        
+        if pi_status['connected']:
+            pi_ip = pi_status.get('ip', 'unknown')
+            services = pi_status.get('services', [])
+            
+            # Check if Pi has required services for scanning
+            has_web_service = any('web' in str(service).lower() or '5000' in str(service) for service in services)
+            has_ssh_service = any('ssh' in str(service).lower() or '22' in str(service) for service in services)
+            
+            if has_web_service or has_ssh_service:
+                return True, f"✅ Pi ready for scanning at {pi_ip}", pi_status
+            else:
+                return False, f"⚠️ Pi found at {pi_ip} but services not available", pi_status
+        else:
+            return False, "❌ No Raspberry Pi detected on LAN", pi_status
+            
+    except Exception as e:
+        logger.error(f"Error checking Pi connection for scanning: {e}")
+        return False, f"❌ Pi connection check failed: {e}", {}
+
+def test_lan_detection_and_iot_hub_flow():
+    """
+    Test the complete LAN detection and IoT Hub messaging flow.
+    This function demonstrates the full workflow.
+    """
+    logger.info("🧪 Testing LAN detection and IoT Hub messaging flow...")
+    
+    try:
+        # Step 1: Test LAN Pi detection
+        logger.info("1️⃣ Testing LAN Pi detection...")
+        pi_status = detect_lan_raspberry_pi()
+        
+        if pi_status['connected']:
+            logger.info(f"✅ Pi detected on LAN: {pi_status.get('ip')} (MAC: {pi_status.get('mac')})")
+        else:
+            logger.info("❌ No Pi detected on LAN")
+        
+        # Step 2: Test IoT Hub status reporting
+        logger.info("2️⃣ Testing IoT Hub status reporting...")
+        device_id = generate_device_id()
+        success = send_pi_status_to_iot_hub(pi_status, device_id)
+        
+        if success:
+            logger.info("✅ Pi status successfully sent to IoT Hub via Device Twin")
+        else:
+            logger.warning("⚠️ Failed to send Pi status to IoT Hub")
+        
+        # Step 3: Test barcode scanning readiness
+        logger.info("3️⃣ Testing barcode scanning readiness...")
+        pi_connected, status_msg, pi_info = is_pi_connected_for_scanning()
+        
+        if pi_connected:
+            logger.info(f"✅ System ready for barcode scanning: {status_msg}")
+        else:
+            logger.info(f"❌ System not ready for scanning: {status_msg}")
+        
+        # Step 4: Test complete workflow with sample barcode
+        logger.info("4️⃣ Testing complete workflow with sample barcode...")
+        test_result = process_barcode_scan("1234567890123", device_id)
+        logger.info(f"📱 Barcode scan test result: {test_result[:100]}...")
+        
+        # Summary
+        logger.info("🏁 Test Summary:")
+        logger.info(f"   • LAN Detection: {'✅' if pi_status['connected'] else '❌'}")
+        logger.info(f"   • IoT Hub Reporting: {'✅' if success else '❌'}")
+        logger.info(f"   • Scanning Ready: {'✅' if pi_connected else '❌'}")
+        logger.info(f"   • Device ID: {device_id}")
+        
+        return {
+            'lan_detection': pi_status['connected'],
+            'iot_hub_reporting': success,
+            'scanning_ready': pi_connected,
+            'device_id': device_id,
+            'pi_info': pi_status
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Test failed with error: {e}")
+        return {
+            'lan_detection': False,
+            'iot_hub_reporting': False,
+            'scanning_ready': False,
+            'error': str(e)
+        }
 
 def get_local_mac_address() -> str:
     """Get the MAC address of the local device dynamically."""
@@ -1246,13 +1505,14 @@ def process_barcode_scan(barcode, device_id=None):
 
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
-    # Check Raspberry Pi connection first
-    from utils.connection_manager import ConnectionManager
-    connection_manager =  ConnectionManager()
-    pi_available = connection_manager.check_raspberry_pi_availability()
+    # Check Raspberry Pi connection using LAN detection
+    pi_connected, pi_status_msg, pi_info = is_pi_connected_for_scanning()
     
-    if not pi_available:
-        logger.warning("❌ Raspberry Pi not connected - saving message locally")
+    if not pi_connected:
+        logger.warning(f"❌ {pi_status_msg} - saving message locally")
+        
+        # Send Pi status to IoT Hub (disconnected)
+        send_pi_status_to_iot_hub(pi_info, device_id)
         try:
             # Save scan to local database for retry when Pi is available
             timestamp = datetime.now(timezone.utc)
@@ -1269,7 +1529,7 @@ def process_barcode_scan(barcode, device_id=None):
             local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
             
             led_controller.blink_led("red")
-            return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
+            return f"""❌ **Operation Failed: {pi_status_msg}**
 
 **Barcode:** {barcode}
 **Device ID:** {device_id}
@@ -1280,9 +1540,13 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
 
 🔴 Red LED indicates Pi connection failure"""
         except Exception as e:
-            logger.error(f"❌ Error saving barcode locally: {e}")
+            logger.error(f"Error saving barcode scan locally: {e}")
             led_controller.blink_led("red")
-            return f"❌ Error: Could not save barcode. {str(e)[:100]}"
+            return f"❌ Error saving barcode scan: {e}"
+    
+    # Pi is connected - send status to IoT Hub (connected)
+    logger.info(f"✅ {pi_status_msg}")
+    send_pi_status_to_iot_hub(pi_info, device_id)
 
     try:
         # Save scan to local database
@@ -2873,6 +3137,10 @@ if __name__ == "__main__":
         # Initialize connection manager
         connection_manager = ConnectionManager()
         logger.info("✅ Connection manager initialized")
+        
+        # Start Pi status monitoring with IoT Hub reporting
+        start_pi_status_monitoring()
+        logger.info("📡 Pi status monitoring started (LAN detection + IoT Hub reporting)")
         
         # Auto-register device immediately
         success = auto_register_device_to_server()

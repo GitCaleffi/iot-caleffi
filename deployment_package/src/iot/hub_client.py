@@ -263,6 +263,29 @@ class HubClient:
         return False
 
 
+    def send_device_twin_update(self, twin_properties: dict) -> bool:
+        """
+        Send Device Twin reported properties update to IoT Hub.
+        Used for reporting Pi connection status and other device state.
+        """
+        try:
+            if not self.connected:
+                logger.warning("Not connected to IoT Hub - cannot send Device Twin update")
+                return False
+            
+            logger.info(f"Sending Device Twin update: {json.dumps(twin_properties, indent=2)}")
+            
+            # Send the twin properties update
+            self.client.patch_twin_reported_properties(twin_properties)
+            
+            logger.info("✅ Device Twin properties updated successfully")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to update Device Twin properties: {e}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
+            return False
+
     def send_barcode_message(self, barcode, message_data=None):
         """Send barcode message to IoT Hub - compatibility method"""
         if message_data:
