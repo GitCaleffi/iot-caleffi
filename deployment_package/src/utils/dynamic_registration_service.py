@@ -96,6 +96,43 @@ class DynamicRegistrationService:
                     self.registry_manager = None
                     return
     
+    def get_device_connection_string(self, device_id: str) -> str:
+        """
+        Generate a device-specific connection string for the given device ID.
+        
+        Args:
+            device_id: The device ID to generate a connection string for
+            
+        Returns:
+            str: A connection string for the specified device
+            
+        Raises:
+            ValueError: If the device is not registered or connection string generation fails
+        """
+        if not self.registry_manager:
+            self._init_registry_manager()
+            
+        try:
+            # Get the device from IoT Hub
+            device = self.registry_manager.get_device(device_id)
+            
+            if not device:
+                raise ValueError(f"Device {device_id} not found in IoT Hub")
+                
+            # Get the primary key from the device
+            primary_key = device.authentication.symmetric_key.primary_key
+            
+            # Construct the connection string
+            return (
+                f"HostName={self.iot_hub_hostname};"
+                f"DeviceId={device_id};"
+                f"SharedAccessKey={primary_key}"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error getting connection string for device {device_id}: {e}")
+            raise ValueError(f"Failed to get connection string: {str(e)}")
+            
     def _generate_device_keys(self) -> Tuple[str, str]:
         """Generate secure primary and secondary keys for device authentication"""
         primary_key = base64.b64encode(os.urandom(32)).decode('utf-8')
