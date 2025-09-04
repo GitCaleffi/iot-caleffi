@@ -90,17 +90,14 @@ class ConnectionManager:
         self._start_auto_refresh_worker()
         
     def check_internet_connectivity(self) -> bool:
-        """
-        Check if device has internet connectivity using multiple methods.
-        Enhanced to detect network interface status first.
-        
-        Returns:
-            bool: True if online, False otherwise
-        """
+        """Check internet connectivity using multiple methods with caching"""
         current_time = time.time()
         
         # Store previous state to detect changes
         previous_internet_state = self.is_connected_to_internet
+        
+        # Force fresh check every time for real-time status
+        logger.debug(f"🔍 REAL-TIME CONNECTIVITY CHECK: Previous={previous_internet_state}, Time={time.strftime('%H:%M:%S')}")
         
         try:
             # Method 0: Check network interface status first
@@ -729,6 +726,10 @@ class ConnectionManager:
                             old_iot_hub != self.is_connected_to_iot_hub):
                             status = self.get_connection_status()
                             logger.info(f"🔄 Connection status changed - Internet: {'✅' if status['internet_connected'] else '❌'}, IoT Hub: {'✅' if status['iot_hub_connected'] else '❌'}")
+                        
+                        # Always log current status for debugging
+                        current_status = self.get_connection_status()
+                        logger.info(f"🔍 REAL-TIME STATUS: Internet={current_status['internet_connected']}, IoT Hub={current_status['iot_hub_connected']}, Failures={getattr(self, 'consecutive_failures', 0)}/3, Time={time.strftime('%H:%M:%S')}")
                         
                     time.sleep(self.auto_refresh_interval)
                     
