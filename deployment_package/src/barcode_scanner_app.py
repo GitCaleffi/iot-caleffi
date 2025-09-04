@@ -1369,10 +1369,11 @@ Please connect your barcode scanner device and try again."""
         led_controller.blink_led("red")
         return f"❌ Error: {str(e)}"
 
-def confirm_registration(registration_token, device_id):
+def confirm_registration(barcode_input, device_id):
     """Confirm device registration with Pi connection check and no token validation
     
     CRITICAL: This function performs DEVICE REGISTRATION ONLY - NO INVENTORY UPDATES!
+    Note: barcode_input parameter is ignored since no token is required
     """
     global REGISTRATION_IN_PROGRESS
     
