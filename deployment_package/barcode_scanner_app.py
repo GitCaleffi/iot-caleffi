@@ -969,17 +969,37 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
 def generate_registration_token():
     """Prepare for device registration (no token required)"""
     
-    # Check Raspberry Pi connection first using connection manager
-    from utils.connection_manager import ConnectionManager
-    connection_manager = manager = ConnectionManager()
-    pi_available = connection_manager.check_raspberry_pi_availability()
-    
-    if not pi_available:
-        logger.warning("Device registration blocked: Raspberry Pi not connected")
-        led_controller.blink_led("red")
-        return "❌ **Operation Failed: Raspberry Pi Not Connected**\n\nPlease ensure the Raspberry Pi device is connected and reachable on the network before attempting device registration."
-    
-    logger.info(f"✅ Raspberry Pi connected - proceeding with device registration")
+    # For live servers with missing system commands, use simple connectivity check
+    try:
+        # Simple IoT Hub connectivity test
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        iot_hub_result = sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
+        sock.close()
+        
+        # Basic internet test
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(3)
+        internet_result = sock.connect_ex(("8.8.8.8", 53))
+        sock.close()
+        
+        internet_connected = (internet_result == 0)
+        iot_hub_connected = (iot_hub_result == 0)
+        
+        logger.info(f"Connectivity check - Internet: {'✅' if internet_connected else '❌'}, IoT Hub: {'✅' if iot_hub_connected else '❌'}")
+        
+        # Determine status
+        if internet_connected and iot_hub_connected:
+            pi_status = "Connected ✅"
+        elif internet_connected:
+            pi_status = "Internet OK, IoT Hub Issues ⚠️"
+        else:
+            pi_status = "Disconnected ❌"
+            
+    except Exception as e:
+        logger.warning(f"Connectivity check failed: {e}")
+        pi_status = "Connection Check Failed ❌"
 
     if not is_scanner_connected():
         return "⚠️ No barcode scanner detected. Please connect your device."
@@ -988,12 +1008,18 @@ def generate_registration_token():
         # Get actual connectivity status with error handling
         internet_connected = connection_manager.check_internet_connectivity()
         
-        # Try IoT Hub check with fallback
+        # Simple IoT Hub connectivity check for live servers
+        iot_hub_connected = False
         try:
-            iot_hub_connected = connection_manager.check_iot_hub_connectivity()
+            import socket
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+            result = sock.connect_ex(("CaleffiIoT.azure-devices.net", 443))
+            sock.close()
+            iot_hub_connected = (result == 0)
+            logger.debug(f"Direct IoT Hub test: {'SUCCESS' if iot_hub_connected else f'FAILED (error {result})'}")
         except Exception as e:
-            logger.warning(f"IoT Hub connectivity check failed: {e}")
-            # If IoT Hub check fails, assume it's not connected
+            logger.warning(f"Direct IoT Hub connectivity test failed: {e}")
             iot_hub_connected = False
         
         # Determine Pi status based on actual connectivity
