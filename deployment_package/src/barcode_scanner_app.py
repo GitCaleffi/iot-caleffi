@@ -1134,31 +1134,32 @@ _pi_connection_status = {
 
 def check_raspberry_pi_connection():
     """
-    Check Raspberry Pi connection with IoT Hub priority.
+    Real-time Raspberry Pi device connectivity check.
+    Directly checks if Pi device is connected without caching.
     
     Returns:
-        bool: True if Pi is connected either locally or via IoT Hub, False otherwise
+        bool: True if Pi device is connected and responsive, False otherwise
     """
-    global _pi_connection_status
-    
-    # If this IS a Raspberry Pi, consider it always available
-    if IS_RASPBERRY_PI:
-        logger.info("🔍 Running on Raspberry Pi - marking as available")
-        _update_pi_status(True, "127.0.0.1")
-        return True
-    
-    # Try IoT Hub connection first
     try:
+        logger.debug("🔍 Checking real-time Pi device connectivity...")
+        
+        # Use connection manager for direct Pi device check
+        from utils.connection_manager import ConnectionManager
         connection_manager = ConnectionManager()
-        if connection_manager and connection_manager.is_connected_to_iot_hub():
-            logger.info("✅ Connected to IoT Hub - Pi status available through cloud")
-            _update_pi_status(True, "cloud-connected")
+        
+        # Direct Pi availability check - no caching
+        pi_connected = connection_manager.check_raspberry_pi_availability()
+        
+        if pi_connected:
+            logger.info("✅ Pi device CONNECTED and responsive")
             return True
+        else:
+            logger.info("❌ Pi device DISCONNECTED or not responsive")
+            return False
+            
     except Exception as e:
-        logger.warning(f"IoT Hub connection check failed: {e}")
-    
-    # Fall back to LAN discovery if IoT Hub is not available
-    return _check_pi_on_lan()
+        logger.error(f"Error checking Pi connectivity: {e}")
+        return False
 
 def _update_pi_status(connected, ip=None):
     """Update the Pi connection status cache"""

@@ -40,7 +40,7 @@
     ],
     "auto_detected_ip": "192.168.1.18",
     "last_detection": "2025-09-04T15:21:40.026129",
-    "status": "connected",
+    "status": "disconnected",
     "force_detection": true,
     "scan_ips": [
       "192.168.1.18",
@@ -87,6 +87,6 @@
         "port": 22
       }
     },
-    "last_disconnect": "2025-09-04T15:07:36.158139"
+    "last_disconnect": "2025-09-04T15:23:10.206494"
   }
 }

@@ -458,57 +458,75 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        Fast Pi availability check with optimized caching for performance.
-        Uses fast local cache first, then falls back to comprehensive check.
+        Real-time Pi device connectivity check without caching.
+        Directly checks if Raspberry Pi device is connected and responsive.
         """
-        current_time = time.time()
-        
-        # Fast cache check - immediate response for UI operations
-        if current_time - self.fast_pi_cache['last_check'] < self.fast_pi_cache['cache_duration']:
-            logger.debug(f"Using fast Pi cache: {self.fast_pi_cache['available']}")
-            return self.fast_pi_cache['available']
-        
-        # Medium cache check - avoid expensive operations
-        cache_interval = 15  # Balanced for server deployment with device twins
-        if current_time - self.last_pi_check < cache_interval:
-            logger.debug(f"Using cached Pi availability result: {self.raspberry_pi_devices_available}")
-            # Update fast cache
-            self.fast_pi_cache['available'] = self.raspberry_pi_devices_available
-            self.fast_pi_cache['last_check'] = current_time
-            return self.raspberry_pi_devices_available
-        
         try:
-            # Try LAN check first as it's more reliable for local network
+            logger.debug("🔍 Checking real-time Pi device connectivity...")
+            
+            # Direct LAN check for Pi devices - no caching
             lan_pi_devices = self._fallback_lan_pi_check_list()
             if lan_pi_devices:
-                logger.info(f"✅ LAN check found {len(lan_pi_devices)} responsive Pi device(s): {lan_pi_devices}")
-                self.raspberry_pi_devices_available = True
-                self.last_pi_check = current_time
-                self.fast_pi_cache['available'] = True
-                self.fast_pi_cache['last_check'] = current_time
+                logger.info(f"✅ Pi device CONNECTED: Found {len(lan_pi_devices)} responsive device(s)")
                 return True
                 
-            # Fall back to IoT Hub check if LAN check fails
-            logger.debug("❌ No Pi devices found via LAN, checking IoT Hub...")
-            connected_pi_devices = self._check_iot_hub_pi_devices()
+            logger.debug("❌ No external Pi devices found via LAN, checking if this is Pi device...")
             
-            if connected_pi_devices:
-                logger.info(f"✅ Found {len(connected_pi_devices)} CONNECTED Pi device(s) in IoT Hub: {connected_pi_devices}")
-                self.raspberry_pi_devices_available = True
-            else:
-                logger.debug("❌ No CONNECTED Pi devices found in IoT Hub")
-                self.raspberry_pi_devices_available = False
-            
-            self.last_pi_check = current_time
-            # Update fast cache with result
-            self.fast_pi_cache['available'] = self.raspberry_pi_devices_available
-            self.fast_pi_cache['last_check'] = current_time
-            return self.raspberry_pi_devices_available
+            # Check if current device is a Raspberry Pi
+            if self._is_current_device_raspberry_pi():
+                logger.info("✅ Pi device CONNECTED: Current device is Raspberry Pi")
+                return True
+                
+            logger.info("❌ Pi device DISCONNECTED: No Raspberry Pi devices found")
+            return False
             
         except Exception as e:
             logger.error(f"Error checking Pi availability: {e}", exc_info=True)
-            # Fallback to direct LAN check
-            return self._fallback_lan_pi_check()
+            return False
+    
+    def _is_current_device_raspberry_pi(self) -> bool:
+        """
+        Check if the current device is a Raspberry Pi by examining hardware characteristics.
+        """
+        try:
+            import platform
+            import os
+            
+            # Check for Raspberry Pi model file
+            if os.path.exists('/proc/device-tree/model'):
+                try:
+                    with open('/proc/device-tree/model', 'r') as f:
+                        model = f.read().lower()
+                        if 'raspberry pi' in model:
+                            logger.debug(f"✅ Detected Raspberry Pi via model file: {model.strip()}")
+                            return True
+                except Exception:
+                    pass
+            
+            # Check for ARM architecture and GPIO (common on Pi)
+            machine = platform.machine().lower()
+            if 'arm' in machine and os.path.exists('/sys/class/gpio'):
+                logger.debug(f"✅ Detected ARM device with GPIO: {machine}")
+                return True
+            
+            # Check for Pi-specific files
+            pi_indicators = [
+                '/boot/config.txt',
+                '/boot/cmdline.txt', 
+                '/sys/firmware/devicetree/base/model'
+            ]
+            
+            for indicator in pi_indicators:
+                if os.path.exists(indicator):
+                    logger.debug(f"✅ Found Pi indicator file: {indicator}")
+                    return True
+            
+            logger.debug("❌ Current device is not a Raspberry Pi")
+            return False
+            
+        except Exception as e:
+            logger.debug(f"Error checking if current device is Pi: {e}")
+            return False
             
     def _check_iot_hub_pi_devices(self) -> list:
         """Check IoT Hub for connected Raspberry Pi devices using device twins"""
