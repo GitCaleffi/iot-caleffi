@@ -985,9 +985,24 @@ def generate_registration_token():
         return "⚠️ No barcode scanner detected. Please connect your device."
     
     try:
+        # Get actual connectivity status
+        internet_connected = connection_manager.check_internet_connectivity()
+        iot_hub_connected = connection_manager.check_iot_hub_connectivity()
+        
+        # Determine Pi status based on actual connectivity
+        if internet_connected and iot_hub_connected:
+            pi_status = "Connected ✅"
+            pi_status_icon = "✅"
+        elif internet_connected:
+            pi_status = "Internet OK, IoT Hub Issues ⚠️"
+            pi_status_icon = "⚠️"
+        else:
+            pi_status = "Disconnected ❌"
+            pi_status_icon = "❌"
+        
         response_msg = f"""✅ Ready for Device Registration!
 
-**Pi Status:** Connected ✅
+**Pi Status:** {pi_status}
 **Scanner Status:** Connected ✅
 
 **Instructions:**
