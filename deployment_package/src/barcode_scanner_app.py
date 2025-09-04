@@ -16,7 +16,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, List, Tuple, Union
 import hashlib
 import uuid
-from .barcode_validator import validate_ean, BarcodeValidationError
+from barcode_validator import validate_ean, BarcodeValidationError
 
 def generate_device_id() -> str:
     """Generate a unique device ID based on system information."""
@@ -92,6 +92,31 @@ def detect_lan_raspberry_pi() -> dict:
     Returns connection status and device information.
     """
     try:
+        # Check IoT connection status first - if connected, skip network discovery
+        try:
+            connection_manager = get_connection_manager()
+            if connection_manager and connection_manager.is_connected_to_iot_hub:
+                logger.info("✅ IoT Hub connected - starting registration instead of device discovery")
+                # Start registration process instead of network discovery
+                try:
+                    registration_service = get_dynamic_registration_service()
+                    if registration_service:
+                        registration_service.start_registration_process()
+                except Exception as e:
+                    logger.debug(f"Registration service not available: {e}")
+                
+                # Return a mock connected status to indicate system is ready
+                return {
+                    'connected': True,
+                    'ip': 'localhost',
+                    'mac': 'local-device',
+                    'hostname': 'iot-hub-connected',
+                    'services': ['registration'],
+                    'device_count': 1
+                }
+        except Exception as e:
+            logger.debug(f"IoT connection check failed: {e}")
+        
         from utils.network_discovery import NetworkDiscovery
         
         network_discovery = NetworkDiscovery()
@@ -109,7 +134,7 @@ def detect_lan_raspberry_pi() -> dict:
                 'device_count': len(pi_devices)
             }
         else:
-            logger.debug("❌ No external Raspberry Pi devices found on network")
+            logger.info("❌ No Pi devices found on LAN during initial scan")
             return {
                 'connected': False,
                 'ip': None,
@@ -400,7 +425,7 @@ from utils.dynamic_device_manager import device_manager
 from utils.dynamic_registration_service import get_dynamic_registration_service
 from utils.dynamic_device_id import generate_dynamic_device_id
 from utils.network_discovery import NetworkDiscovery
-from utils.connection_manager import ConnectionManager
+from utils.connection_manager import ConnectionManager, get_connection_manager
 
 from utils.mqtt_device_discovery import get_mqtt_discovery, discover_raspberry_pi_devices, get_primary_raspberry_pi_ip as mqtt_get_primary_pi_ip
 # Removed auto IP detection - not needed for local MAC address mode
@@ -1108,87 +1133,96 @@ _pi_connection_status = {
 
 
 def check_raspberry_pi_connection():
-    """Check if Raspberry Pi is connected with automatic discovery and IoT Hub integration."""
+    """
+    Check Raspberry Pi connection with IoT Hub priority.
+    
+    Returns:
+        bool: True if Pi is connected either locally or via IoT Hub, False otherwise
+    """
     global _pi_connection_status
     
+    # If this IS a Raspberry Pi, consider it always available
+    if IS_RASPBERRY_PI:
+        logger.info("🔍 Running on Raspberry Pi - marking as available")
+        _update_pi_status(True, "127.0.0.1")
+        return True
+    
+    # Try IoT Hub connection first
     try:
-        # Step 1: Try automatic Pi discovery first
-        pi_ip = None
-        pi_available = False
-        
-        # If this IS a Raspberry Pi, consider it always available
-        if IS_RASPBERRY_PI:
-            logger.info("🔍 Running on Raspberry Pi - marking as available")
-            pi_available = True
-            pi_ip = "127.0.0.1"  # Local Pi
-        else:
-            # Try network discovery for external Pi devices
-            logger.info("🔍 Searching for external Raspberry Pi devices...")
-            
-            # Get connection manager
-            connection_manager = ConnectionManager()
-            if connection_manager:
-                pi_available = connection_manager.check_raspberry_pi_availability()
-                
-                if pi_available:
-                    # Try to get Pi IP from discovery
-                    pi_ip = get_primary_raspberry_pi_ip()
-                    logger.info(f"✅ External Raspberry Pi found at: {pi_ip}")
-                else:
-                    logger.info("❌ No external Raspberry Pi devices found on network")
-            else:
-                logger.error("Connection manager not available")
-        
-        # Step 2: Test connectivity if Pi IP is available
-        ssh_available = False
-        web_available = False
-        
-        if pi_available and pi_ip and pi_ip != "127.0.0.1":
-            try:
-                discovery = NetworkDiscovery()
-                ssh_available = discovery.test_raspberry_pi_connection(pi_ip, 22, timeout=3)
-                web_available = discovery.test_raspberry_pi_connection(pi_ip, 5000, timeout=3)
-                logger.info(f"📡 Pi services - SSH: {'✅' if ssh_available else '❌'} | Web: {'✅' if web_available else '❌'}")
-            except Exception as e:
-                logger.warning(f"Service connectivity test failed: {e}")
-        
-        # Step 3: Update status cache
-        _pi_connection_status.update({
-            'connected': pi_available,
-            'ip': pi_ip if pi_available else None,
-            'last_check': datetime.now(),
-            'ssh_available': ssh_available,
-            'web_available': web_available
-        })
-        
-        # Step 4: Update config with discovered IP
-        if pi_available and pi_ip and pi_ip != "127.0.0.1":
-            try:
-                config = load_config()
-                if config:
-                    pi_config = config.get('raspberry_pi', {})
-                    if pi_config.get('auto_detected_ip') != pi_ip:
-                        pi_config['auto_detected_ip'] = pi_ip
-                        pi_config['last_detection'] = datetime.now(timezone.utc).isoformat()
-                        config['raspberry_pi'] = pi_config
-                        save_config(config)
-                        logger.info(f"💾 Updated config with Pi IP: {pi_ip}")
-            except Exception as e:
-                logger.warning(f"Config update failed: {e}")
-        
-        logger.info(f"🔍 Pi connection check result: {pi_available} (IP: {pi_ip})")
-        return pi_available
-        
+        connection_manager = ConnectionManager()
+        if connection_manager and connection_manager.is_connected_to_iot_hub():
+            logger.info("✅ Connected to IoT Hub - Pi status available through cloud")
+            _update_pi_status(True, "cloud-connected")
+            return True
     except Exception as e:
-        logger.error(f"Error checking Pi connection: {e}")
-        _pi_connection_status.update({
-            'connected': False,
-            'ip': None,
-            'last_check': datetime.now(),
-            'ssh_available': False,
-            'web_available': False
-        })
-        return False
+        logger.warning(f"IoT Hub connection check failed: {e}")
+    
+    # Fall back to LAN discovery if IoT Hub is not available
+    return _check_pi_on_lan()
+
+def _update_pi_status(connected, ip=None):
+    """Update the Pi connection status cache"""
+    global _pi_connection_status
+    _pi_connection_status.update({
+        'connected': connected,
+        'ip': ip,
+        'last_check': datetime.now(),
+        'ssh_available': False,
+        'web_available': False
+    })
+
+def _check_pi_on_lan():
+    """Check for Pi on local network with improved error handling"""
+    try:
+        # Try network discovery for external Pi devices
+        logger.info("🔍 Searching for Raspberry Pi on local network...")
+        
+        # Get connection manager
+        connection_manager = ConnectionManager()
+        if not connection_manager:
+            logger.error("Connection manager not available")
+            _update_pi_status(False)
+            return False
+            
+        # Check Pi availability through connection manager
+        pi_available = connection_manager.check_raspberry_pi_availability()
+        
+        if not pi_available:
+            logger.info("ℹ️ No Raspberry Pi found on local network")
+            _update_pi_status(False)
+            return False
+            
+        # Try to get Pi IP from discovery
+        try:
+            pi_ip = get_primary_raspberry_pi_ip()
+            if pi_ip:
+                logger.info(f"✅ Found Raspberry Pi at: {pi_ip}")
+                _update_pi_status(True, pi_ip)
+                
+                # Update config with discovered IP
+                try:
+                    config = load_config()
+                    if config:
+                        pi_config = config.get('raspberry_pi', {})
+                        if pi_config.get('auto_detected_ip') != pi_ip:
+                            pi_config['auto_detected_ip'] = pi_ip
+                            pi_config['last_detection'] = datetime.now(timezone.utc).isoformat()
+                            config['raspberry_pi'] = pi_config
+                            save_config(config)
+                            logger.info(f"💾 Updated config with Pi IP: {pi_ip}")
+                except Exception as e:
+                    logger.warning(f"Config update failed: {e}")
+                    
+                return True
+                
+        except Exception as e:
+            logger.warning(f"Error getting Pi IP: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error during Pi LAN discovery: {e}")
+    
+    _update_pi_status(False)
+    return False
 
 
 
