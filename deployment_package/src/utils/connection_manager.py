@@ -36,6 +36,8 @@ class ConnectionManager:
         
         # Disable auto-refresh for faster API responses
         self.auto_refresh_enabled = False
+        self.auto_refresh_interval = 30  # Keep for backward compatibility
+        self.consecutive_failures = 0    # Keep for backward compatibility
         self.auto_refresh_thread = None
         self.retry_thread = None
         self.retry_running = False
