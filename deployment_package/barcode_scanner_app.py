@@ -2351,7 +2351,8 @@ def start_background_services(pi_config):
     background_thread.start()
     logger.info("🔧 Background services started (updates + heartbeat)")
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the barcode scanner application"""
     import os
     
     if IS_RASPBERRY_PI:
@@ -2428,3 +2429,6 @@ if __name__ == "__main__":
                     raise
             else:
                 raise
+
+if __name__ == "__main__":
+    main()
