@@ -36,17 +36,13 @@ def generate_device_id() -> str:
         
     except Exception as e:
         logging.warning(f"Error generating device ID: {e}")
-        # Fallback to a random UUID if anything fails
         return f"device-{str(uuid.uuid4())[:12]}"
 
-# GPIO LED Control for Raspberry Pi - Import only when actually on Pi
 GPIO_AVAILABLE = False
 try:
-    # First check if we're on a Raspberry Pi before importing
     import platform
     import os
     
-    # Check multiple indicators for Raspberry Pi
     is_pi = (
         os.path.exists('/proc/device-tree/model') and 
         'raspberry pi' in open('/proc/device-tree/model', 'r').read().lower()
@@ -66,25 +62,16 @@ except (ImportError, RuntimeError, FileNotFoundError) as e:
     GPIO_AVAILABLE = False
     print(f"ℹ️ RPi.GPIO not available: {e} - LED functionality will use simulation mode")
 
-# ============================================================================
-# CONFIGURATION AND GLOBAL VARIABLES
-# ============================================================================
 
-# Global variables for Pi status reporting
 pi_status_thread = None
 last_pi_status = None
 pi_status_queue = queue.Queue()
 pi_status_reporting_enabled = True
 pi_status_lock = threading.Lock()
 
-# Registration control
 REGISTRATION_IN_PROGRESS = False
 registration_lock = threading.Lock()
 processed_device_ids = set()
-
-# ============================================================================
-# UTILITY FUNCTIONS
-# ============================================================================
 
 def detect_lan_raspberry_pi() -> dict:
     """
@@ -92,12 +79,10 @@ def detect_lan_raspberry_pi() -> dict:
     Returns connection status and device information.
     """
     try:
-        # Check IoT connection status first - if connected, skip network discovery
         try:
             connection_manager = get_connection_manager()
             if connection_manager and connection_manager.is_connected_to_iot_hub:
                 logger.info("✅ IoT Hub connected - starting registration instead of device discovery")
-                # Start registration process instead of network discovery
                 try:
                     registration_service = get_dynamic_registration_service()
                     if registration_service:
@@ -105,7 +90,6 @@ def detect_lan_raspberry_pi() -> dict:
                 except Exception as e:
                     logger.debug(f"Registration service not available: {e}")
                 
-                # Return a mock connected status to indicate system is ready
                 return {
                     'connected': True,
                     'ip': 'localhost',
