@@ -15,6 +15,9 @@ import socket
 from datetime import datetime, timezone, timedelta
 from src.barcode_validator import validate_ean, BarcodeValidationError
 
+# Add path for utils imports
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+
 # GPIO LED Control for Raspberry Pi - Import only when actually on Pi
 GPIO_AVAILABLE = False
 try:
@@ -465,6 +468,12 @@ class RaspberryPiDeviceService:
         self.heartbeat_thread = None
         
         logger.info("🆔 Initializing Raspberry Pi Device Service...")
+        
+        # Initialize connection manager for enhanced internet monitoring and LED control
+        from utils.connection_manager import ConnectionManager
+        self.connection_manager = ConnectionManager()
+        logger.info("✅ Enhanced internet monitoring and LED control initialized")
+        
         self._initialize_device()
         
     def _initialize_device(self):
@@ -492,35 +501,31 @@ class RaspberryPiDeviceService:
             logger.error(f"❌ Device initialization failed: {e}")
     
     def _check_network_connectivity(self):
-        """Check if Pi has network connectivity (Wi-Fi or Ethernet)"""
+        """Check if Pi has network connectivity using enhanced ConnectionManager"""
         try:
-            # Test internet connectivity to Azure IoT Hub
-            test_hosts = [
-                ("CaleffiIoT.azure-devices.net", 443),  # Azure IoT Hub
-                ("8.8.8.8", 53),  # Google DNS fallback
-            ]
+            # Use the enhanced connection manager for better detection
+            previous_status = self.network_connected
+            self.network_connected = self.connection_manager.check_internet_connectivity()
             
-            for host, port in test_hosts:
-                try:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(5)
-                    result = sock.connect_ex((host, port))
-                    sock.close()
+            if self.network_connected:
+                logger.debug("✅ Network connectivity confirmed")
+                # Get network interface info
+                self._log_network_interfaces()
+            else:
+                logger.debug("❌ No network connectivity")
+                
+            # Log status changes
+            if previous_status != self.network_connected:
+                if self.network_connected:
+                    logger.info("🌐 Network connectivity restored")
+                else:
+                    logger.warning("⚠️ Network connectivity lost - barcodes will be stored locally")
                     
-                    if result == 0:
-                        self.network_connected = True
-                        logger.info(f"✅ Network connectivity confirmed to {host}:{port}")
-                        
-                        # Get network interface info
-                        self._log_network_interfaces()
-                        return True
-                        
-                except Exception as e:
-                    logger.debug(f"Connection test failed for {host}:{port} - {e}")
-                    continue
-            
+            return self.network_connected
+                    
+        except Exception as e:
+            logger.error(f"Network connectivity check failed: {e}")
             self.network_connected = False
-            logger.warning("❌ No network connectivity detected")
             return False
             
         except Exception as e:
@@ -715,6 +720,12 @@ class RaspberryPiDeviceService:
         """Stop the barcode scanning service"""
         logger.info("🛑 Stopping Raspberry Pi Device Service...")
         self.running = False
+        
+        # Stop connection manager monitoring
+        if hasattr(self, 'connection_manager'):
+            self.connection_manager.stop_monitoring()
+            logger.info("🛑 Internet monitoring stopped")
+        
         # Red LED: Service stopping
         led_controller.blink_led('red', 0.2, 3)
         led_controller.cleanup()

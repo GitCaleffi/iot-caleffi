@@ -1,5 +1,30 @@
 {
-  "devices": {},
-  "registration_tokens": {},
-  "last_updated": "2025-09-01T08:08:31.547830+00:00"
+  "devices": {
+    "pi-c1323007": {
+      "device_id": "pi-c1323007",
+      "registered_at": "2025-09-04T07:49:22.488209+00:00",
+      "last_seen": "2025-09-04T07:49:22.488211+00:00",
+      "status": "active",
+      "registration_token": "7eac0a44aeb59f7b",
+      "device_info": {
+        "registration_method": "pi_device_direct",
+        "device_type": "raspberry_pi",
+        "auto_registered": true,
+        "network_interfaces": {
+          "ip_address": "192.168.1.8",
+          "hostname": "gt39112-ThinkStation-P350"
+        },
+        "timestamp": "2025-09-04T07:49:22.488200+00:00"
+      }
+    }
+  },
+  "registration_tokens": {
+    "7eac0a44aeb59f7b": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-04T07:49:22.488024+00:00",
+      "expires_at": 1757058562.48802,
+      "used": true
+    }
+  },
+  "last_updated": "2025-09-04T07:49:22.488214+00:00"
 }
