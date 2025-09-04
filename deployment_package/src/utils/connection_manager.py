@@ -455,30 +455,31 @@ class ConnectionManager:
     
     def check_raspberry_pi_availability(self) -> bool:
         """
-        Real-time Pi device connectivity check without caching.
-        Directly checks if Raspberry Pi device is connected and responsive.
+        Simple Pi connection check for live server - ethernet/wifi detection only.
+        No complex IP discovery, just basic connection presence.
         """
         try:
-            logger.debug("🔍 Checking real-time Pi device connectivity...")
+            logger.debug("🔍 Simple Pi connection check (ethernet/wifi)...")
             
-            # Direct LAN check for Pi devices - no caching
-            lan_pi_devices = self._fallback_lan_pi_check_list()
-            if lan_pi_devices:
-                logger.info(f"✅ Pi device CONNECTED: Found {len(lan_pi_devices)} responsive device(s)")
-                return True
-                
-            logger.debug("❌ No external Pi devices found via LAN, checking if this is Pi device...")
+            from utils.network_discovery import NetworkDiscovery
+            discovery = NetworkDiscovery()
             
-            # Check if current device is a Raspberry Pi
-            if self._is_current_device_raspberry_pi():
-                logger.info("✅ Pi device CONNECTED: Current device is Raspberry Pi")
-                return True
+            # Use simplified Pi detection
+            devices = discovery.discover_raspberry_pi_devices()
+            
+            # Update availability status
+            self.raspberry_pi_devices_available = len(devices) > 0
+            
+            if self.raspberry_pi_devices_available:
+                logger.info("🟢 Raspberry Pi connection detected")
+            else:
+                logger.info("❌ No Raspberry Pi connection detected")
                 
-            logger.info("❌ Pi device DISCONNECTED: No Raspberry Pi devices found")
-            return False
+            return self.raspberry_pi_devices_available
             
         except Exception as e:
-            logger.error(f"Error checking Pi availability: {e}", exc_info=True)
+            logger.error(f"Error checking Pi connection: {e}")
+            self.raspberry_pi_devices_available = False
             return False
     
     def _is_current_device_raspberry_pi(self) -> bool:
@@ -499,38 +500,6 @@ class ConnectionManager:
                             return True
                 except Exception:
                     pass
-            
-            # Check for ARM architecture and GPIO (common on Pi)
-            machine = platform.machine().lower()
-            if 'arm' in machine and os.path.exists('/sys/class/gpio'):
-                logger.debug(f"✅ Detected ARM device with GPIO: {machine}")
-                return True
-            
-            # Check for Pi-specific files
-            pi_indicators = [
-                '/boot/config.txt',
-                '/boot/cmdline.txt', 
-                '/sys/firmware/devicetree/base/model'
-            ]
-            
-            for indicator in pi_indicators:
-                if os.path.exists(indicator):
-                    logger.debug(f"✅ Found Pi indicator file: {indicator}")
-                    return True
-            
-            logger.debug("❌ Current device is not a Raspberry Pi")
-            return False
-            
-        except Exception as e:
-            logger.debug(f"Error checking if current device is Pi: {e}")
-            return False
-            
-    def _check_iot_hub_pi_devices(self) -> list:
-        """Check IoT Hub for connected Raspberry Pi devices using device twins"""
-        try:
-            if not self.dynamic_registration_service:
-                logger.debug("⚠️ Dynamic registration service not initialized")
-                return []
                 
             registry_manager = self.dynamic_registration_service.registry_manager
             if not registry_manager:

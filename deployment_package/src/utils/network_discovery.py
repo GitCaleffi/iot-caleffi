@@ -115,6 +115,106 @@ class NetworkDiscovery:
         logger.info("Using enhanced discovery methods for reliable Pi detection")
         return self._discover_devices_alternative()
     
+    def discover_raspberry_pi_devices(self) -> List[Dict[str, str]]:
+        """
+        Simplified Pi detection for live server - just check if any Pi is connected.
+        Returns a list with basic connection info without complex IP discovery.
+        """
+        devices = []
+        
+        logger.info("🔍 Simple Pi connection check (ethernet/wifi detection)...")
+        
+        # Simple method: Check if any Pi MAC addresses are visible in network
+        pi_connected = self._simple_pi_connection_check()
+        
+        if pi_connected:
+            # Return a simple device entry indicating Pi is connected
+            devices.append({
+                "ip": "detected",
+                "mac": "pi-device",
+                "hostname": "raspberry-pi",
+                "is_raspberry_pi": True,
+                "detection_reason": "Pi device detected via network interface",
+                "discovery_method": "simple_connection_check"
+            })
+            logger.info("✅ Raspberry Pi connection detected")
+        else:
+            logger.info("❌ No Raspberry Pi connection detected")
+        
+        return devices
+    
+    def _simple_pi_connection_check(self) -> bool:
+        """
+        Simple Pi connection check that works on live servers.
+        Checks for Pi presence without complex IP discovery.
+        """
+        try:
+            # Method 1: Check if any network interfaces show Pi-like activity
+            import subprocess
+            
+            # Check network interfaces for activity
+            try:
+                result = subprocess.run(
+                    ["cat", "/proc/net/arp"], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    # Look for any Pi MAC prefixes in ARP table
+                    for prefix in self.RASPBERRY_PI_MAC_PREFIXES:
+                        if prefix.lower() in result.stdout.lower():
+                            logger.info(f"🍓 Pi MAC prefix {prefix} detected in network")
+                            return True
+            except Exception as e:
+                logger.debug(f"ARP table check failed: {e}")
+            
+            # Method 2: Check for USB ethernet adapters (common with Pi)
+            try:
+                result = subprocess.run(
+                    ["lsusb"], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    # Look for common Pi USB ethernet adapters
+                    pi_usb_indicators = ["Raspberry Pi", "SMSC9512", "LAN9512"]
+                    for indicator in pi_usb_indicators:
+                        if indicator in result.stdout:
+                            logger.info(f"🍓 Pi USB device detected: {indicator}")
+                            return True
+            except Exception as e:
+                logger.debug(f"USB check failed: {e}")
+            
+            # Method 3: Simple network connectivity test
+            # Check if there's any device responding on common Pi ports
+            import socket
+            common_pi_ports = [22, 80, 5000]  # SSH, HTTP, common Pi app ports
+            
+            # Get local network range
+            try:
+                # Simple check for any device on common Pi IPs
+                test_ips = ["192.168.1.18", "192.168.1.100", "192.168.0.18"]
+                for ip in test_ips:
+                    for port in [22]:  # Just check SSH
+                        try:
+                            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                                sock.settimeout(1)
+                                if sock.connect_ex((ip, port)) == 0:
+                                    logger.info(f"🍓 Pi-like device detected at {ip}:{port}")
+                                    return True
+                        except:
+                            continue
+            except Exception as e:
+                logger.debug(f"Network connectivity test failed: {e}")
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Simple Pi connection check failed: {e}")
+            return False
+    
     def _discover_devices_alternative(self) -> List[Dict[str, str]]:
         """Alternative discovery method - scans network for actual external Pi devices only"""
         devices = []
@@ -731,9 +831,36 @@ class NetworkDiscovery:
     
     def discover_raspberry_pi_devices(self) -> List[Dict[str, str]]:
         """
-        Discover EXTERNAL Raspberry Pi devices on the local network using ARP scanning
-        Excludes the server itself to prevent false positive detections
-        Returns list of discovered Pi devices with IP, MAC, and hostname info
+        Simplified Pi detection for live server - just check if any Pi is connected.
+        Works on live servers without complex IP discovery or ARP scanning.
+        """
+        devices = []
+        
+        logger.info("🔍 Simple Pi connection check (ethernet/wifi detection)...")
+        
+        # Simple method: Check if any Pi MAC addresses are visible in network
+        pi_connected = self._simple_pi_connection_check()
+        
+        if pi_connected:
+            # Return a simple device entry indicating Pi is connected
+            devices.append({
+                "ip": "detected",
+                "mac": "pi-device",
+                "hostname": "raspberry-pi",
+                "is_raspberry_pi": True,
+                "detection_reason": "Pi device detected via network interface",
+                "discovery_method": "simple_connection_check"
+            })
+            logger.info("✅ Raspberry Pi connection detected")
+        else:
+            logger.info("❌ No Raspberry Pi connection detected")
+        
+        return devices
+    
+    def discover_raspberry_pi_devices_complex(self) -> List[Dict[str, str]]:
+        """
+        Complex Pi discovery method (backup) - uses ARP scanning and IP detection.
+        This is the old method kept for reference.
         """
         discovered_pis = []
         
