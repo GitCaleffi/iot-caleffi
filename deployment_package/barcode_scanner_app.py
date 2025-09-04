@@ -1286,56 +1286,13 @@ def process_barcode_scan(barcode, device_id=None):
 
     logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
-    # Check Raspberry Pi connection first
-    from utils.connection_manager import ConnectionManager
-    connection_manager =  ConnectionManager()
-    pi_available = connection_manager.check_raspberry_pi_availability()
-    
-    if not pi_available:
-        logger.warning("❌ Raspberry Pi not connected - saving message locally")
-        try:
-            # Save scan to local database for retry when Pi is available
-            timestamp = datetime.now(timezone.utc)
-            local_db.save_barcode_scan(device_id, barcode, timestamp)
-            
-            # Save as unsent message for retry
-            message_data = {
-                "deviceId": device_id,
-                "barcode": barcode,
-                "timestamp": timestamp.isoformat(),
-                "quantity": 1,
-                "messageType": "barcode_scan"
-            }
-            local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
-            
-            led_controller.blink_led("red")
-            return f"""❌ **Operation Failed: Raspberry Pi Not Connected**
-
-**Barcode:** {barcode}
-**Device ID:** {device_id}
-**Status:** Saved locally - will send when Pi reconnects
-**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
-
-Please ensure the Raspberry Pi device is connected and reachable on the network.
-
-🔴 Red LED indicates Pi connection failure"""
-        except Exception as e:
-            logger.error(f"❌ Error saving barcode locally: {e}")
-            led_controller.blink_led("red")
-            return f"❌ Error: Could not save barcode. {str(e)[:100]}"
-
+    # For live servers, send message directly to IoT Hub (bypass Pi detection)
     try:
-        # Save scan to local database
-        timestamp = datetime.now(timezone.utc)
-        local_db.save_barcode_scan(device_id, barcode, timestamp)
-        logger.info(f"💾 Saved barcode scan locally: {barcode}")
-        
-        # Use connection manager for consistent Pi checking and message handling
         from utils.connection_manager import ConnectionManager
-        connection_manager =  ConnectionManager()
+        connection_manager = ConnectionManager()
         
-        # Use connection manager's send_message_with_retry which handles Pi checks automatically
-        success, status_message = connection_manager.send_message_with_retry(
+        # Send message directly to IoT Hub
+        success, status_msg = connection_manager.send_message_with_retry(
             device_id=device_id,
             barcode=barcode,
             quantity=1,
@@ -1344,36 +1301,16 @@ Please ensure the Raspberry Pi device is connected and reachable on the network.
         
         if success:
             led_controller.blink_led("green")
-            return f"""✅ **Barcode Scan Successful**
-
-**Barcode:** {barcode}
-**Device ID:** {device_id}
-**Status:** {status_message}
-**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
-
-🟢 Green LED indicates successful operation"""
+            return f"✅ **Barcode Scanned Successfully**\\n\\n**Barcode:** {barcode}\\n**Device:** {device_id}\\n\\n{status_msg}"
         else:
-            # Message was saved locally due to Pi/connectivity issues
             led_controller.blink_led("red")
-            return f"""⚠️ **Warning: Message Saved Locally**
-
-**Barcode:** {barcode}
-**Device ID:** {device_id}
-**Status:** {status_message}
-**Timestamp:** {timestamp.strftime('%Y-%m-%d %H:%M:%S')}
-
-🔴 Red LED indicates offline operation"""
-                
+            return f"❌ **Scan Failed**\\n\\n**Barcode:** {barcode}\\n**Device:** {device_id}\\n\\n{status_msg}"
+            
     except Exception as e:
-        logger.error(f"❌ Barcode scan error: {e}")
+        logger.error(f"Error processing barcode scan: {e}")
         led_controller.blink_led("red")
-        return f"""❌ **Barcode Scan Failed**
+        return f"❌ **Error:** {str(e)}"
 
-**Barcode:** {barcode}
-**Device ID:** {device_id}
-**Error:** {str(e)[:100]}
-
-🔴 Red LED indicates error"""
 
 # ============================================================================
 # DISPLAY AND STATUS FUNCTIONS
