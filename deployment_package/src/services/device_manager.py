@@ -1,6 +1,3 @@
-"""
-Device Manager - Manages device identification, connectivity, and registration
-"""
 import time
 import threading
 import logging
