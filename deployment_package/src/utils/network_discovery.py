@@ -167,14 +167,14 @@ class NetworkDiscovery:
             except Exception as e:
                 logger.info(f"❌ Method 1 failed: ARP table check error: {e}")
             
-            # Method 2: Live server environment fallback (moved up for priority)
+            # Method 2: Live server environment fallback (DISABLED - causes false positives)
             try:
                 logger.info("🔍 Method 2: Checking live server environment...")
                 import os
                 if os.path.exists("/var/www/html/iot-caleffi"):
-                    logger.info("🍓 SUCCESS: Live server environment detected - assuming Pi connected")
-                    return True
-                logger.info("❌ Method 2 failed: Not a live server environment")
+                    logger.info("ℹ️ Live server environment detected, but checking for ACTUAL Pi devices only")
+                    # Don't return True here - continue to real Pi detection methods
+                logger.info("❌ Method 2: Skipping fallback detection - checking for real Pi devices only")
             except Exception as e:
                 logger.info(f"❌ Method 2 failed: Environment check error: {e}")
             
@@ -196,7 +196,7 @@ class NetworkDiscovery:
             except Exception as e:
                 logger.info(f"❌ Method 3 failed: Ethernet carrier check error: {e}")
             
-            # Method 4: Check network interfaces for ethernet activity
+            # Method 4: Check network interfaces for ethernet activity (DISABLED - detects server interfaces)
             try:
                 logger.info("🔍 Method 4: Checking network interfaces...")
                 import subprocess
@@ -208,11 +208,9 @@ class NetworkDiscovery:
                 )
                 if result.returncode == 0:
                     logger.info(f"Network interfaces: {result.stdout[:300]}...")
-                    # Look for active ethernet interfaces
-                    if "state UP" in result.stdout and ("eth" in result.stdout or "enp" in result.stdout):
-                        logger.info("🍓 SUCCESS: Active ethernet interface detected")
-                        return True
-                logger.info("❌ Method 4 failed: No active ethernet interfaces found")
+                    # Don't use server interfaces as Pi detection - this causes false positives
+                    logger.info("ℹ️ Server ethernet interfaces detected, but not counting as Pi devices")
+                logger.info("❌ Method 4: Skipping server interface detection - only external Pi devices counted")
             except Exception as e:
                 logger.info(f"❌ Method 4 failed: Interface check error: {e}")
             
@@ -231,24 +229,23 @@ class NetworkDiscovery:
                                 return True
                     except:
                         continue
-                logger.info("❌ Method 5 failed: No responsive devices found on common Pi IPs")
+                logger.info(" Method 5 failed: No responsive devices found on common Pi IPs")
             except Exception as e:
-                logger.info(f"❌ Method 5 failed: Network connectivity test error: {e}")
+                logger.info(f" Method 5 failed: Network connectivity test error: {e}")
             
-            # Method 6: Force detection for live server (final fallback)
+            # Method 6: Final fallback - production deployment detection (DISABLED - causes false positives)
             try:
-                logger.info("🔍 Method 6: Final fallback - checking if this is production deployment...")
+                logger.info(" Method 6: Final fallback - checking if this is production deployment...")
                 import os
-                # If we're in the iot-caleffi directory structure, assume Pi is connected
                 current_path = os.getcwd()
                 if "iot-caleffi" in current_path or os.path.exists("/var/www/html/iot-caleffi"):
-                    logger.info("🍓 SUCCESS: Production deployment detected - forcing Pi connected status")
-                    return True
-                logger.info(f"❌ Method 6 failed: Not in production deployment (path: {current_path})")
+                    logger.info(" Production deployment detected, but ONLY reporting ACTUAL Pi devices")
+                    # Don't return True here - only report real Pi devices
+                logger.info(f" Method 6: Skipping fallback detection - only real Pi devices reported (path: {current_path})")
             except Exception as e:
-                logger.info(f"❌ Method 6 failed: Production check error: {e}")
+                logger.info(f" Method 6 failed: Production check error: {e}")
             
-            logger.info("❌ ALL METHODS FAILED: No Pi connection indicators found")
+            logger.info(" ALL METHODS FAILED: No Pi connection indicators found")
             return False
             
         except Exception as e:

@@ -39,7 +39,7 @@
       "https://iot.caleffionline.it"
     ],
     "auto_detected_ip": "192.168.1.18",
-    "last_detection": "2025-09-04T17:53:13.572850",
+    "last_detection": "2025-09-05T10:32:24.197197",
     "status": "connected",
     "force_detection": false,
     "scan_ips": [
@@ -87,6 +87,6 @@
         "port": 22
       }
     },
-    "last_disconnect": "2025-09-04T16:44:14.958340"
+    "last_disconnect": "2025-09-04T18:10:34.979332"
   }
 }
