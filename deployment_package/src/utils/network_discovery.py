@@ -152,7 +152,7 @@ class NetworkDiscovery:
         try:
             logger.info("🔍 Starting enhanced Pi detection for live server...")
             
-            # Method 0: Check if we're running ON a Raspberry Pi device (NEW)
+            # Method 0: ALWAYS check if we're running ON a Raspberry Pi device first
             try:
                 logger.info("🔍 Method 0: Checking if running on Raspberry Pi hardware...")
                 
@@ -179,15 +179,40 @@ class NetworkDiscovery:
                         return True
                 
                 # Check current working directory for Pi deployment
-                import os
                 current_path = os.getcwd()
                 if "/home/pi/" in current_path or "raspberry" in current_path.lower():
                     logger.info(f"🍓 SUCCESS: Running in Pi user directory ({current_path})")
                     return True
+                
+                # Check if running as pi user
+                try:
+                    import getpass
+                    username = getpass.getuser()
+                    if username == "pi":
+                        logger.info(f"🍓 SUCCESS: Running as 'pi' user")
+                        return True
+                except Exception:
+                    pass
                     
                 logger.info("❌ Method 0: Not running on Raspberry Pi hardware")
             except Exception as e:
                 logger.info(f"❌ Method 0 failed: Pi hardware check error: {e}")
+            
+            # Check configuration for x86 system support
+            pi_config = self.config.get("raspberry_pi", {})
+            require_pi_hardware = pi_config.get("require_pi_hardware", True)
+            allow_x86_systems = pi_config.get("allow_x86_systems", False)
+            force_detection = pi_config.get("force_detection", False)
+            
+            # If we reach here and x86 systems are allowed, return True
+            if not require_pi_hardware or allow_x86_systems or force_detection:
+                logger.info("🔧 Pi hardware requirement disabled - allowing x86 systems")
+                if force_detection:
+                    logger.info("✅ SUCCESS: Force detection enabled - treating as Pi device")
+                    return True
+                if allow_x86_systems:
+                    logger.info("🖥️ SUCCESS: x86 system allowed as Pi substitute")
+                    return True
             
             # Method 1: Check ARP table for Pi MAC addresses
             try:
@@ -208,7 +233,6 @@ class NetworkDiscovery:
             # Method 2: Live server environment fallback (DISABLED - causes false positives)
             try:
                 logger.info("🔍 Method 2: Checking live server environment...")
-                import os
                 if os.path.exists("/var/www/html/iot-caleffi"):
                     logger.info("ℹ️ Live server environment detected, but checking for ACTUAL Pi devices only")
                     # Don't return True here - continue to real Pi detection methods
@@ -274,7 +298,6 @@ class NetworkDiscovery:
             # Method 6: Final fallback - production deployment detection (DISABLED - causes false positives)
             try:
                 logger.info(" Method 6: Final fallback - checking if this is production deployment...")
-                import os
                 current_path = os.getcwd()
                 if "iot-caleffi" in current_path or os.path.exists("/var/www/html/iot-caleffi"):
                     logger.info(" Production deployment detected, but ONLY reporting ACTUAL Pi devices")
@@ -815,8 +838,7 @@ class NetworkDiscovery:
             # Test connectivity
             ping_result = subprocess.run(
                 ["ping", "-c", "1", "-W", "1", ip_address], 
-                capture_output=True, 
-                timeout=2
+                capture_output=True, timeout=2
             )
             
             if ping_result.returncode == 0:
@@ -824,8 +846,7 @@ class NetworkDiscovery:
                 try:
                     arp_result = subprocess.run(
                         ["arp", "-n", ip_address], 
-                        capture_output=True, 
-                        timeout=2
+                        capture_output=True, timeout=2
                     )
                     
                     mac = "unknown"
