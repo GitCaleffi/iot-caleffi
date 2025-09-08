@@ -120,7 +120,12 @@ class DynamicDeviceManager:
             
             # Check if device ID is already registered
             if device_id in self.device_cache:
-                return False, f"Device {device_id} is already registered"
+                # Update last_seen timestamp for existing device
+                self.device_cache[device_id]['last_seen'] = datetime.now(timezone.utc).isoformat()
+                self.device_cache[device_id]['status'] = 'active'
+                self.save_device_config()
+                logger.info(f"Device {device_id} already registered - updated last_seen timestamp")
+                return True, f"Device {device_id} already registered and active"
             
             # Mark token as used
             self.registration_tokens[token]['used'] = True
@@ -223,7 +228,12 @@ class DynamicDeviceManager:
         with self.lock:
             # Check if device ID is already registered
             if device_id in self.device_cache:
-                return False, f"Device {device_id} is already registered"
+                # Update last_seen timestamp for existing device
+                self.device_cache[device_id]['last_seen'] = datetime.now(timezone.utc).isoformat()
+                self.device_cache[device_id]['status'] = 'active'
+                self.save_device_config()
+                logger.info(f"Device {device_id} already registered - updated last_seen timestamp")
+                return True, f"Device {device_id} already registered and active"
             
             # Register the device
             self.device_cache[device_id] = {

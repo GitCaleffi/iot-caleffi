@@ -496,7 +496,10 @@ def auto_register_device_to_server():
             success, message = device_manager.register_device(token, device_id, device_info)
             
             if success:
-                logger.info(f"✅ Device {device_id} registered with IoT Hub successfully")
+                if "already registered" in message.lower():
+                    logger.info(f"✅ Device {device_id} already registered - continuing with dynamic operation")
+                else:
+                    logger.info(f"✅ Device {device_id} registered with IoT Hub successfully")
                 
                 # Save to local database
                 local_db.save_device_id(device_id)
@@ -504,7 +507,10 @@ def auto_register_device_to_server():
                 # Initialize IoT Hub connection
                 _initialize_iot_hub_connection(device_id)
                 
-                # Step 2: Register with live server API (optional)
+                # Step 2: Send device registration to API endpoint
+                _send_device_registration_to_api(device_id)
+                
+                # Step 3: Register with live server API (optional)
                 _register_with_live_server(device_id, mac_address, local_ip)
                 
                 return True
@@ -534,10 +540,8 @@ def _initialize_iot_hub_connection(device_id):
                 logger.warning("🚫 BLOCKING IoT Hub send - Pi device not connected")
                 return True  # Registration saved locally, will send when Pi reconnects
             
-            # Initialize IoT Hub client with device-specific connection string
             hub_client = HubClient(device_connection_string)
             
-            # Send registration confirmation to IoT Hub
             confirmation_msg = {
                 "deviceId": device_id,
                 "status": "auto_registered",
@@ -549,7 +553,6 @@ def _initialize_iot_hub_connection(device_id):
             hub_client.send_message(json.dumps(confirmation_msg), device_id)
             logger.info("📡 Registration confirmation sent to IoT Hub")
             
-            # Send single heartbeat to IoT Hub (no background thread)
             _send_iot_hub_heartbeat(device_id, device_connection_string)
             
         else:
@@ -557,6 +560,27 @@ def _initialize_iot_hub_connection(device_id):
             
     except Exception as e:
         logger.error(f"❌ IoT Hub connection initialization error: {e}")
+
+def _send_device_registration_to_api(device_id):
+    """Send device registration to API endpoint after successful registration"""
+    try:
+        from api.api_client import ApiClient
+        
+        # Initialize API client
+        api_client = ApiClient()
+        
+        # Send device registration to API
+        logger.info(f"📡 Sending device registration to API: {device_id}")
+        result = api_client.register_device(device_id)
+        
+        if result.get("success", False):
+            logger.info(f"✅ Device {device_id} registered with API successfully")
+            logger.info(f"API Response: {result.get('response', {})}")
+        else:
+            logger.warning(f"⚠️ API registration failed: {result.get('message', 'Unknown error')}")
+            
+    except Exception as e:
+        logger.error(f"❌ API registration error: {e}")
 
 def _register_with_live_server(device_id, mac_address, local_ip):
     """Register device with live server API (optional step)"""
@@ -912,9 +936,14 @@ class RaspberryPiDeviceService:
             success, message = device_manager.register_device(token, self.device_id, device_info)
             
             if success:
-                logger.info(f"✅ Device {self.device_id} registered with Azure IoT Hub")
-                # Green LED: Registration successful
-                led_controller.blink_led('green', 0.5, 3)
+                if "already registered" in message.lower():
+                    logger.info(f"✅ Device {self.device_id} already registered - continuing with dynamic operation")
+                    # Yellow LED: Already registered, continuing
+                    led_controller.blink_led('yellow', 0.3, 2)
+                else:
+                    logger.info(f"✅ Device {self.device_id} registered with Azure IoT Hub")
+                    # Green LED: Registration successful
+                    led_controller.blink_led('green', 0.5, 3)
                 
                 # Get device-specific connection string
                 device_connection_string = device_manager.get_device_connection_string(self.device_id)
@@ -2527,7 +2556,7 @@ class PiHeartbeatService:
                     logger.debug(f"Server {server_url} not reachable: {e}")
                     continue
             
-            logger.warning("⚠️ No barcode scanner server found")
+            logger.info("ℹ️ No central server found - running in standalone Pi mode")
             return None
             
         except Exception as e:
@@ -2540,7 +2569,8 @@ class PiHeartbeatService:
             if not self.server_url:
                 self.server_url = self._discover_server()
                 if not self.server_url:
-                    return False
+                    logger.info("ℹ️ No server available - skipping server registration")
+                    return True  # Return True for standalone mode
             
             registration_data = {
                 "device_id": self.device_info["device_id"],
@@ -2795,8 +2825,9 @@ if raspberry_pi_config.get("remote_connectivity_monitoring", False):
         remote_pi_connectivity = RemotePiConnectivity(config)
         remote_pi_connectivity.start_monitoring()
         logger.info("🌐 Remote Pi connectivity monitoring started")
-    except Exception as e:
-        logger.error(f"Failed to start remote Pi connectivity monitoring: {e}")
+    except ImportError as e:
+        logger.info(f"Remote Pi connectivity monitoring not available: {e}")
+        logger.info("Running in standalone Pi mode without remote monitoring")
 
 # Global variable for Gradio app instance
 

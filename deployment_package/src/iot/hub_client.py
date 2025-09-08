@@ -197,29 +197,49 @@ class HubClient:
             
             barcode = barcode.strip()
             
-            # Strict EAN validation
-            try:
-                from barcode_validator import validate_ean, BarcodeValidationError
-                validate_ean(barcode)
-                logger.info(f"Barcode {barcode} passed EAN validation")
-                
-                # Create message payload for barcode
+            # Check if this is a device ID (starts with common prefixes) or a product barcode
+            is_device_id = (barcode.startswith(('auto-', 'pi-', 'scanner-', 'device-', 'test-')) or 
+                           len(barcode) < 8 or not barcode.isdigit())
+            
+            if is_device_id:
+                # Device ID - skip EAN validation
+                logger.info(f"Processing device ID: {barcode} (skipping EAN validation)")
                 message_data = {
-                    "scannedBarcode": barcode,
-                    "deviceId": device_id,
+                    "deviceId": barcode,
+                    "messageType": "device_registration",
                     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
                 }
-                
-                # Create message with ID
-                message = Message(json.dumps(message_data))
-                message.message_id = f"{device_id}-{int(time.time())}"
-                
-            except BarcodeValidationError as e:
-                logger.error(f"Invalid EAN barcode format: {e}")
-                return False
-            except ImportError:
-                logger.error("barcode_validator module not found, cannot validate barcode")
-                return False
+            else:
+                # Product barcode - apply EAN validation
+                try:
+                    from barcode_validator import validate_ean, BarcodeValidationError
+                    validate_ean(barcode)
+                    logger.info(f"Barcode {barcode} passed EAN validation")
+                    
+                    # Create message payload for barcode scan
+                    message_data = {
+                        "scannedBarcode": barcode,
+                        "deviceId": device_id,
+                        "messageType": "barcode_scan",
+                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
+                    }
+                    
+                except BarcodeValidationError as e:
+                    logger.error(f"Invalid EAN barcode format: {e}")
+                    return False
+                except ImportError:
+                    logger.warning("barcode_validator module not found, proceeding without EAN validation")
+                    # Proceed without validation if module not available
+                    message_data = {
+                        "scannedBarcode": barcode,
+                        "deviceId": device_id,
+                        "messageType": "barcode_scan",
+                        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
+                    }
+            
+            # Create message with ID
+            message = Message(json.dumps(message_data))
+            message.message_id = f"{device_id}-{int(time.time())}"
 
         logger.info(f"Message to send: {json.dumps(message_data, indent=2)}")
         logger.info(f"Message ID: {message.message_id}")

@@ -264,8 +264,8 @@ def main():
     print("=" * 50)
     
     # Your test data
-    device_id = "6efb25ec319f"
-    test_barcode = "5625415485525"
+    device_id = "a4bba850baa8"
+    test_barcode = "5685748596547"
     
     print(f"🆔 Device ID: {device_id}")
     print(f"📊 Test Barcode: {test_barcode}")
