@@ -1,0 +1,16 @@
+[Unit]
+Description=Barcode Scanner Plug and Play Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=Geektech
+WorkingDirectory=/home/Geektech/src/iot-caleffi/deployment_package/src
+Environment=PATH=/home/Geektech/src/iot-caleffi/venv310/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/Geektech/src/iot-caleffi/venv310/bin/python3 barcode_scanner_app.py --cli
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

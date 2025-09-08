@@ -1,0 +1,28 @@
+# Core dependencies
+requests
+python-dotenv
+gradio
+flask
+
+# Azure IoT
+azure-iot-device
+azure-iot-hub
+
+# System utilities
+psutil
+netifaces
+
+# Logging
+python-json-logger
+
+# Raspberry Pi GPIO (only install on Pi)
+RPi.GPIO
+gpiozero
+
+# Testing
+pytest
+pytest-mock
+
+# Optional: Barcode validation
+python-barcode
+#sudo apt install python3-lgpio -y

@@ -52,15 +52,15 @@ try:
     )
     
     if is_pi:
-        import RPi.GPIO as GPIO
+        import lgpio
         GPIO_AVAILABLE = True
-        print("✅ RPi.GPIO loaded successfully - LED functionality enabled")
+        print("✅ lgpio loaded successfully - LED functionality enabled")
     else:
         print("ℹ️ Not running on Raspberry Pi - LED functionality will use simulation mode")
         
 except (ImportError, RuntimeError, FileNotFoundError) as e:
     GPIO_AVAILABLE = False
-    print(f"ℹ️ RPi.GPIO not available: {e} - LED functionality will use simulation mode")
+    print(f"ℹ️ lgpio not available: {e} - LED functionality will use simulation mode")
 
 
 pi_status_thread = None
@@ -623,8 +623,12 @@ def _send_iot_hub_heartbeat(device_id, device_connection_string):
         heartbeat_message = {
             "deviceId": device_id,
             "messageType": "heartbeat",
+            "status": "online",
             "timestamp": datetime.now().isoformat(),
-            "status": "active"
+            "networkInfo": {
+                "ipAddress": get_primary_raspberry_pi_ip(),
+                "macAddress": get_local_mac_address()
+            }
         }
         
         hub_client.send_message(heartbeat_message)
@@ -695,35 +699,43 @@ class LEDController:
     
     def __init__(self):
         self.gpio_available = GPIO_AVAILABLE and IS_RASPBERRY_PI
+        self.gpio = None
         self.led_pins = {
-            'red': 18,     # GPIO 18 (Pin 12)
-            'yellow': 23,  # GPIO 23 (Pin 16) 
-            'green': 24    # GPIO 24 (Pin 18)
+            'red': 17,     # GPIO 17 (matches your test code)
+            'yellow': 18,  # GPIO 18 
+            'green': 24    # GPIO 24
         }
         
         if self.gpio_available:
             self._setup_gpio()
-            logger.info("🔴🟡🟢 GPIO LED controller initialized")
+            logger.info("🔴🟡🟢 GPIO LED controller initialized with lgpio")
         else:
             logger.info("💡 LED controller in simulation mode (no GPIO)")
     
     def _setup_gpio(self):
-        """Initialize GPIO pins for LED control"""
+        """Initialize GPIO pins for LED control using lgpio"""
         try:
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setwarnings(False)
+            import lgpio
+            self.gpio = lgpio.gpiochip_open(0)
             
+            # Claim output pins for each LED
             for color, pin in self.led_pins.items():
-                GPIO.setup(pin, GPIO.OUT)
-                GPIO.output(pin, GPIO.LOW)  # Start with LEDs off
+                lgpio.gpio_claim_output(self.gpio, pin, 0)  # Start with LEDs off
+                logger.debug(f"🔧 GPIO pin {pin} claimed for {color} LED")
                 
         except Exception as e:
             logger.error(f"GPIO setup failed: {e}")
             self.gpio_available = False
+            if self.gpio:
+                try:
+                    lgpio.gpiochip_close(self.gpio)
+                except:
+                    pass
+                self.gpio = None
     
     def blink_led(self, color, duration=0.5, times=1):
         """Blink LED with specified color"""
-        if not self.gpio_available:
+        if not self.gpio_available or not self.gpio:
             logger.info(f"💡 LED Blink: {color.upper()} ({'●' * times})")
             return
         
@@ -733,10 +745,13 @@ class LEDController:
                 logger.warning(f"Unknown LED color: {color}")
                 return
             
-            for _ in range(times):
-                GPIO.output(pin, GPIO.HIGH)
+            import lgpio
+            for i in range(times):
+                lgpio.gpio_write(self.gpio, pin, 1)
+                logger.debug(f"LED {color.upper()} ON ({i+1})")
                 time.sleep(duration)
-                GPIO.output(pin, GPIO.LOW)
+                lgpio.gpio_write(self.gpio, pin, 0)
+                logger.debug(f"LED {color.upper()} OFF ({i+1})")
                 time.sleep(0.1)  # Short pause between blinks
                 
         except Exception as e:
@@ -744,22 +759,26 @@ class LEDController:
     
     def set_led(self, color, state):
         """Set LED on/off state"""
-        if not self.gpio_available:
+        if not self.gpio_available or not self.gpio:
             logger.info(f"💡 LED {color.upper()}: {'ON' if state else 'OFF'}")
             return
         
         try:
             pin = self.led_pins.get(color)
             if pin:
-                GPIO.output(pin, GPIO.HIGH if state else GPIO.LOW)
+                import lgpio
+                lgpio.gpio_write(self.gpio, pin, 1 if state else 0)
+                logger.debug(f"LED {color.upper()}: {'ON' if state else 'OFF'}")
         except Exception as e:
             logger.error(f"LED control error: {e}")
     
     def cleanup(self):
         """Clean up GPIO resources"""
-        if self.gpio_available:
+        if self.gpio_available and self.gpio:
             try:
-                GPIO.cleanup()
+                import lgpio
+                lgpio.gpiochip_close(self.gpio)
+                self.gpio = None
                 logger.info("🔌 GPIO cleanup completed")
             except Exception as e:
                 logger.error(f"GPIO cleanup error: {e}")
@@ -967,12 +986,15 @@ class RaspberryPiDeviceService:
                 "networkInfo": self._get_network_info()
             }
             
-            success = self.hub_client.send_message(json.dumps(confirmation_payload), self.device_id)
-            
-            if success:
-                logger.info("📡 Registration confirmation sent to IoT Hub")
-            else:
-                logger.warning("⚠️ Failed to send registration confirmation")
+            # Send Device Twin update
+            hub_client = HubClient(self.hub_client)
+            if hub_client.connect():
+                # Send as Device Twin reported properties
+                success = hub_client.send_device_twin_update(confirmation_payload)
+                if success:
+                    logger.info("📡 Registration confirmation sent to IoT Hub")
+                else:
+                    logger.warning("⚠️ Failed to send registration confirmation")
         except Exception as e:
             logger.warning(f"Registration confirmation error: {e}")
     
@@ -988,7 +1010,8 @@ class RaspberryPiDeviceService:
                     "networkInfo": self._get_network_info()
                 }
                 
-                self.hub_client.send_message(json.dumps(heartbeat_payload), self.device_id)
+                hub_client = HubClient(self.hub_client)
+                hub_client.send_message(heartbeat_payload)
                 logger.info(f"💓 Single heartbeat sent to IoT Hub for device: {self.device_id}")
                 
         except Exception as e:
@@ -1318,7 +1341,9 @@ def generate_registration_token():
 2. Wait for Pi Status to show "Connected ✅"
 3. Try registration again
 
-Please ensure the Raspberry Pi device is connected and reachable on the network."""
+Please ensure the Raspberry Pi device is connected and reachable on the network.
+
+🔴 Red LED indicates Pi connection failure"""
             
             logger.warning("Device registration blocked: Raspberry Pi not connected")
             led_controller.blink_led("red")
@@ -1890,22 +1915,12 @@ def get_device_mac_address():
     # Method 4: Use hostname -I + ARP lookup (server-friendly)
     try:
         # Get local IP first
-        ip_result = subprocess.run(
-            ["hostname", "-I"],
-            capture_output=True,
-            text=True,
-            timeout=3
-        )
+        ip_result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=3)
         if ip_result.returncode == 0 and ip_result.stdout.strip():
             local_ip = ip_result.stdout.strip().split()[0]
             
             # Try to find MAC via ARP for local IP
-            arp_result = subprocess.run(
-                ["arp", "-n", local_ip],
-                capture_output=True,
-                text=True,
-                timeout=3
-            )
+            arp_result = subprocess.run(['arp', '-n', local_ip], capture_output=True, text=True, timeout=3)
             if arp_result.returncode == 0:
                 # Parse ARP output for MAC
                 mac_match = re.search(r'([0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2}:[0-9a-f]{2})', arp_result.stdout.lower())
@@ -1930,12 +1945,7 @@ def get_device_ip():
     """
     try:
         # Method 1: Use hostname -I (most reliable for Pi)
-        result = subprocess.run(
-            ["hostname", "-I"], 
-            capture_output=True, 
-            text=True, 
-            timeout=5
-        )
+        result = subprocess.run(['hostname', '-I'], capture_output=True, text=True, timeout=5)
         if result.returncode == 0 and result.stdout.strip():
             # Get first IPv4 address (ignore IPv6)
             ips = result.stdout.strip().split()
@@ -1950,13 +1960,7 @@ def get_device_ip():
         # Method 2: Check multiple network interfaces
         interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33']
         for interface in interfaces:
-            result = subprocess.run(
-                f"ip addr show {interface} | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1",
-                shell=True, 
-                capture_output=True, 
-                text=True, 
-                timeout=5
-            )
+            result = subprocess.run(f"ip addr show {interface} | grep 'inet ' | awk '{{print $2}}' | cut -d/ -f1", shell=True, capture_output=True, text=True, timeout=5)
             if result.returncode == 0 and result.stdout.strip():
                 ip = result.stdout.strip()
                 if ip and not ip.startswith('127.'):
@@ -1967,13 +1971,7 @@ def get_device_ip():
     
     try:
         # Method 3: Use ip route (fallback)
-        result = subprocess.run(
-            "/sbin/ip route get 8.8.8.8 | awk '{print $7}' | head -1",
-            shell=True, 
-            capture_output=True, 
-            text=True, 
-            timeout=5
-        )
+        result = subprocess.run("/sbin/ip route get 8.8.8.8 | awk '{print $7}' | head -1", shell=True, capture_output=True, text=True, timeout=5)
         if result.returncode == 0 and result.stdout.strip():
             ip = result.stdout.strip()
             if ip and not ip.startswith('127.'):
@@ -2110,7 +2108,7 @@ def _send_pi_status_to_iot_hub(device_id, pi_attached, pi_details):
         
         # Check Pi availability before sending registration confirmation
         if not connection_manager.check_raspberry_pi_availability():
-            logger.warning(f"Registration confirmation blocked: Raspberry Pi not connected for device {device_id}")
+            logger.warning(f"Registration confirmation blocked: Raspberry Pi not connected")
             # Save registration message locally for retry
             local_db.save_unsent_message(device_id, json.dumps(message_data), datetime.now())
             return "⚠️ **Registration saved locally - Pi offline**\n\nDevice registration will be confirmed when Raspberry Pi comes online."
@@ -2437,8 +2435,8 @@ class PiHeartbeatService:
             server_candidates = [
                 "https://iot.caleffionline.it",
                 "https://api2.caleffionline.it",
-                "http://localhost:7860",
-                "http://127.0.0.1:7860"
+                "http://localhost:5000",
+                "http://127.0.0.1:5000"
             ]
             
             # Add any configured server URLs
@@ -3110,17 +3108,9 @@ def start_plug_and_play_barcode_service():
 def process_barcode_scan_auto(barcode):
     """Process barcode scan automatically without UI interaction"""
     try:
-
-        device_id = local_db.get_device_id()
-        if not device_id:
-          
-            mac_address = get_local_mac_address()
-            if mac_address:
-                device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
-                local_db.save_device_id(device_id)
-            else:
-                return "❌ No device ID available - registration failed"
-        
+        # Auto-generate device ID if not provided
+        device_id = get_auto_device_id()
+        logger.info(f"🔧 Auto-generated Device ID: {device_id}")
 
         try:
             validated_barcode = validate_ean(barcode)
@@ -3187,80 +3177,6 @@ def process_barcode_scan_auto(barcode):
     except Exception as e:
         logger.error(f"❌ Barcode processing error: {e}")
         return f"❌ Processing error: {str(e)}"
-
-def start_automatic_plug_and_play_service():
-    """Start fully automatic plug-and-play barcode scanner service"""
-    logger.info("🚀 Starting AUTOMATIC Plug-and-Play Barcode Scanner Service...")
-    logger.info("🔌 Connect ethernet cable and USB barcode scanner")
-    logger.info("📊 Just scan any barcode to test connection and auto-register!")
-    logger.info("⚡ All operations are automatic - no buttons needed")
-    
-
-    connection_manager = ConnectionManager()
-
-    device_id = get_auto_device_id()
-    logger.info(f"🆔 Auto-generated Device ID: {device_id}")
-
-    logger.info("🔄 Starting automatic unsent message processing...")
-    
-    try:
-        while True:
-            try:
-                print("\n🎯 Ready for barcode scan (connect ethernet + scan barcode):")
-                barcode = input().strip()
-                
-                if barcode and len(barcode) >= 6:
-                    logger.info(f"📊 Barcode scanned: {barcode}")
-                    
-                    # Check ethernet connection automatically
-                    ethernet_connected = check_ethernet_connection()
-                    
-                    if ethernet_connected:
-                        logger.info("✅ Ethernet connection detected")
-                        
-                        # Auto-register device if not already registered
-                        if not is_device_registered(device_id):
-                            logger.info("📝 Auto-registering device...")
-                            registration_success = auto_register_device(device_id, barcode)
-                            
-                            if registration_success:
-                                logger.info("✅ Device auto-registered successfully!")
-                                print("✅ SUCCESS: Device registered automatically")
-                            else:
-                                logger.warning("⚠️ Auto-registration failed, but continuing...")
-                                print("⚠️ WARNING: Registration failed, check logs")
-                        
-                        # Process barcode automatically
-                        result = process_barcode_automatically(barcode, device_id)
-                        
-                        if "✅" in result:
-                            logger.info("✅ Barcode processed successfully")
-                            print("✅ SUCCESS: Barcode sent to inventory system")
-                            
-                            # Auto-process any unsent messages when connection is good
-                            auto_process_unsent_messages()
-                        else:
-                            logger.warning("⚠️ Barcode processing had issues")
-                            print("⚠️ WARNING: Check logs for details")
-                    else:
-                        logger.warning("❌ No ethernet connection - saving locally")
-                        print("❌ NO ETHERNET: Connect ethernet cable and try again")
-                        
-                        # Save barcode locally for retry
-                        save_barcode_for_retry(barcode, device_id)
-                        
-                else:
-                    logger.warning("⚠️ Invalid barcode - please scan a valid barcode")
-                    print("⚠️ Invalid barcode - try again")
-                    
-            except EOFError:
-                logger.info("📱 Waiting for barcode scanner input...")
-                time.sleep(1)
-                continue
-                
-    except KeyboardInterrupt:
-        logger.info("🛑 Automatic service stopped by user")
-        print("\n🛑 Service stopped. Thank you for using the barcode scanner!")
 
 def get_auto_device_id():
     """Generate automatic device ID from hardware"""
