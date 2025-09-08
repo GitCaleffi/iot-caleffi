@@ -11,6 +11,7 @@ import ipaddress
 import logging
 from typing import List, Dict, Optional
 import json
+import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -150,6 +151,43 @@ class NetworkDiscovery:
         """
         try:
             logger.info("🔍 Starting enhanced Pi detection for live server...")
+            
+            # Method 0: Check if we're running ON a Raspberry Pi device (NEW)
+            try:
+                logger.info("🔍 Method 0: Checking if running on Raspberry Pi hardware...")
+                
+                # Check CPU info for ARM architecture (Pi indicator)
+                cpu_info_paths = ["/proc/cpuinfo", "/sys/firmware/devicetree/base/model"]
+                pi_indicators = ["raspberry", "pi", "arm", "bcm"]
+                
+                for path in cpu_info_paths:
+                    try:
+                        if os.path.exists(path):
+                            with open(path, 'r') as f:
+                                content = f.read().lower()
+                                if any(indicator in content for indicator in pi_indicators):
+                                    logger.info(f"🍓 SUCCESS: Running on Raspberry Pi hardware (detected via {path})")
+                                    return True
+                    except Exception as e:
+                        logger.debug(f"Error reading {path}: {e}")
+                
+                # Check for Pi-specific directories
+                pi_paths = ["/boot/config.txt", "/opt/vc/bin/vcgencmd", "/sys/firmware/devicetree/base/model"]
+                for path in pi_paths:
+                    if os.path.exists(path):
+                        logger.info(f"🍓 SUCCESS: Raspberry Pi system detected (found {path})")
+                        return True
+                
+                # Check current working directory for Pi deployment
+                import os
+                current_path = os.getcwd()
+                if "/home/pi/" in current_path or "raspberry" in current_path.lower():
+                    logger.info(f"🍓 SUCCESS: Running in Pi user directory ({current_path})")
+                    return True
+                    
+                logger.info("❌ Method 0: Not running on Raspberry Pi hardware")
+            except Exception as e:
+                logger.info(f"❌ Method 0 failed: Pi hardware check error: {e}")
             
             # Method 1: Check ARP table for Pi MAC addresses
             try:
