@@ -1343,7 +1343,7 @@ def generate_registration_token():
 3. Try registration again
 
 Please ensure the Raspberry Pi device is connected and reachable on the network."""
-            
+
             logger.warning("Device registration blocked: Raspberry Pi not connected")
             led_controller.blink_led("red")
             return response_msg
@@ -1449,7 +1449,7 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
         
         # Check if device is already registered in local DB (legacy check)
         registered_devices = local_db.get_registered_devices()
-        device_already_registered = any(device['device_id'] == device_id for device in registered_devices)
+        device_already_registered = any(device.get('device_id') == device_id for device in registered_devices)
         
         if device_already_registered:
             # Find the registration date for display
@@ -1876,7 +1876,7 @@ def get_device_mac_address():
                     return mac
     except Exception as e:
         logger.warning(f"ip link method failed: {e}")
-    
+
     # Method 2: Use ifconfig command (fallback)
     try:
         result = subprocess.run(
@@ -1895,7 +1895,7 @@ def get_device_mac_address():
                     return mac
     except Exception as e:
         logger.warning(f"ifconfig method failed: {e}")
-    
+
     # Method 3: Check /sys/class/net files (if available)
     try:
         interfaces = ['eth0', 'wlan0', 'enp0s3', 'ens33', 'eno1', 'ens160']
@@ -2012,7 +2012,7 @@ def check_local_pi_and_notify_server():
         logger.info("🔍 Checking Pi device status and sending MAC address to live server...")
         
         # Get current device MAC address dynamically
-        device_mac = get_device_mac_address()
+        device_mac = get_local_mac_address()
         pi_attached = device_mac is not None
         
         # Generate unique device ID
@@ -2390,7 +2390,7 @@ class PiHeartbeatService:
         """Get comprehensive device information for heartbeat"""
         try:
             # Generate consistent device ID based on hardware
-            mac = get_local_device_mac()
+            mac = get_local_mac_address()
             if mac:
                 device_id = f"pi-{mac.replace(':', '').lower()[-8:]}"
             else:
@@ -3124,25 +3124,30 @@ def start_plug_and_play_barcode_service():
 def process_barcode_scan_auto(barcode):
     """Process barcode scan automatically without UI interaction"""
     try:
-
+        # Input validation
+        if not barcode or not barcode.strip():
+            return "❌ Please enter a barcode."
+        
+        barcode = barcode.strip()
+        
+        # Auto-generate device ID if not provided
         device_id = local_db.get_device_id()
         if not device_id:
-          
             mac_address = get_local_mac_address()
             if mac_address:
                 device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
                 local_db.save_device_id(device_id)
             else:
-                return "❌ No device ID available - registration failed"
+                device_id = f"auto-{int(time.time())}"
+                logger.warning(f"⚠️ Using fallback device ID: {device_id}")
         
+        logger.info(f"📱 Processing barcode scan: {barcode} from device: {device_id}")
 
         try:
             validated_barcode = validate_ean(barcode)
         except BarcodeValidationError:
-         
-            validated_barcode = barcode
+            validated_barcode = barcode  # Accept non-EAN barcodes
         
-
         connection_manager = ConnectionManager()
         pi_available = connection_manager.check_raspberry_pi_availability()
         
