@@ -1,5 +1,136 @@
 {
-  "devices": {},
+  "devices": {
+    "0ba242e597f5": {
+      "device_id": "0ba242e597f5",
+      "registered_at": "2025-09-08T10:14:40.773416+00:00",
+      "last_seen": "2025-09-08T10:14:40.773423+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "direct_registration",
+        "online_at_registration": true,
+        "user_agent": "Barcode Scanner App v2.0",
+        "pi_ip": "192.168.1.18"
+      }
+    },
+    "auto-c1323007": {
+      "device_id": "auto-c1323007",
+      "registered_at": "2025-09-08T10:29:26.321890+00:00",
+      "last_seen": "2025-09-08T10:29:26.321892+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "fully_automatic",
+        "auto_registered": true,
+        "timestamp": "2025-09-08T10:29:26.321864+00:00",
+        "plug_and_play": true
+      }
+    },
+    "6efb25ec319f": {
+      "device_id": "6efb25ec319f",
+      "registered_at": "2025-09-08T10:38:38.578535+00:00",
+      "last_seen": "2025-09-08T10:38:38.578545+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "8574568955745",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "09dbaed187ea": {
+      "device_id": "09dbaed187ea",
+      "registered_at": "2025-09-08T10:42:58.999326+00:00",
+      "last_seen": "2025-09-08T10:42:58.999338+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "8585745412547",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "auto-test-device": {
+      "device_id": "auto-test-device",
+      "registered_at": "2025-09-08T10:47:16.923742+00:00",
+      "last_seen": "2025-09-08T10:47:16.923750+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "1234567890123",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "8c379fcb0df2": {
+      "device_id": "8c379fcb0df2",
+      "registered_at": "2025-09-08T11:03:41.084796+00:00",
+      "last_seen": "2025-09-08T11:03:41.084812+00:00",
+      "status": "active",
+      "registration_method": "manual",
+      "device_info": {
+        "registration_method": "manual_registration",
+        "test_barcode": "4585412541478",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "1b058165dd09": {
+      "device_id": "1b058165dd09",
+      "registered_at": "2025-09-08T11:21:39.584000+00:00",
+      "last_seen": "2025-09-08T11:21:39.584000+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "4523210256547",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "3b058165dd11": {
+      "device_id": "3b058165dd11",
+      "registered_at": "2025-09-08T11:24:54.190766+00:00",
+      "last_seen": "2025-09-08T11:24:54.190773+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "4523210256547",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "5e31266869e2": {
+      "device_id": "5e31266869e2",
+      "registered_at": "2025-09-08T11:25:50.247880+00:00",
+      "last_seen": "2025-09-08T11:25:50.247887+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "4523210256547",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    },
+    "9f123456789a": {
+      "device_id": "9f123456789a",
+      "registered_at": "2025-09-08T11:27:00.545223+00:00",
+      "last_seen": "2025-09-08T11:27:00.545231+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "test_barcode": "4523210256547",
+        "pi_ip": "192.168.1.18",
+        "auto_registered": true
+      }
+    }
+  },
   "registration_tokens": {},
-  "last_updated": "2025-09-04T11:45:13.814917+00:00"
+  "last_updated": "2025-09-08T11:27:00.545234+00:00"
 }
