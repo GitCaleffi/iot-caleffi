@@ -1068,16 +1068,23 @@ class RaspberryPiDeviceService:
             }
             
             # Send Device Twin update
-            hub_client = HubClient(self.hub_client)
-            if hub_client.connect():
-                # Send as Device Twin reported properties
-                success = hub_client.send_device_twin_update(confirmation_payload)
-                if success:
-                    logger.info("📡 Registration confirmation sent to IoT Hub")
+            # Get device connection string
+            device_manager = DynamicDeviceManager()
+            device_connection_string = device_manager.get_device_connection_string(self.device_id)
+            
+            if device_connection_string:
+                hub_client = HubClient(device_connection_string)
+                if hub_client.connect():
+                    # Send as Device Twin reported properties
+                    success = hub_client.send_device_twin_update(confirmation_payload)
+                    if success:
+                        logger.info("📡 Registration confirmation sent to IoT Hub")
+                    else:
+                        logger.warning("⚠️ Failed to send Device Twin update")
                 else:
-                    logger.warning("⚠️ Failed to send Device Twin update")
+                    logger.warning("⚠️ Failed to connect to IoT Hub for Device Twin update")
             else:
-                logger.warning("⚠️ Failed to connect to IoT Hub for Device Twin update")
+                logger.warning("⚠️ No device connection string available for registration confirmation")
                 
         except Exception as e:
             logger.warning(f"Registration confirmation error: {e}")
@@ -1094,9 +1101,16 @@ class RaspberryPiDeviceService:
                     "networkInfo": self._get_network_info()
                 }
                 
-                hub_client = HubClient(self.hub_client)
-                hub_client.send_message(heartbeat_payload, self.device_id)
-                logger.info(f"💓 Single heartbeat sent to IoT Hub for device: {self.device_id}")
+                # Get device connection string
+                device_manager = DynamicDeviceManager()
+                device_connection_string = device_manager.get_device_connection_string(self.device_id)
+                
+                if device_connection_string:
+                    hub_client = HubClient(device_connection_string)
+                    hub_client.send_message(heartbeat_payload, self.device_id)
+                    logger.info(f"💓 Single heartbeat sent to IoT Hub for device: {self.device_id}")
+                else:
+                    logger.warning("⚠️ No device connection string available for heartbeat")
                 
         except Exception as e:
             logger.warning(f"Heartbeat error: {e}")

@@ -112,7 +112,6 @@ def test_with_real_barcode_format():
     # Test different barcode formats
     test_barcodes = [
         "84b772dc334a",  # Current format
-        
     ]
     
     print("\n🔍 Testing Different Barcode Formats")
