@@ -838,6 +838,7 @@ class ConnectionManager:
             # Prepare message payload
             message_payload = {
                 "scannedBarcode": barcode,
+                "ean": barcode,
                 "deviceId": device_id,
                 "quantity": quantity,
                 "messageType": message_type,

@@ -1793,7 +1793,26 @@ def process_barcode_scan(barcode, device_id=None):
         actions_completed = []
         
         if device_already_registered:
-            # Device exists - UPDATE QUANTITY
+            # Check if this is device registration (barcode == device_id) or product scan
+            if barcode == device_id:
+                # This is device registration - don't add quantity
+                logger.info(f"📋 Device {device_id} registration scan - no quantity update")
+                
+                led_controller.blink_led("green", 0.5, 4)  # Green for registration
+                
+                return f"""🎉 **Device Already Registered**
+
+**Device Details:**
+• Device ID: {device_id}
+• Registration Barcode: {barcode}
+• Status: Already registered in system
+• Current Quantity: {next((dev.get('quantity', 0) for dev in registered_devices if dev.get('device_id') == device_id), 0)}
+
+🟢 Green LED indicates device registration status check
+
+**Next Step:** Scan product barcodes to update quantities"""
+            
+            # Device exists - UPDATE QUANTITY (for product scans)
             logger.info(f"📋 Device {device_id} already registered - updating quantity")
             
             # Get existing device info
@@ -1818,10 +1837,10 @@ def process_barcode_scan(barcode, device_id=None):
                         "messageType": "quantity_update",
                         "deviceId": device_id,
                         "scannedBarcode": barcode,
-                        "previousQuantity": current_quantity,
-                        "newQuantity": new_quantity,
+                        "ean": barcode,
+                        "quantity": 1,
                         "timestamp": timestamp.isoformat(),
-                        "action": "increment"
+                        "action": "add"
                     }
                     
                     success = hub_client.send_message(message_data, device_id)
@@ -1837,10 +1856,10 @@ def process_barcode_scan(barcode, device_id=None):
                         "messageType": "quantity_update",
                         "deviceId": device_id,
                         "scannedBarcode": barcode,
-                        "previousQuantity": current_quantity,
-                        "newQuantity": new_quantity,
+                        "ean": barcode,
+                        "quantity": 1,
                         "timestamp": timestamp.isoformat(),
-                        "action": "increment"
+                        "action": "add"
                     }
                     local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
                     
@@ -1919,15 +1938,27 @@ def process_barcode_scan(barcode, device_id=None):
             
             # Send ONLY device registration message to IoT Hub (NO quantity data)
             try:
-                if conn_str:
+                # Try to use device-specific connection string first, then fallback to config
+                registration_conn_str = conn_str
+                if not registration_conn_str:
+                    # Fallback to IoT Hub connection string from config
+                    try:
+                        import json
+                        with open('deployment_package/config.json', 'r') as f:
+                            config = json.load(f)
+                            registration_conn_str = config.get('iot_hub', {}).get('connection_string')
+                    except Exception as config_e:
+                        logger.warning(f"Could not load config for IoT Hub connection: {config_e}")
+                
+                if registration_conn_str:
                     from iot.hub_client import HubClient
-                    hub_client = HubClient(conn_str)
+                    hub_client = HubClient(registration_conn_str)
                     
                     # REGISTRATION MESSAGE - NO QUANTITY FIELDS
                     message_data = {
                         "messageType": "device_registration",
                         "deviceId": device_id,
-                        "registrationBarcode": barcode,  # Changed from 'barcode' to avoid quantity confusion
+                        "registrationBarcode": barcode,
                         "timestamp": timestamp.isoformat(),
                         "action": "register",
                         "status": "registered",
@@ -1942,12 +1973,12 @@ def process_barcode_scan(barcode, device_id=None):
                         actions_completed.append("⚠️ IoT Hub registration message failed - saved for retry")
                         local_db.save_unsent_message(device_id, json.dumps(message_data), timestamp)
                 else:
-                    actions_completed.append("⚠️ No connection string - registration message saved for retry")
+                    actions_completed.append("⚠️ No IoT Hub connection available - registration message saved for retry")
                     # REGISTRATION MESSAGE - NO QUANTITY FIELDS
                     message_data = {
                         "messageType": "device_registration",
                         "deviceId": device_id,
-                        "registrationBarcode": barcode,  # Changed from 'barcode' to avoid quantity confusion
+                        "registrationBarcode": barcode,
                         "timestamp": timestamp.isoformat(),
                         "action": "register",
                         "status": "registered",
@@ -3791,6 +3822,7 @@ def save_barcode_for_retry(barcode, device_id):
         message_data = {
             "deviceId": device_id,
             "scannedBarcode": barcode,
+            "ean": barcode,
             "timestamp": timestamp.isoformat(),
             "quantity": 1,
             "messageType": "barcode_scan"

@@ -219,6 +219,7 @@ class HubClient:
                     # Create message payload for barcode scan
                     message_data = {
                         "scannedBarcode": barcode,
+                        "ean": barcode,
                         "deviceId": device_id,
                         "messageType": "barcode_scan",
                         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
@@ -232,6 +233,7 @@ class HubClient:
                     # Proceed without validation if module not available
                     message_data = {
                         "scannedBarcode": barcode,
+                        "ean": barcode,
                         "deviceId": device_id,
                         "messageType": "barcode_scan",
                         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
