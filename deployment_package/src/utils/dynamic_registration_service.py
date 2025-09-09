@@ -78,14 +78,36 @@ class DynamicRegistrationService:
                 
                 from azure.iot.hub import IoTHubRegistryManager as IotHubRM
                 
-                # Verify the method exists before calling
-                if not hasattr(IotHubRM, 'from_connection_string'):
-                    logger.error(f"❌ IoTHubRegistryManager missing from_connection_string method. Available methods: {dir(IotHubRM)}")
-                    raise AttributeError("from_connection_string method not found")
-                
-                self.registry_manager = IotHubRM.from_connection_string(
-                    self.iot_hub_connection_string
-                )
+                # Try multiple initialization methods without checking attributes
+                try:
+                    # Method 1: Try from_connection_string first
+                    self.registry_manager = IotHubRM.from_connection_string(
+                        self.iot_hub_connection_string
+                    )
+                    logger.info("✅ Initialized using from_connection_string method")
+                except AttributeError:
+                    try:
+                        # Method 2: Direct initialization with connection_string parameter
+                        self.registry_manager = IotHubRM(
+                            connection_string=self.iot_hub_connection_string
+                        )
+                        logger.info("✅ Initialized using connection_string parameter")
+                    except Exception:
+                        # Method 3: Fallback initialization with positional argument
+                        self.registry_manager = IotHubRM(self.iot_hub_connection_string)
+                        logger.info("✅ Initialized using positional argument")
+                except Exception as init_error:
+                    logger.warning(f"⚠️ from_connection_string failed: {init_error}")
+                    try:
+                        # Method 2: Direct initialization with connection_string parameter
+                        self.registry_manager = IotHubRM(
+                            connection_string=self.iot_hub_connection_string
+                        )
+                        logger.info("✅ Initialized using connection_string parameter")
+                    except Exception:
+                        # Method 3: Fallback initialization with positional argument
+                        self.registry_manager = IotHubRM(self.iot_hub_connection_string)
+                        logger.info("✅ Initialized using positional argument")
                 
                 # Test the connection by trying to get device count
                 try:
