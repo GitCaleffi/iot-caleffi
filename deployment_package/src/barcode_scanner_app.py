@@ -1649,36 +1649,56 @@ Please ensure the Raspberry Pi device is connected and reachable on the network 
         }
         confirmation_message_json = json.dumps(confirmation_message_data)
         
-        # TEMPORARILY DISABLE IoT Hub registration confirmation to prevent quantity updates
-        # This prevents any potential barcode-related messages during registration
-        iot_success = True  # Mark as successful to avoid error states
-        iot_status = "ℹ️ IoT Hub registration confirmation disabled to prevent inventory updates"
-        
-        logger.info("🔒 BLOCKING IoT Hub registration confirmation to prevent 'EAN undefined' inventory issues")
-        logger.info("🔒 Device registration completed locally and via API only")
-        
-        # Note: IoT Hub registration confirmation is disabled until the 'EAN undefined' issue is resolved
-        # The device will still be registered locally and with the API, but no IoT Hub message will be sent
-        # during registration to prevent any potential inventory/quantity update confusion
-        
-        # Confirm device registration with API using new endpoint
-        api_confirmation_status = "ℹ️ API confirmation not attempted"
+        # Send registration confirmation to IoT Hub
+        iot_success = False
+        iot_status = "⚠️ IoT Hub registration confirmation failed"
         
         try:
-            # Confirm registration with API using new confirmRegistration endpoint
-            logger.info(f"Confirming device registration {device_id} with API...")
+            # Get device connection string
+            reg_service = get_dynamic_registration_service()
+            if reg_service:
+                conn_str = reg_service.get_device_connection_string(device_id)
+                if conn_str:
+                    from iot.hub_client import HubClient
+                    hub_client = HubClient(conn_str)
+                    
+                    if hub_client.connect():
+                        success = hub_client.send_message(confirmation_message_data, device_id)
+                        if success:
+                            iot_success = True
+                            iot_status = "✅ Registration confirmation sent to IoT Hub successfully"
+                            logger.info(f"✅ Registration message sent to IoT Hub: {device_id}")
+                        else:
+                            logger.warning(f"⚠️ Failed to send registration message to IoT Hub")
+                    else:
+                        logger.warning(f"⚠️ Failed to connect to IoT Hub for registration")
+                else:
+                    logger.warning(f"⚠️ No connection string available for {device_id}")
+            else:
+                logger.warning(f"⚠️ Registration service not available")
+                
+        except Exception as e:
+            logger.error(f"❌ IoT Hub registration confirmation error: {e}")
+            iot_status = f"⚠️ IoT Hub error: {str(e)[:50]}..."
+        
+        # Send registration to frontend API
+        api_confirmation_status = "⚠️ API registration failed"
+        
+        try:
+            # Send registration to frontend API
+            logger.info(f"Sending device registration {device_id} to frontend API...")
             api_result = api_client.confirm_registration(device_id, pi_ip)
             
             if api_result.get('success', False):
-                api_confirmation_status = "✅ Device registration confirmed with API successfully"
-                logger.info(f"Device {device_id} registration confirmed with API")
+                api_confirmation_status = "✅ Device registration sent to frontend API successfully"
+                logger.info(f"Device {device_id} registration sent to frontend API")
             else:
-                api_confirmation_status = f"⚠️ API confirmation failed: {api_result.get('message', 'Unknown error')}"
-                logger.warning(f"API confirmation failed: {api_result}")
+                api_confirmation_status = f"⚠️ Frontend API failed: {api_result.get('message', 'Unknown error')}"
+                logger.warning(f"Frontend API failed: {api_result}")
                 
         except Exception as e:
-            logger.error(f"Error with API confirmation: {str(e)}")
-            api_confirmation_status = f"⚠️ API confirmation error: {str(e)}"
+            logger.error(f"Error with frontend API: {str(e)}")
+            api_confirmation_status = f"⚠️ Frontend API error: {str(e)}"
         
         # Determine LED color based on overall success
         if iot_success:

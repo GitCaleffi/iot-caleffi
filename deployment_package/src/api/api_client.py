@@ -277,9 +277,7 @@ class ApiClient:
             # Send device registration to the working endpoint
             url = f"{self.base_url}/raspberry/saveDeviceId"
             payload = {
-                "scannedBarcode": device_id,  # Use scannedBarcode format for better frontend integration
-                "deviceId": device_id,
-                "timestamp": datetime.now().isoformat()
+                "deviceId": device_id  # API only accepts deviceId format, not scannedBarcode
             }
             
             logger.info(f"📝 Sending device registration to frontend API: {url}")
@@ -340,8 +338,7 @@ class ApiClient:
             # Use the correct format that works (from our test)
             url = f"{self.base_url}/raspberry/saveDeviceId"
             payload = {
-                "deviceId": device_id,
-                "barcode": barcode  # Use 'barcode' not 'scannedBarcode'
+                "deviceId": barcode  # API only accepts deviceId format
             }
             
             logger.info(f"Sending barcode scan to API: {url}")
