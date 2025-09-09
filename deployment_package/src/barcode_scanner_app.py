@@ -3070,17 +3070,10 @@ if raspberry_pi_config.get("dynamic_discovery", False):
     except Exception as e:
         logger.error(f"Failed to start dynamic Pi discovery: {e}")
 
-# Start remote connectivity monitoring for cross-network detection
+# Remote connectivity monitoring disabled (module not available)
 if raspberry_pi_config.get("remote_connectivity_monitoring", False):
-    try:
-        from utils.remote_pi_connectivity import RemotePiConnectivity
-        global remote_pi_connectivity
-        remote_pi_connectivity = RemotePiConnectivity(config)
-        remote_pi_connectivity.start_monitoring()
-        logger.info("🌐 Remote Pi connectivity monitoring started")
-    except ImportError as e:
-        logger.info(f"Remote Pi connectivity monitoring not available: {e}")
-        logger.info("Running in standalone Pi mode without remote monitoring")
+    logger.info("Remote Pi connectivity monitoring requested but not available")
+    logger.info("Running in standalone Pi mode without remote monitoring")
 
 # Global variable for Gradio app instance
 
