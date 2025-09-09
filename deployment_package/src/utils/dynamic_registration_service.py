@@ -58,43 +58,88 @@ class DynamicRegistrationService:
         self._init_registry_manager()
     
     def _init_registry_manager(self):
-        """Initialize Azure IoT Hub Registry Manager with retry logic for Flask context"""
+        """Initialize Azure IoT Hub Registry Manager with proper error handling"""
         import time
+        
+        # Validate connection string format first
+        if not self._validate_connection_string():
+            logger.error("❌ Invalid IoT Hub connection string format")
+            self.registry_manager = None
+            return
         
         for attempt in range(3):
             try:
+                logger.info(f"🔄 Initializing Azure IoT Hub Registry Manager (attempt {attempt + 1}/3)...")
                 self.registry_manager = IoTHubRegistryManager.from_connection_string(
                     self.iot_hub_connection_string
                 )
-                logger.info(f"Azure IoT Hub Registry Manager initialized successfully (attempt {attempt + 1})")
-                return
+                
+                # Test the connection by trying to get device count
+                try:
+                    test_devices = self.registry_manager.get_devices(max_number_of_devices=1)
+                    logger.info(f"✅ Azure IoT Hub Registry Manager initialized and tested successfully")
+                    return
+                except Exception as test_error:
+                    logger.error(f"❌ Registry Manager created but connection test failed: {test_error}")
+                    self.registry_manager = None
+                    if attempt < 2:
+                        time.sleep(1)
+                        continue
+                    else:
+                        return
                 
             except KeyError as ke:
                 if 'SharedAccessKeyName' in str(ke) and attempt < 2:
-                    logger.warning(f"Azure SDK context issue on attempt {attempt + 1}, retrying...")
-                    time.sleep(0.1)  # Brief delay for context stabilization
+                    logger.warning(f"⚠️ Azure SDK context issue on attempt {attempt + 1}, retrying...")
+                    time.sleep(0.5)
                     continue
                 else:
-                    logger.error(f"Failed to initialize IoT Hub Registry Manager after {attempt + 1} attempts: {ke}")
-                    raise
+                    logger.error(f"❌ Failed to initialize IoT Hub Registry Manager - KeyError: {ke}")
+                    self.registry_manager = None
+                    return
                     
             except Exception as e:
-                # Handle base64 encoding errors specifically
-                if "Invalid base64-encoded string" in str(e):
-                    logger.warning(f"⚠️ IoT Hub connection string has invalid base64 encoding. Skipping Registry Manager initialization.")
-                    logger.info("💡 System will continue with basic functionality. Device registration may be limited.")
-                    self.registry_manager = None
-                    return
-                
+                logger.error(f"❌ Registry Manager initialization failed on attempt {attempt + 1}: {e}")
                 if attempt < 2:
-                    logger.warning(f"Registry Manager init failed on attempt {attempt + 1}: {e}, retrying...")
-                    time.sleep(0.1)
+                    time.sleep(1)
                     continue
                 else:
-                    logger.error(f"Failed to initialize IoT Hub Registry Manager after {attempt + 1} attempts: {e}")
-                    logger.warning("⚠️ Continuing without Registry Manager. Some features may be limited.")
+                    logger.error("❌ All Registry Manager initialization attempts failed")
                     self.registry_manager = None
                     return
+    
+    def _validate_connection_string(self) -> bool:
+        """Validate IoT Hub connection string format"""
+        try:
+            if not self.connection_string:
+                logger.error("❌ Connection string is empty")
+                return False
+            
+            parts = dict(part.split('=', 1) for part in self.connection_string.split(';'))
+            required_parts = ['HostName', 'SharedAccessKeyName', 'SharedAccessKey']
+            
+            for part in required_parts:
+                if part not in parts:
+                    logger.error(f"❌ Missing required part in connection string: {part}")
+                    return False
+                if not parts[part]:
+                    logger.error(f"❌ Empty value for required part: {part}")
+                    return False
+            
+            # Validate base64 encoding of SharedAccessKey
+            try:
+                import base64
+                base64.b64decode(parts['SharedAccessKey'])
+            except Exception as e:
+                logger.error(f"❌ Invalid base64 encoding in SharedAccessKey: {e}")
+                return False
+            
+            logger.info("✅ Connection string format validation passed")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Connection string validation error: {e}")
+            return False
     
     def get_device_connection_string(self, device_id: str) -> str:
         """
@@ -153,12 +198,9 @@ class DynamicRegistrationService:
         with self.lock:
             # Check if Registry Manager is available
             if self.registry_manager is None:
-                logger.warning(f"⚠️ Registry Manager unavailable. Cannot register device {device_id}")
-                logger.info("💡 Using fallback: generating basic device connection string")
-                # Generate a basic connection string for fallback
-                fallback_key = base64.b64encode(os.urandom(32)).decode('utf-8')
-                connection_string = f"HostName={self.iot_hub_hostname};DeviceId={device_id};SharedAccessKey={fallback_key}"
-                return connection_string
+                logger.error(f"❌ Registry Manager unavailable. Cannot register device {device_id}")
+                logger.error("❌ Azure IoT Hub connection required for device registration")
+                return None
             
             try:
                 try:
@@ -172,25 +214,38 @@ class DynamicRegistrationService:
                     else:
                         logger.error(f"Device {device_id} exists but has no authentication keys")
                         return None
-                except Exception:
-                    logger.info(f"Creating new device {device_id} in Azure IoT Hub...")
+                except Exception as get_error:
+                    logger.info(f"Device {device_id} not found, creating new device in Azure IoT Hub...")
+                    logger.debug(f"Get device error: {get_error}")
                 
+                # Generate secure keys for new device
                 primary_key, secondary_key = self._generate_device_keys()
                 
-                device = self.registry_manager.create_device_with_sas(
-                    device_id=device_id,
-                    primary_key=primary_key,
-                    secondary_key=secondary_key,
-                    status="enabled"
-                )
-                
-                logger.info(f"Device {device_id} created successfully in Azure IoT Hub")
-                
-                connection_string = f"HostName={self.iot_hub_hostname};DeviceId={device_id};SharedAccessKey={primary_key}"
-                return connection_string
+                try:
+                    device = self.registry_manager.create_device_with_sas(
+                        device_id=device_id,
+                        primary_key=primary_key,
+                        secondary_key=secondary_key,
+                        status="enabled"
+                    )
+                    
+                    logger.info(f"✅ Device {device_id} created successfully in Azure IoT Hub")
+                    
+                    # Verify device was created properly
+                    if device and device.device_id == device_id:
+                        connection_string = f"HostName={self.iot_hub_hostname};DeviceId={device_id};SharedAccessKey={primary_key}"
+                        logger.info(f"✅ Generated valid connection string for device {device_id}")
+                        return connection_string
+                    else:
+                        logger.error(f"❌ Device creation returned invalid device object")
+                        return None
+                        
+                except Exception as create_error:
+                    logger.error(f"❌ Failed to create device {device_id} in Azure IoT Hub: {create_error}")
+                    return None
                 
             except Exception as e:
-                logger.error(f"Error registering device {device_id} with Azure IoT Hub: {e}")
+                logger.error(f"❌ Error during device registration process for {device_id}: {e}")
                 return None
     
     def register_barcode_device(self, barcode: str) -> Dict[str, any]:

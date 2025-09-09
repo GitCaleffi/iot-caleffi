@@ -1,5 +1,69 @@
 {
-  "devices": {},
-  "registration_tokens": {},
-  "last_updated": "2025-09-08T08:16:10.365909+00:00"
+  "devices": {
+    "pi-c1323007": {
+      "device_id": "pi-c1323007",
+      "registered_at": "2025-09-09T05:16:00.263358+00:00",
+      "last_seen": "2025-09-09T05:46:56.541800+00:00",
+      "status": "active",
+      "registration_token": "e35d7f19395d0f4f",
+      "device_info": {
+        "registration_method": "auto_plug_and_play",
+        "mac_address": "d8:bb:c1:32:30:07",
+        "ip_address": "192.168.1.8",
+        "auto_registered": true,
+        "timestamp": "2025-09-09T05:16:00.263348+00:00"
+      }
+    },
+    "84b772dc334a": {
+      "device_id": "84b772dc334a",
+      "registered_at": "2025-09-09T06:06:42.677056+00:00",
+      "last_seen": "2025-09-09T06:06:42.677080+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "manual_registration",
+        "timestamp": "2025-09-09T06:06:42.677013+00:00",
+        "registered_via": "registration_script"
+      }
+    },
+    "pi-676c45f2": {
+      "device_id": "pi-676c45f2",
+      "registered_at": "2025-09-09T06:09:33.699912+00:00",
+      "last_seen": "2025-09-09T06:09:33.699916+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "fix_authorization",
+        "timestamp": "2025-09-09T06:09:33.699891+00:00",
+        "force_recreate": true
+      }
+    }
+  },
+  "registration_tokens": {
+    "e35d7f19395d0f4f": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-09T05:16:00.263152+00:00",
+      "expires_at": 1757481360.263147,
+      "used": true
+    },
+    "36b770d0a07af8f4": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-09T05:32:18.044768+00:00",
+      "expires_at": 1757482338.044763,
+      "used": false
+    },
+    "827f625d3c91aa96": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-09T05:43:00.624317+00:00",
+      "expires_at": 1757482980.624311,
+      "used": false
+    },
+    "e65f200b73f05336": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-09T05:46:56.541534+00:00",
+      "expires_at": 1757483216.541528,
+      "used": false
+    }
+  },
+  "last_updated": "2025-09-09T06:09:33.699921+00:00"
 }

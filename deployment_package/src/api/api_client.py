@@ -6,6 +6,7 @@ import requests
 import json
 import logging
 import time
+from datetime import datetime
 from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -269,37 +270,21 @@ class ApiClient:
     
     def confirm_registration(self, device_id: str, pi_ip: str = None) -> Dict[str, Any]:
         """
-        Confirm device registration with the API.
-        
-        IMPORTANT: This method is for DEVICE REGISTRATION ONLY - NO INVENTORY UPDATES!
-        
-        Args:
-            device_id (str): The device ID to confirm registration for
-            pi_ip (str): The Raspberry Pi IP address (optional)
-            
-        Returns:
-            dict: Result with success flag and message
+        Send device registration message to frontend API.
+        This will show up as a registration event on the frontend.
         """
         try:
-            url = f"{self.base_url}/raspberry/confirmRegistration"
+            # Send device registration to the working endpoint
+            url = f"{self.base_url}/raspberry/saveDeviceId"
             payload = {
                 "deviceId": device_id,
-                "timestamp": int(time.time()),
-                "status": "registered",
-                "operation_type": "device_registration",  # Explicit operation type
-                "messageType": "device_registration",  # Additional explicit type
-                "action": "registration_confirmation",  # Clear action type
-                "no_inventory_update": True,  # Explicit flag to prevent inventory updates
-                "registration_only": True  # Additional safety flag
+                "messageType": "device_registration",
+                "action": "register",
+                "timestamp": datetime.now().isoformat()
             }
             
-            # Add Pi IP if provided
-            if pi_ip:
-                payload["pi_ip"] = pi_ip
-            
-            logger.info(f"🔒 REGISTRATION ONLY - NO INVENTORY UPDATES")
-            logger.info(f"Sending confirmation registration to: {url}")
-            logger.info(f"Payload: {json.dumps(payload, indent=2)}")
+            logger.info(f"📝 Sending device registration to frontend API: {url}")
+            logger.info(f"Payload: {json.dumps(payload)}")
             
             response = self.session.post(
                 url, 
@@ -307,23 +292,23 @@ class ApiClient:
                 timeout=self.timeout
             )
             
-            logger.info(f"Confirmation registration response: {response.status_code} - {response.text}")
+            logger.info(f"Registration API response: {response.status_code} - {response.text}")
             
             if response.status_code == 200:
                 return {
                     "success": True,
-                    "message": f"Device {device_id} registration confirmed successfully (NO INVENTORY IMPACT)",
+                    "message": f"Device {device_id} registration sent to frontend",
                     "response": response.json() if response.text else None
                 }
             else:
                 return {
                     "success": False,
-                    "message": f"HTTP {response.status_code}: {response.text}",
+                    "message": f"Registration API failed: {response.status_code} - {response.text}",
                     "response": response.text
                 }
                 
         except Exception as e:
-            logger.error(f"Error confirming device registration: {e}")
+            logger.error(f"Error sending device registration: {e}")
             return {
                 "success": False,
                 "message": f"Error: {str(e)}",
@@ -353,42 +338,36 @@ class ApiClient:
                 }
         
         try:
-            # Try multiple API endpoints since the correct one is unclear
-            endpoints_to_try = [
-                ("raspberry/barcodeScan", {"deviceId": device_id, "scannedBarcode": barcode, "quantity": quantity}),
-                ("raspberry/saveDeviceId", {"scannedBarcode": barcode, "deviceId": device_id, "quantity": quantity}),
-                ("raspberry/saveDeviceId", {"scannedBarcode": barcode}),
-            ]
-            
-            last_error = None
-            for endpoint, payload in endpoints_to_try:
-                try:
-                    url = f"{self.base_url}/{endpoint}"
-                    response = self.session.post(
-                        url, 
-                        json=payload, 
-                        timeout=self.timeout
-                    )
-                    
-                    if response.status_code == 200:
-                        logger.info(f"API success with endpoint {endpoint}: {response.text}")
-                        return {
-                            "success": True,
-                            "message": f"Barcode scan sent successfully via {endpoint}"
-                        }
-                    else:
-                        last_error = f"HTTP {response.status_code}: {response.text}"
-                        logger.warning(f"API endpoint {endpoint} failed: {last_error}")
-                        
-                except Exception as e:
-                    last_error = f"Error: {str(e)}"
-                    logger.warning(f"API endpoint {endpoint} error: {last_error}")
-            
-            # If all endpoints failed, return the last error
-            return {
-                "success": False,
-                "message": f"All API endpoints failed. Last error: {last_error}"
+            # Use the correct format that works (from our test)
+            url = f"{self.base_url}/raspberry/saveDeviceId"
+            payload = {
+                "deviceId": device_id,
+                "barcode": barcode  # Use 'barcode' not 'scannedBarcode'
             }
+            
+            logger.info(f"Sending barcode scan to API: {url}")
+            logger.info(f"Payload: {json.dumps(payload)}")
+            
+            response = self.session.post(
+                url, 
+                json=payload, 
+                timeout=self.timeout
+            )
+            
+            logger.info(f"API Response: {response.status_code} - {response.text}")
+            
+            if response.status_code == 200:
+                return {
+                    "success": True,
+                    "message": "Barcode scan sent successfully to frontend API",
+                    "response": response.json() if response.text else None
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"API failed: {response.status_code} - {response.text}",
+                    "response": response.text
+                }
                 
         except Exception as e:
             logger.error(f"Error sending barcode scan: {e}")

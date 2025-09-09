@@ -652,7 +652,7 @@ def _send_iot_hub_heartbeat(device_id, device_connection_string):
             "networkInfo": self._get_network_info()
         }
         
-        hub_client.send_message(heartbeat_message)
+        hub_client.send_message(heartbeat_message, device_id)
         logger.info(f"💓 Heartbeat sent to IoT Hub for device: {device_id}")
         
     except Exception as e:
@@ -1041,7 +1041,7 @@ class RaspberryPiDeviceService:
                 }
                 
                 hub_client = HubClient(self.hub_client)
-                hub_client.send_message(heartbeat_payload)
+                hub_client.send_message(heartbeat_payload, self.device_id)
                 logger.info(f"💓 Single heartbeat sent to IoT Hub for device: {self.device_id}")
                 
         except Exception as e:
@@ -1752,7 +1752,7 @@ def process_barcode_scan(barcode, device_id=None):
                     "messageType": "barcode_scan"
                 }
                 
-                success = hub_client.send_message(json.dumps(message_data))
+                success = hub_client.send_message(json.dumps(message_data), device_id)
                 
                 if success:
                     logger.info(f"✅ Barcode sent directly to IoT Hub: {barcode}")
@@ -2475,8 +2475,16 @@ class PiHeartbeatService:
             mac = self.network_discovery._get_local_mac_address()
             if mac:
                 device_id = f"pi-{mac.replace(':', '').lower()[-8:]}"
+                logger.info(f"✅ Generated device ID from MAC {mac}: {device_id}")
             else:
-                device_id = f"pi-{uuid.uuid4().hex[:8]}"
+                # Try alternative MAC detection methods
+                mac = self._get_mac_fallback()
+                if mac:
+                    device_id = f"pi-{mac.replace(':', '').lower()[-8:]}"
+                    logger.info(f"✅ Generated device ID from fallback MAC {mac}: {device_id}")
+                else:
+                    device_id = f"pi-{uuid.uuid4().hex[:8]}"
+                    logger.warning(f"⚠️ MAC detection failed, using UUID-based device ID: {device_id}")
             
             # Get network info
             hostname = socket.gethostname()
@@ -2508,12 +2516,60 @@ class PiHeartbeatService:
                 'services': {
                     'barcode_scanner': True,
                     'ssh': self._check_service_port(22),
-                    'web': self._check_service_port(5000)
                 }
             }
         except Exception as e:
             logger.error(f"❌ Failed to get device info: {e}")
             return {'device_id': f"pi-{uuid.uuid4().hex[:8]}"}
+    
+    def _get_mac_fallback(self):
+        """Fallback MAC address detection methods"""
+        import subprocess
+        import re
+        import os
+        
+        # Method 1: Direct ip link command
+        try:
+            result = subprocess.run(["ip", "link", "show"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                matches = re.findall(r'link/ether ([0-9a-f:]{17})', result.stdout, re.IGNORECASE)
+                for mac in matches:
+                    if mac != "00:00:00:00:00:00":
+                        logger.debug(f"📍 Fallback MAC found via ip link: {mac}")
+                        return mac.lower()
+        except Exception as e:
+            logger.debug(f"ip link fallback failed: {e}")
+        
+        # Method 2: /sys/class/net directory
+        try:
+            net_path = '/sys/class/net'
+            if os.path.exists(net_path):
+                interfaces = [d for d in os.listdir(net_path) if d != 'lo']
+                for interface in interfaces:
+                    mac_file = f"{net_path}/{interface}/address"
+                    if os.path.exists(mac_file):
+                        with open(mac_file, 'r') as f:
+                            mac = f.read().strip()
+                            if mac != "00:00:00:00:00:00":
+                                logger.debug(f"📍 Fallback MAC found via {interface}: {mac}")
+                                return mac.lower()
+        except Exception as e:
+            logger.debug(f"/sys/class/net fallback failed: {e}")
+        
+        # Method 3: ifconfig command
+        try:
+            result = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                matches = re.findall(r'ether ([0-9a-f:]{17})', result.stdout, re.IGNORECASE)
+                for mac in matches:
+                    if mac != "00:00:00:00:00:00":
+                        logger.debug(f"📍 Fallback MAC found via ifconfig: {mac}")
+                        return mac.lower()
+        except Exception as e:
+            logger.debug(f"ifconfig fallback failed: {e}")
+        
+        logger.warning("⚠️ All MAC address detection methods failed")
+        return None
     
     def _check_service_port(self, port):
         """Check if a service port is available"""
