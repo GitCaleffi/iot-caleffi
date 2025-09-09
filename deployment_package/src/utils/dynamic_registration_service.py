@@ -70,7 +70,9 @@ class DynamicRegistrationService:
         for attempt in range(3):
             try:
                 logger.info(f"🔄 Initializing Azure IoT Hub Registry Manager (attempt {attempt + 1}/3)...")
-                self.registry_manager = IoTHubRegistryManager.from_connection_string(
+                # Re-import to ensure clean context
+                from azure.iot.hub import IoTHubRegistryManager as IotHubRM
+                self.registry_manager = IotHubRM.from_connection_string(
                     self.iot_hub_connection_string
                 )
                 
