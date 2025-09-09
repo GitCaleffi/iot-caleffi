@@ -277,9 +277,8 @@ class ApiClient:
             # Send device registration to the working endpoint
             url = f"{self.base_url}/raspberry/saveDeviceId"
             payload = {
+                "scannedBarcode": device_id,  # Use scannedBarcode format for better frontend integration
                 "deviceId": device_id,
-                "messageType": "device_registration",
-                "action": "register",
                 "timestamp": datetime.now().isoformat()
             }
             

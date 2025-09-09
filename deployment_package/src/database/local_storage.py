@@ -72,6 +72,19 @@ class LocalStorage:
                 timestamp DATETIME
             )
         ''')
+        # Create registered_devices table if it doesn't exist
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS registered_devices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT UNIQUE,
+                barcode TEXT,
+                quantity INTEGER DEFAULT 1,
+                registered_at TEXT,
+                connection_string TEXT,
+                last_updated TEXT
+            )
+        ''')
+        
         conn.commit()
         conn.close()
 
@@ -535,6 +548,142 @@ class LocalStorage:
         if limit:
             return messages[:limit]
         return messages
+
+    def save_registered_device(self, device_data):
+        """Save a registered device to the database"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                INSERT OR REPLACE INTO registered_devices 
+                (device_id, barcode, quantity, registered_at, connection_string, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                device_data['device_id'],
+                device_data['barcode'],
+                device_data['quantity'],
+                device_data['registered_at'],
+                device_data.get('connection_string'),
+                datetime.now(timezone.utc).isoformat()
+            ))
+            conn.commit()
+            logger.info(f"✅ Saved registered device: {device_data['device_id']}")
+        except Exception as e:
+            logger.error(f"❌ Error saving registered device: {e}")
+        finally:
+            conn.close()
+
+    def get_registered_devices(self):
+        """Get all registered devices from the database"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('SELECT device_id, barcode, quantity, registered_at, connection_string, last_updated FROM registered_devices')
+            rows = cursor.fetchall()
+            devices = []
+            for row in rows:
+                devices.append({
+                    'device_id': row[0],
+                    'barcode': row[1],
+                    'quantity': row[2],
+                    'registered_at': row[3],
+                    'connection_string': row[4],
+                    'last_updated': row[5]
+                })
+            return devices
+        except Exception as e:
+            logger.error(f"❌ Error getting registered devices: {e}")
+            return []
+        finally:
+            conn.close()
+
+    def update_device_quantity(self, device_id, new_quantity):
+        """Update the quantity for a registered device"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+                UPDATE registered_devices 
+                SET quantity = ?, last_updated = ?
+                WHERE device_id = ?
+            ''', (new_quantity, datetime.now(timezone.utc).isoformat(), device_id))
+            conn.commit()
+            if cursor.rowcount > 0:
+                logger.info(f"✅ Updated quantity for device {device_id}: {new_quantity}")
+                return True
+            else:
+                logger.warning(f"⚠️ No device found with ID {device_id} to update quantity")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error updating device quantity: {e}")
+            return False
+        finally:
+            conn.close()
+
+    def clear_all_registered_devices(self):
+        """Clear all registered devices from the database"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM registered_devices')
+            deleted_count = cursor.rowcount
+            conn.commit()
+            logger.info(f"✅ Cleared {deleted_count} registered devices from database")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"❌ Error clearing registered devices: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def clear_all_barcode_scans(self):
+        """Clear all barcode scan history from the database"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM scans')
+            deleted_count = cursor.rowcount
+            conn.commit()
+            logger.info(f"✅ Cleared {deleted_count} barcode scans from database")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"❌ Error clearing barcode scans: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def clear_all_test_scans(self):
+        """Clear all test barcode scans from the database"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM test_barcode_scans')
+            deleted_count = cursor.rowcount
+            conn.commit()
+            logger.info(f"✅ Cleared {deleted_count} test barcode scans from database")
+            return deleted_count
+        except Exception as e:
+            logger.error(f"❌ Error clearing test scans: {e}")
+            return 0
+        finally:
+            conn.close()
+
+    def reset_database(self):
+        """Complete database reset - clear all data"""
+        results = {
+            'registered_devices': self.clear_all_registered_devices(),
+            'barcode_scans': self.clear_all_barcode_scans(),
+            'test_scans': self.clear_all_test_scans()
+        }
+        
+        total_cleared = sum(results.values())
+        logger.info(f"🔄 Database reset complete - cleared {total_cleared} total records")
+        
+        return {
+            'success': True,
+            'message': f'Database reset complete - cleared {total_cleared} records',
+            'details': results
+        }
 
     def close(self):
         """Close database connection - no longer needed with per-operation connections"""
