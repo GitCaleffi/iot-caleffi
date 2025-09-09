@@ -70,8 +70,19 @@ class DynamicRegistrationService:
         for attempt in range(3):
             try:
                 logger.info(f"🔄 Initializing Azure IoT Hub Registry Manager (attempt {attempt + 1}/3)...")
-                # Re-import to ensure clean context
+                
+                # Clear any cached imports and re-import with fresh context
+                import sys
+                if 'azure.iot.hub' in sys.modules:
+                    del sys.modules['azure.iot.hub']
+                
                 from azure.iot.hub import IoTHubRegistryManager as IotHubRM
+                
+                # Verify the method exists before calling
+                if not hasattr(IotHubRM, 'from_connection_string'):
+                    logger.error(f"❌ IoTHubRegistryManager missing from_connection_string method. Available methods: {dir(IotHubRM)}")
+                    raise AttributeError("from_connection_string method not found")
+                
                 self.registry_manager = IotHubRM.from_connection_string(
                     self.iot_hub_connection_string
                 )
