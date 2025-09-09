@@ -37,6 +37,18 @@
         "timestamp": "2025-09-09T06:09:33.699891+00:00",
         "force_recreate": true
       }
+    },
+    "0ba242e597f5": {
+      "device_id": "0ba242e597f5",
+      "registered_at": "2025-09-09T07:30:16.695863+00:00",
+      "last_seen": "2025-09-09T07:30:16.695865+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "manual_test",
+        "timestamp": "2025-09-09T07:30:16.695838+00:00",
+        "test_registration": true
+      }
     }
   },
   "registration_tokens": {
@@ -65,5 +77,5 @@
       "used": false
     }
   },
-  "last_updated": "2025-09-09T06:09:33.699921+00:00"
+  "last_updated": "2025-09-09T07:30:16.695868+00:00"
 }
