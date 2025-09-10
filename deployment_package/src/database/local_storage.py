@@ -506,9 +506,19 @@ class LocalStorage:
         )
         row = cursor.fetchone()
         conn.close()
+        
         if row:
-            return {'barcode': row[0], 'timestamp': self.format_timestamp(row[1])}
+            return {'barcode': row[0], 'timestamp': row[1]}
         return None
+    
+    def clear_test_barcode_scan(self):
+        """Clear all test barcode scans from the database"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM test_barcode_scans')
+        conn.commit()
+        conn.close()
+        logger.info("🧹 Test barcode scans cleared from database")
 
     def is_device_registered(self):
         """Check if device is properly registered"""
@@ -539,6 +549,28 @@ class LocalStorage:
     def close(self):
         """Close database connection - no longer needed with per-operation connections"""
         pass
+    
+    def get_scans_for_device(self, device_id, limit=None):
+        """Get scans for a specific device"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        query = 'SELECT barcode, timestamp, quantity FROM scans WHERE device_id = ? ORDER BY timestamp DESC'
+        if limit:
+            query += f' LIMIT {limit}'
+            
+        cursor.execute(query, (device_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [
+            {
+                'barcode': row[0],
+                'timestamp': row[1],
+                'quantity': row[2] if row[2] is not None else 1
+            }
+            for row in rows
+        ]
     
     def get_recent_scans(self, device_id, barcode, minutes=5):
         """Get recent scans for a specific device and barcode within the specified time window"""
