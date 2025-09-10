@@ -10,14 +10,10 @@ from typing import Dict, List, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# Import registration flag to block API calls during registration
-try:
-    from barcode_scanner_app import REGISTRATION_IN_PROGRESS, registration_lock
-except ImportError:
-    # Fallback if import fails
-    REGISTRATION_IN_PROGRESS = False
-    import threading
-    registration_lock = threading.Lock()
+# Registration control - avoid circular import
+REGISTRATION_IN_PROGRESS = False
+import threading
+registration_lock = threading.Lock()
 
 class ApiClient:
     """Client for handling API communications with the backend services."""

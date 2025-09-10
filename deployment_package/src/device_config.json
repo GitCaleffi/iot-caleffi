@@ -1,5 +1,42 @@
 {
-  "devices": {},
-  "registration_tokens": {},
-  "last_updated": "2025-09-04T11:45:13.814917+00:00"
+  "iot_hub": {
+    "connection_string": "HostName=your-iot-hub.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=your-shared-access-key"
+  },
+  "api": {
+    "base_url": "https://api2.caleffionline.it/api/v1"
+  },
+  "device": {
+    "type": "barcode_scanner",
+    "location": "warehouse"
+  },
+  "scanner": {
+    "type": "usb",
+    "simulate": false
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "barcode_scanner.log"
+  }
+        "mac_address": "d8:bb:c1:32:30:07",
+        "ip_address": "192.168.1.8",
+        "auto_registered": true,
+        "timestamp": "2025-09-10T12:08:23.415430+00:00"
+      },
+    
+  
+  "registration_tokens": {
+    "2c697bce73f84f58": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-10T12:08:23.415148+00:00",
+      "expires_at": 1757592503.415141,
+      "used": true
+    },
+    "cababd2887ffe9a5": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-10T12:09:30.331256+00:00",
+      "expires_at": 1757592570.331251,
+      "used": false
+    }
+  },
+  "last_updated": "2025-09-10T12:09:30.331264+00:00"
 }
