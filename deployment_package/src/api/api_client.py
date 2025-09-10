@@ -310,10 +310,18 @@ class ApiClient:
             logger.info(f"Confirmation registration response: {response.status_code} - {response.text}")
             
             if response.status_code == 200:
+                # Handle empty response body gracefully
+                response_data = None
+                if response.text and response.text.strip():
+                    try:
+                        response_data = response.json()
+                    except json.JSONDecodeError:
+                        response_data = response.text
+                
                 return {
                     "success": True,
                     "message": f"Device {device_id} registration confirmed successfully (NO INVENTORY IMPACT)",
-                    "response": response.json() if response.text else None
+                    "response": response_data
                 }
             else:
                 return {
