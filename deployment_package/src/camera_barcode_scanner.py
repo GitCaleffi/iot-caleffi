@@ -3,10 +3,20 @@ Camera-based barcode scanner module for automated barcode detection
 Supports real-time camera feed and image file processing
 """
 
-import cv2
-import numpy as np
 import logging
-from pyzbar import pyzbar
+
+# Try to import camera dependencies
+try:
+    import cv2
+    import numpy as np
+    from pyzbar import pyzbar
+    CAMERA_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Camera dependencies not available: {e}")
+    CAMERA_AVAILABLE = False
+    cv2 = None
+    np = None
+    pyzbar = None
 import time
 from datetime import datetime
 from typing import Optional, List, Tuple, Dict
@@ -32,6 +42,10 @@ class CameraBarcodeScanner:
         
     def initialize_camera(self) -> bool:
         """Initialize camera for barcode scanning"""
+        if not CAMERA_AVAILABLE:
+            print("❌ Camera dependencies not available. Install: pip install opencv-python pyzbar")
+            return False
+            
         try:
             self.cap = cv2.VideoCapture(self.camera_index)
             
