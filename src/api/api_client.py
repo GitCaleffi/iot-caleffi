@@ -34,21 +34,39 @@ class ApiClient:
     
     def is_online(self) -> bool:
         """
-        Check if the device has internet connectivity.
+        Check if the device has internet connectivity by trying multiple reliable endpoints.
         
         Returns:
-            bool: True if online, False otherwise
+            bool: True if any endpoint is reachable, False otherwise
         """
+        endpoints = [
+            "https://www.google.com",  # Google
+            "https://www.cloudflare.com",  # Cloudflare
+            "https://www.microsoft.com"  # Microsoft
+        ]
+        
+        for endpoint in endpoints:
+            try:
+                response = requests.get(endpoint, timeout=5)
+                if response.status_code == 200:
+                    return True
+            except Exception as e:
+                logger.debug(f"Connectivity check to {endpoint} failed: {e}")
+                continue
+                
+        # If all HTTP checks failed, try a simple ping to Google DNS
         try:
-            # Try to reach a reliable endpoint
-            response = requests.get(
-                "https://httpbin.org/status/200", 
-                timeout=5
-            )
-            return response.status_code == 200
+            import subprocess
+            # -c 1: send one packet, -W 3: timeout after 3 seconds
+            result = subprocess.run(['ping', '-c', '1', '-W', '3', '8.8.8.8'], 
+                                  stdout=subprocess.DEVNULL, 
+                                  stderr=subprocess.DEVNULL)
+            if result.returncode == 0:
+                return True
         except Exception as e:
-            logger.debug(f"Connectivity check failed: {e}")
-            return False
+            logger.debug(f"Ping test failed: {e}")
+            
+        return False
     
     def is_test_barcode(self, barcode: str) -> bool:
         """

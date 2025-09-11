@@ -21,6 +21,22 @@
       "933dee6de6ee": {
         "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=933dee6de6ee;SharedAccessKey=x3gzkLtusGt9dkvRX45Zxdv1q/BEtH33do4gW1MWIkQ=",
         "deviceId": "933dee6de6ee"
+      },
+      "a4bba850baa8": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=a4bba850baa8;SharedAccessKey=rtw4aQ2xp9DHuBcqCUE3fHq0ZF6hnrz0U7SOqbWrjuU=",
+        "deviceId": "a4bba850baa8"
+      },
+      "cfabc4830309": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=cfabc4830309;SharedAccessKey=TrURcpwN5TIsoFbXu4rNl2LOgojysCQNAq1B8MWKVRk=",
+        "deviceId": "cfabc4830309"
+      },
+      "8c379fcb0df2": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=8c379fcb0df2;SharedAccessKey=eZMDhicv+uUwBD7b09GYoGDWmfx4jypsa9mN/KaT8GA=",
+        "deviceId": "8c379fcb0df2"
+      },
+      "29f002cd1ead": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=8c379fcb0df2;SharedAccessKey=eZMDhicv+uUwBD7b09GYoGDWmfx4jypsa9mN/KaT8GA=",
+        "deviceId": "29f002cd1ead"
       }
     }
   },
