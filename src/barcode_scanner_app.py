@@ -1228,12 +1228,9 @@ def register_device_with_iot_hub(device_id):
                 "deviceId": device_id
             }
             
-            # Save updated config only if new device was created
-            if "devices" not in config["iot_hub"] or device_id not in config["iot_hub"]["devices"]:
-                save_config(config)
-                logger.info(f"Config file updated with device {device_id} connection string")
-            else:
-                logger.info(f"Device {device_id} already in config, skipping save")
+            # Always save the updated config to ensure connection string is persisted
+            save_config(config)
+            logger.info(f"Config file updated with device {device_id} connection string")
             
             return {"success": True, "device_id": device_id, "connection_string": connection_string}
             
@@ -1975,4 +1972,15 @@ with gr.Blocks(title="Barcode Scanner") as app:
     )
 
 if __name__ == "__main__":
+    print("🔌 Initializing USB barcode scanner...")
+    detect_result = detect_usb_scanner()
+    print(detect_result)
+
+    start_result = start_usb_scanner()
+    print(start_result)
+
+    auto_scan_enabled = True
+    print("✅ Auto-scan enabled - ready to scan barcodes!")
+
+    # Launch the Gradio app
     app.launch(server_name="0.0.0.0", server_port=7860)
