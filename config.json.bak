@@ -1,0 +1,31 @@
+{
+  "iot_hub": {
+    "connection_string": "HostName=CaleffiIoT.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ=",
+    "deviceId": "auto-generated-from-barcode",
+    "dps_id_scope": "0ne00A300C1",
+    "device_registry_url": "https://CaleffiIoT.azure-devices.net",
+    "api_key": "5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ=",
+    "devices": {
+      "892d8f1d00e5": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=892d8f1d00e5;SharedAccessKey=VGXbuAWmVsr7YvCW+5hSfDoAFx7RlcQA9h9cS2nmTkc=",
+        "deviceId": "892d8f1d00e5"
+      },
+      "36928f67f397": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=36928f67f397;SharedAccessKey=YXXD/NT5MDkvSk7V9lDoq2cZl6iqISBs+7rVKVuNtNI=",
+        "deviceId": "36928f67f397"
+      },
+      "5e31266869e2": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=5e31266869e2;SharedAccessKey=4qJ6E1e0DUDOds1UXkIUxA2xIvTuuaUl0m49A+kxQO4=",
+        "deviceId": "5e31266869e2"
+      },
+      "933dee6de6ee": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=933dee6de6ee;SharedAccessKey=x3gzkLtusGt9dkvRX45Zxdv1q/BEtH33do4gW1MWIkQ=",
+        "deviceId": "933dee6de6ee"
+      }
+    }
+  },
+  "barcode_scanner": {
+    "scanner_type": "Handreader",
+    "scan_timeout": 5000
+  }
+}

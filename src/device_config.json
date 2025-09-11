@@ -1,0 +1,125 @@
+{
+  "devices": {
+    "test-device-7079fa7ab32e": {
+      "registration_token": "7d6d4f29a86cac4f",
+      "registered_at": "2025-09-11T05:55:46.218158+00:00",
+      "device_info": {},
+      "status": "active",
+      "last_seen": "2025-09-11T06:01:13.922039+00:00"
+    },
+    "7079fa7ab32e": {
+      "registration_token": "55dcd8fc45509842",
+      "registered_at": "2025-09-11T06:12:29.140504+00:00",
+      "device_info": {},
+      "status": "active",
+      "last_seen": "2025-09-11T06:15:58.380816+00:00"
+    },
+    "74bb0b4bfc9d": {
+      "registration_token": "91921563e2a23ee0",
+      "registered_at": "2025-09-11T06:19:38.708355+00:00",
+      "device_info": {},
+      "status": "active",
+      "last_seen": "2025-09-11T06:20:49.349700+00:00"
+    },
+    "DEV_69715B4B7FF7": {
+      "registration_token": "a07d367975336a8f",
+      "registered_at": "2025-09-11T06:31:19.760718+00:00",
+      "device_info": {},
+      "status": "active",
+      "last_seen": "2025-09-11T06:31:19.760982+00:00"
+    },
+    "a5944658fdf7": {
+      "registration_token": "0f535924c1799904",
+      "registered_at": "2025-09-11T06:57:26.916294+00:00",
+      "device_info": {
+        "registration_method": "automatic_camera_scanner",
+        "scanner_type": "camera_based",
+        "auto_registered": true,
+        "timestamp": "2025-09-11T06:57:26.916282+00:00"
+      },
+      "status": "active",
+      "last_seen": "2025-09-11T06:57:56.327229+00:00"
+    }
+  },
+  "registration_tokens": {
+    "7d6d4f29a86cac4f": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:55:46.217935+00:00",
+      "expires_at": 1757656546.217927,
+      "used": true
+    },
+    "858a75f26a7d1c88": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:55:58.366615+00:00",
+      "expires_at": 1757656558.366608,
+      "used": false
+    },
+    "2d9dc236a3d3d334": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:57:11.447692+00:00",
+      "expires_at": 1757656631.447685,
+      "used": false
+    },
+    "5ef3380be2c0fce8": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:58:59.595909+00:00",
+      "expires_at": 1757656739.595902,
+      "used": false
+    },
+    "bd00d0f0b3e7e6e0": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:59:07.791063+00:00",
+      "expires_at": 1757656747.791053,
+      "used": false
+    },
+    "f73440ce9911a83f": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:59:13.325383+00:00",
+      "expires_at": 1757656753.325378,
+      "used": false
+    },
+    "984a607d25a3a18a": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T05:59:47.121584+00:00",
+      "expires_at": 1757656787.121575,
+      "used": false
+    },
+    "13fadb29628e9a73": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T06:01:01.384750+00:00",
+      "expires_at": 1757656861.384744,
+      "used": false
+    },
+    "ec375b70c144dea1": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T06:01:13.889599+00:00",
+      "expires_at": 1757656873.889589,
+      "used": false
+    },
+    "55dcd8fc45509842": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T06:12:29.140106+00:00",
+      "expires_at": 1757657549.140098,
+      "used": true
+    },
+    "91921563e2a23ee0": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T06:19:38.708035+00:00",
+      "expires_at": 1757657978.708027,
+      "used": true
+    },
+    "a07d367975336a8f": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T06:31:19.760367+00:00",
+      "expires_at": 1757658679.76036,
+      "used": true
+    },
+    "0f535924c1799904": {
+      "device_identifier": "unknown",
+      "created_at": "2025-09-11T06:57:26.916023+00:00",
+      "expires_at": 1757660246.916014,
+      "used": true
+    }
+  },
+  "last_updated": "2025-09-11T06:57:56.327246+00:00"
+}
