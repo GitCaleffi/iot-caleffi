@@ -175,7 +175,7 @@ class HubClient:
             raise Exception(f"IoT Hub connection error: {e}")
             
     def send_message(self, barcode, device_id, sku=None):
-        """Send barcode to IoT Hub with tracking"""
+        """Send barcode to IoT Hub with persistent connection"""
         logger.info(f"Sending message with device ID: {device_id}")
 
         # Validate barcode format - allow EAN barcodes (8-13 characters)
@@ -188,8 +188,9 @@ class HubClient:
             logger.error(f"Invalid barcode format: {barcode}. Must contain only alphanumeric characters, hyphens, or underscores.")
             return False
 
+        # Ensure connection is active
         if not self.client or not self.connected:
-            logger.info("No active connection, attempting to connect...")
+            logger.info("Establishing persistent connection...")
             if not self.connect():
                 logger.error("Failed to establish connection")
                 return False
@@ -205,25 +206,24 @@ class HubClient:
         message = Message(json.dumps(message_data))
         message.message_id = f"{device_id}-{int(time.time())}"
 
-        logger.info(f"Message to send: {json.dumps(message_data, indent=2)}")
         logger.info(f"Message ID: {message.message_id}")
 
-        # Send message with retry logic
+        # Send message with retry logic but maintain connection
         for attempt in range(self.max_retries):
             try:
                 with self.connection_lock:
-                    logger.info("Sending message to IoT Hub...")
+                    logger.info("Sending message via persistent connection...")
                     self.client.send_message(message)
 
                 self.messages_sent += 1
                 self.last_message_time = datetime.now(timezone.utc)
                 self.retry_count = 0
 
-                logger.info(f"Message sent successfully! Total messages sent: {self.messages_sent}")
+                logger.info(f"✅ Message sent successfully! Total: {self.messages_sent} (Connection maintained)")
                 return True
 
             except ConnectionDroppedError as e:
-                logger.warning(f"Connection dropped (attempt {attempt + 1}/{self.max_retries})")
+                logger.warning(f"Connection dropped (attempt {attempt + 1}/{self.max_retries}), reconnecting...")
                 if attempt < self.max_retries - 1:
                     time.sleep((attempt + 1) * 2)
                     if not self.connect():
@@ -231,14 +231,13 @@ class HubClient:
                         return False
                 else:
                     logger.error("Failed to send message after retries")
-                    raise
+                    return False
 
             except Exception as e:
                 logger.error(f"Send failed (attempt {attempt + 1}/{self.max_retries}): {e}")
-                logger.error(f"Stack trace: {traceback.format_exc()}")
                 if attempt < self.max_retries - 1:
                     time.sleep(2 ** attempt)
-                    self.disconnect()
+                    # Try to reconnect without disconnecting first
                     if not self.connect():
                         logger.error("Failed to reconnect")
                 else:
@@ -257,16 +256,23 @@ class HubClient:
         }
         
     def disconnect(self):
-        """Disconnect from IoT Hub"""
+        """Disconnect from IoT Hub (only when explicitly needed)"""
         if self.client:
             try:
-                logger.info("Disconnecting from IoT Hub...")
+                logger.info("Explicitly disconnecting from IoT Hub...")
                 self.client.disconnect()
                 self.client = None
                 self.connected = False
                 logger.info("Successfully disconnected from IoT Hub")
             except Exception as e:
                 logger.error(f"Error during disconnect: {e}")
-                logger.error(f"Stack trace: {traceback.format_exc()}")
                 self.client = None
                 self.connected = False
+                
+    def __del__(self):
+        """Cleanup on object destruction"""
+        try:
+            if self.client and self.connected:
+                self.disconnect()
+        except:
+            pass

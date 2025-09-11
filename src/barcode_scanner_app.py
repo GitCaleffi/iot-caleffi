@@ -54,6 +54,7 @@ sys.path.append(str(src_dir))
 
 from utils.config import load_config, save_config
 from iot.hub_client import HubClient
+from iot.connection_manager import connection_manager
 from database.local_storage import LocalStorage
 from api.api_client import ApiClient
 from utils.dynamic_device_manager import device_manager
@@ -453,16 +454,29 @@ def auto_process_scanned_barcodes():
 def plug_and_play_register_device(device_id):
     """Plug-and-play device registration - only registration, no quantity updates"""
     try:
+        # Step 1: Check if device already registered locally
+        existing_device = local_db.get_device_id()
+        if existing_device == device_id:
+            return f"⚠️ Device {device_id} already registered locally. No need to register again."
+        
+        # Step 2: Check if device exists in IoT Hub config
+        config = load_config()
+        devices = config.get("iot_hub", {}).get("devices", {})
+        if device_id in devices:
+            # Save to local DB if not already saved
+            local_db.save_device_id(device_id)
+            return f"✅ Device {device_id} already registered in IoT Hub. Saved to local database."
+        
         test_barcode = "817994ccfe14"
         
-        # Step 1: Save test barcode
+        # Step 3: Save test barcode
         local_db.save_test_barcode_scan(test_barcode)
         
-        # Step 2: Check if online
+        # Step 4: Check if online
         if not api_client.is_online():
             return f"❌ Device is offline. Cannot register {device_id}."
         
-        # Step 3: Call confirmRegistration API
+        # Step 5: Call confirmRegistration API
         api_url = "https://api2.caleffionline.it/api/v1/raspberry/confirmRegistration"
         payload = {"deviceId": device_id, "scannedBarcode": test_barcode}
         
@@ -506,12 +520,11 @@ def plug_and_play_register_device(device_id):
             
             if device_id in devices:
                 connection_string = devices[device_id]["connection_string"]
-                hub_client = HubClient(connection_string)
                 
-                # Send registration confirmation only
+                # Send registration confirmation only using persistent connection
                 import hashlib
                 registration_code = str(int(hashlib.md5(device_id.encode()).hexdigest()[:12], 16))[:13].zfill(13)
-                success = hub_client.send_message(registration_code, device_id)
+                success = connection_manager.send_message(device_id, connection_string, registration_code)
                 
                 if success:
                     return f"✅ Device {device_id} registered successfully!\n✅ Registration message sent to IoT Hub\n✅ Device saved in local database\n✅ Ready for USB barcode scanning"
@@ -536,8 +549,11 @@ def usb_scan_and_send_ean(ean_barcode, device_id=None):
             if not device_id:
                 return "❌ No device registered. Please register device first."
         
+        # Always use quantity 1 for EAN barcode scans
+        quantity = 1
+        
         # Save EAN scan to local database with quantity 1
-        timestamp = local_db.save_scan(device_id, ean_barcode, 1)
+        timestamp = local_db.save_scan(device_id, ean_barcode, quantity)
         
         # Send EAN to IoT Hub
         config = load_config()
@@ -545,13 +561,13 @@ def usb_scan_and_send_ean(ean_barcode, device_id=None):
         
         if device_id in devices:
             connection_string = devices[device_id]["connection_string"]
-            hub_client = HubClient(connection_string)
             
-            success = hub_client.send_message(ean_barcode, device_id)
+            # Use persistent connection manager
+            success = connection_manager.send_message(device_id, connection_string, ean_barcode)
             
             if success:
                 local_db.mark_sent_to_hub(device_id, ean_barcode, timestamp)
-                return f"✅ EAN {ean_barcode} sent to IoT Hub!\n✅ Device: {device_id}\n✅ Quantity: 1\n✅ Saved in local database"
+                return f"✅ EAN {ean_barcode} sent to IoT Hub!\n✅ Device: {device_id}\n✅ Quantity: {quantity} (always 1 for EAN scans)\n✅ Saved in local database\n🔗 Connection: Persistent"
             else:
                 return f"⚠️ EAN {ean_barcode} saved locally, IoT Hub send failed"
         else:
