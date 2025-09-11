@@ -187,6 +187,46 @@ class DynamicDeviceManager:
                 self.save_device_config()
                 logger.info(f"Cleaned up {len(expired_tokens)} expired tokens")
     
+    def get_device_connection_string(self, device_id: str) -> Optional[str]:
+        """
+        Get the IoT Hub connection string for a registered device.
+        
+        Args:
+            device_id: The ID of the device to get the connection string for
+            
+        Returns:
+            str: The connection string if found, None otherwise
+        """
+        with self.lock:
+            device = self.device_cache.get(device_id)
+            if not device or device.get('status') != 'active':
+                logger.warning(f"Device {device_id} not found or inactive")
+                return None
+                
+            # Get connection string from device info or generate a new one
+            if 'connection_string' in device.get('device_info', {}):
+                return device['device_info']['connection_string']
+                
+            # If no connection string is stored, try to get it from config.json
+            try:
+                from utils.config import load_config
+                config = load_config()
+                if config and 'iot_hub' in config and 'devices' in config['iot_hub']:
+                    device_configs = config['iot_hub']['devices']
+                    if device_id in device_configs:
+                        return device_configs[device_id].get('connection_string')
+                
+                # Fallback: try to generate from IoT Hub connection string
+                iot_hub_conn = config.get('iot_hub', {}).get('connection_string') if config else None
+                if iot_hub_conn and 'primary_key' in device.get('device_info', {}):
+                    hostname = iot_hub_conn.split(';')[0].split('=')[1]
+                    primary_key = device['device_info']['primary_key']
+                    return f"HostName={hostname};DeviceId={device_id};SharedAccessKey={primary_key}"
+                    
+            except Exception as e:
+                logger.error(f"Error generating connection string: {e}")
+                return None
+    
     def get_registration_stats(self) -> Dict:
         """Get registration statistics"""
         with self.lock:

@@ -37,6 +37,38 @@
       "29f002cd1ead": {
         "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=8c379fcb0df2;SharedAccessKey=eZMDhicv+uUwBD7b09GYoGDWmfx4jypsa9mN/KaT8GA=",
         "deviceId": "29f002cd1ead"
+      },
+      "6efb25ec319f": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=6efb25ec319f;SharedAccessKey=PDpKdLYe2chmgC8vTW1L5+a4jqmBXExLqhSeX3O3BTw=",
+        "deviceId": "6efb25ec319f"
+      },
+      "09dbaed187ea": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=09dbaed187ea;SharedAccessKey=i3YofoBCaaGO/VoK4jp6VEg0+V/u039p7JQJLTLF3Pk=",
+        "deviceId": "09dbaed187ea"
+      },
+      "67033051bf54": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=67033051bf54;SharedAccessKey=K8mN9pQ2rS5tU6vW7xY8zA1bC2dE3fG4hI5jK6lM7nO=",
+        "deviceId": "67033051bf54"
+      },
+      "test-device-1757600998": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test-device-1757600998;SharedAccessKey=dxiv4o0uaNSnaIdWiK0JKpFMx5iNRvKITDcf/xJYkm0=",
+        "deviceId": "test-device-1757600998"
+      },
+      "test-device-1757601109": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test-device-1757601109;SharedAccessKey=tSN1WIQ05j7k7xUQM97tZkh7bspPxWnRKEu/6JUgfBc=",
+        "deviceId": "test-device-1757601109"
+      },
+      "test-device-1757601294": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test-device-1757601294;SharedAccessKey=L1wT/wleWjqiDmTctzuFyqB5LB5JRb3YE+ld5GSuuV8=",
+        "deviceId": "test-device-1757601294"
+      },
+      "test-device-1757601460": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test-device-1757601460;SharedAccessKey=S4kkcKoNRg+OPNspU8qi8JsjK7bDPUkGdyYMlFp4k8A=",
+        "deviceId": "test-device-1757601460"
+      },
+      "test-device-1757601469": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=test-device-1757601469;SharedAccessKey=iPWLupPDivDUyBZTg6R5S+/VPYV7Mv3cNERUnjgz7b0=",
+        "deviceId": "test-device-1757601469"
       }
     }
   },

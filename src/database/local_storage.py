@@ -188,6 +188,24 @@ class LocalStorage:
         logger.info(f"Device ID {device_id} registered successfully")
         return True
 
+    def get_registered_devices(self):
+        """Get all registered devices from the device_info table
+        
+        Returns:
+            list: List of dictionaries containing device information
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            'SELECT DISTINCT device_id, timestamp FROM device_info ORDER BY timestamp DESC'
+        )
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {'device_id': row[0], 'registered_at': self.format_timestamp(row[1])}
+            for row in rows
+        ]
+
     def get_unsent_scans(self):
         """Get scans not yet sent to IoT Hub"""
         conn = self._get_connection()
