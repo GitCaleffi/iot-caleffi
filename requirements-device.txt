@@ -13,6 +13,12 @@ netifaces>=0.11.0
 # Logging and monitoring
 python-json-logger>=2.0.2
 
+# Computer Vision and Barcode Detection
+opencv-python>=4.5.0
+pyzbar>=0.1.9
+numpy>=1.21.0
+
 # Testing
 pytest>=6.2.5
 pytest-mock>=3.6.1
+#pip install opencv-python pyzbar zxing-cpp numpy

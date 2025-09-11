@@ -49,6 +49,34 @@
         "timestamp": "2025-09-09T07:30:16.695838+00:00",
         "test_registration": true
       }
+    },
+    "a5c10e11968b": {
+      "device_id": "a5c10e11968b",
+      "registered_at": "2025-09-11T04:44:30.907791+00:00",
+      "last_seen": "2025-09-11T04:55:26.199352+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "simple_test",
+        "device_type": "barcode_scanner",
+        "test_device": true,
+        "timestamp": "2025-09-11T10:14:30.907767"
+      }
+    },
+    "7079fa7ab32e": {
+      "device_id": "7079fa7ab32e",
+      "registered_at": "2025-09-11T04:49:39.782424+00:00",
+      "last_seen": "2025-09-11T04:49:39.782431+00:00",
+      "status": "active",
+      "registration_method": "direct",
+      "device_info": {
+        "registration_method": "test_registration",
+        "device_type": "barcode_scanner",
+        "test_device": true,
+        "barcode": "4902430735018",
+        "timestamp": "2025-09-11T10:19:39.782409",
+        "registered_by": "test_script_7079fa7ab32e"
+      }
     }
   },
   "registration_tokens": {
@@ -77,5 +105,5 @@
       "used": false
     }
   },
-  "last_updated": "2025-09-09T07:30:16.695868+00:00"
+  "last_updated": "2025-09-11T04:55:26.199360+00:00"
 }
