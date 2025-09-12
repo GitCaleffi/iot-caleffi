@@ -123,6 +123,9 @@ class AutoUSBScanner:
                         # Register with IoT Hub
                         self.register_with_iot_hub(self.device_id)
                         
+                        # Send registration message to IoT Hub
+                        self.send_registration_message(self.device_id, barcode)
+                        
                         logger.info(f"✅ Device auto-registered: {self.device_id}")
                         return True
                 except:
@@ -132,6 +135,7 @@ class AutoUSBScanner:
             self.device_id = barcode
             local_db.save_device_id(self.device_id)
             self.register_with_iot_hub(self.device_id)
+            self.send_registration_message(self.device_id, barcode)
             logger.info(f"✅ Device registered with barcode as ID: {self.device_id}")
             return True
             
@@ -209,6 +213,40 @@ class AutoUSBScanner:
         except Exception as e:
             logger.error(f"IoT Hub registration error: {e}")
             return False
+            
+    def send_registration_message(self, device_id, barcode):
+        """Send registration message to IoT Hub"""
+        try:
+            config = load_config()
+            devices = config.get("iot_hub", {}).get("devices", {})
+            
+            if device_id in devices:
+                conn_string = devices[device_id]["connection_string"]
+                hub_client = HubClient(conn_string)
+                
+                # Create registration message payload
+                registration_message = {
+                    "deviceId": device_id,
+                    "messageType": "device_registration",
+                    "action": "register",
+                    "scannedBarcode": barcode,
+                    "registrationMethod": "usb_scanner_plug_and_play",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status": "registered"
+                }
+                
+                # Send registration message to IoT Hub
+                success = hub_client.send_message(json.dumps(registration_message), device_id)
+                if success:
+                    logger.info(f"📡 USB Scanner registration message sent to IoT Hub for device {device_id}")
+                    print(f"✅ Registration message sent to IoT Hub")
+                else:
+                    logger.warning(f"⚠️ Failed to send registration message to IoT Hub")
+                    print(f"⚠️ Registration message failed")
+                    
+        except Exception as e:
+            logger.error(f"Error sending registration message: {e}")
+            print(f"⚠️ Registration message error: {e}")
             
     def process_barcode(self, barcode):
         """Process scanned barcode automatically"""

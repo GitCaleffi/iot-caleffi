@@ -178,9 +178,9 @@ class HubClient:
         """Send barcode to IoT Hub with persistent connection"""
         logger.info(f"Sending message with device ID: {device_id}")
 
-        # Validate barcode format - allow EAN barcodes (8-13 characters)
-        if not barcode or len(barcode) < 8 or len(barcode) > 13:
-            logger.error(f"Invalid barcode length: {len(barcode) if barcode else 0}. Must be 8-13 characters for EAN barcodes.")
+        # Validate barcode format - allow various barcode formats (6-20 characters)
+        if not barcode or len(barcode) < 6 or len(barcode) > 20:
+            logger.error(f"Invalid barcode length: {len(barcode) if barcode else 0}. Must be 6-20 characters for barcode formats.")
             return False
         
         # Allow alphanumeric characters for various barcode formats (Code 128, Code 39, etc.)

@@ -16,7 +16,30 @@ from datetime import datetime, timezone, timedelta
 try:
     from .barcode_validator import validate_ean, BarcodeValidationError
 except ImportError:
-    from barcode_validator import validate_ean, BarcodeValidationError
+    try:
+        # Try local barcode_validator module first
+        import sys
+        import os
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.insert(0, current_dir)
+        from barcode_validator import validate_ean, BarcodeValidationError
+    except ImportError:
+        # Fallback: create simple validation function
+        class BarcodeValidationError(Exception):
+            pass
+        
+        def validate_ean(barcode):
+            """Simple barcode validation fallback"""
+            if not barcode:
+                raise BarcodeValidationError("Barcode cannot be empty")
+            
+            barcode = str(barcode).strip()
+            
+            # Allow alphanumeric barcodes (6-20 characters)
+            if len(barcode) < 6 or len(barcode) > 20:
+                raise BarcodeValidationError(f"Barcode must be 6-20 characters, got {len(barcode)}")
+            
+            return barcode
 try:
     from utils.device_registration import get_local_mac_address as get_local_device_mac
 except ImportError:
@@ -1170,7 +1193,7 @@ No need to register again."""
         # Save device ID to database if not already registered
         local_db.save_device_id(device_id)
         
-        # Register device with IoT Hub (fast registration without quantity messages)
+        # Register device with IoT Hub and send registration message
         try:
             config = load_config()
             if config:
@@ -1179,11 +1202,42 @@ No need to register again."""
                 if not owner_connection_string:
                     iot_status = "⚠️ No IoT Hub connection string configured"
                 else:
-                    # Fast device registration - only register, don't send messages
+                    # Step 1: Register device with IoT Hub
                     registration_result = register_device_with_iot_hub(device_id)
                     if registration_result.get("success"):
                         logger.info(f"Device {device_id} registered successfully with IoT Hub")
-                        iot_status = "✅ Device registered with IoT Hub (no quantity messages sent)"
+                        
+                        # Step 2: Send registration message to IoT Hub
+                        try:
+                            device_connection_string = registration_result.get("connection_string")
+                            if device_connection_string:
+                                hub_client = HubClient(device_connection_string)
+                                
+                                # Create registration message payload
+                                registration_message = {
+                                    "deviceId": device_id,
+                                    "messageType": "device_registration",
+                                    "action": "register",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "testBarcode": test_scan['barcode'],
+                                    "registrationMethod": "usb_scanner_manual",
+                                    "status": "registered"
+                                }
+                                
+                                # Send registration message to IoT Hub
+                                success = hub_client.send_message(json.dumps(registration_message), device_id)
+                                if success:
+                                    logger.info(f"📡 Registration message sent to IoT Hub for device {device_id}")
+                                    iot_status = "✅ Device registered with IoT Hub and registration message sent"
+                                else:
+                                    logger.warning(f"⚠️ Device registered but failed to send registration message")
+                                    iot_status = "⚠️ Device registered but registration message failed"
+                            else:
+                                logger.error("No device connection string available for IoT Hub messaging")
+                                iot_status = "⚠️ Device registered but no connection string for messaging"
+                        except Exception as msg_error:
+                            logger.error(f"Failed to send registration message: {msg_error}")
+                            iot_status = f"⚠️ Device registered but message failed: {str(msg_error)}"
                     else:
                         logger.error(f"Failed to register device {device_id}: {registration_result.get('error')}")
                         iot_status = f"⚠️ Failed to register device: {registration_result.get('error')}"
@@ -1470,14 +1524,23 @@ No need to register again."""
                             if device_connection_string:
                                 hub_client = HubClient(device_connection_string)
                                 registration_message = {
-                                    "scannedBarcode": barcode,
                                     "deviceId": device_id,
-                                    "messageType": "registration",
-                                    "timestamp": datetime.now(timezone.utc).isoformat()
+                                    "messageType": "device_registration",
+                                    "action": "register",
+                                    "scannedBarcode": barcode,
+                                    "registrationMethod": "usb_scanner_automatic",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    "status": "registered"
                                 }
                                 
-                                iot_success = hub_client.send_message(barcode, device_id)
-                                iot_status = "✅ Sent to IoT Hub" if iot_success else "⚠️ Failed to send to IoT Hub"
+                                # Send the structured registration message to IoT Hub
+                                iot_success = hub_client.send_message(json.dumps(registration_message), device_id)
+                                if iot_success:
+                                    logger.info(f"📡 USB Scanner registration message sent to IoT Hub for device {device_id}")
+                                    iot_status = "✅ Registration message sent to IoT Hub"
+                                else:
+                                    logger.warning(f"⚠️ USB Scanner registration failed to send to IoT Hub")
+                                    iot_status = "⚠️ Failed to send registration message to IoT Hub"
                             else:
                                 iot_status = "⚠️ No IoT Hub connection string available"
                         else:
@@ -2371,7 +2434,7 @@ class PiHeartbeatService:
                     logger.debug(f"Server {server_url} not reachable: {e}")
                     continue
             
-            logger.warning("⚠️ No barcode scanner server found")
+            logger.debug("⚠️ No barcode scanner server found - continuing without server discovery")
             return None
             
         except Exception as e:

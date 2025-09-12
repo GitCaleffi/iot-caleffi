@@ -73,6 +73,10 @@
       "pi-c1323007": {
         "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=pi-c1323007;SharedAccessKey=MWHMG+fjSr8BVLJr+GIQwX/fEiLfkU1jo2gzlEL1Ytw=",
         "deviceId": "pi-c1323007"
+      },
+      "7079fa7ab32e": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=7079fa7ab32e;SharedAccessKey=HleZv0LRJFqKNMFUW54hey/D3LemS8iXOVk3H5d+n08=",
+        "deviceId": "7079fa7ab32e"
       }
     }
   },
