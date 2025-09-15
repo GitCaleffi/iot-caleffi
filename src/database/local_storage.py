@@ -299,6 +299,10 @@ class LocalStorage:
             'device_ready': has_available_devices and test_barcode_scanned
         }
 
+    def save_unsent_message(self, device_id, barcode, quantity=1):
+        """Save an unsent message (same as save_scan but explicitly for unsent messages)"""
+        return self.save_scan(device_id, barcode, quantity)
+
     def close(self):
         """Close database connection - no longer needed with per-operation connections"""
         pass

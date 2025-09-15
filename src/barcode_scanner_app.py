@@ -1195,18 +1195,6 @@ def check_raspberry_pi_connection():
         else:
             # Try network discovery for external Pi devices
             logger.info("🔍 Searching for external Raspberry Pi devices...")
-            
-            # Save message for offline retry
-            try:
-                local_db.save_unsent_message({
-                    "device_id": device_id,
-                    "barcode": barcode,
-                    "quantity": quantity,
-                    "timestamp": time.time()
-                })
-                logger.info(f"💾 Saved barcode {barcode} locally for retry")
-            except Exception as save_error:
-                logger.error(f"Failed to save unsent message: {save_error}")
                 
             connection_manager = ConnectionManager()
             pi_available = connection_manager.check_raspberry_pi_availability()
