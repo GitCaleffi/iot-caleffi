@@ -12,36 +12,7 @@ import os
 import time
 from datetime import datetime
 
-def find_hidraw_devices():
-    """Find available HID raw devices"""
-    devices = []
-    for i in range(10):  # Check hidraw0 to hidraw9
-        device_path = f"/dev/hidraw{i}"
-        if os.path.exists(device_path):
-            devices.append(device_path)
-    return devices
 
-def test_device_permissions():
-    """Test if we have permission to access HID devices"""
-    devices = find_hidraw_devices()
-    
-    if not devices:
-        print("❌ No HID raw devices found (/dev/hidraw*)")
-        return False
-    
-    print(f"🔍 Found HID devices: {devices}")
-    
-    for device in devices:
-        try:
-            with open(device, 'rb') as f:
-                print(f"✅ Can access {device}")
-                return device
-        except PermissionError:
-            print(f"❌ Permission denied: {device} (try running with sudo)")
-        except Exception as e:
-            print(f"⚠️ Error accessing {device}: {e}")
-    
-    return None
 
 def barcode_reader(device_path):
     """Read barcode from HID device - Python 3 compatible"""
