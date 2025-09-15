@@ -174,19 +174,46 @@ class HubClient:
             logger.error(f"Stack trace: {traceback.format_exc()}")
             raise Exception(f"IoT Hub connection error: {e}")
             
-    def send_message(self, barcode, device_id, sku=None):
-        """Send barcode to IoT Hub with persistent connection"""
+    def send_message(self, message_content, device_id, sku=None):
+        """Send message to IoT Hub with persistent connection - handles both strings and dictionaries"""
         logger.info(f"Sending message with device ID: {device_id}")
 
-        # Validate barcode format - allow various barcode formats (6-20 characters)
-        if not barcode or len(barcode) < 6 or len(barcode) > 20:
-            logger.error(f"Invalid barcode length: {len(barcode) if barcode else 0}. Must be 6-20 characters for barcode formats.")
+        # Handle both string barcodes and dictionary messages
+        if isinstance(message_content, dict):
+            # Dictionary message (e.g., EAN update with metadata)
+            message_data = message_content.copy()
+            # Ensure deviceId is set
+            if "deviceId" not in message_data:
+                message_data["deviceId"] = device_id
+            # Ensure timestamp is set
+            if "timestamp" not in message_data:
+                message_data["timestamp"] = datetime.now(timezone.utc).isoformat()
+            
+            # For validation, extract barcode/EAN from the message
+            barcode = message_data.get("ean") or message_data.get("scannedBarcode") or message_data.get("barcode")
+            
+        elif isinstance(message_content, str):
+            # String barcode (legacy format)
+            barcode = message_content
+            message_data = {
+                "scannedBarcode": barcode,
+                "deviceId": device_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        else:
+            logger.error(f"Invalid message format: {type(message_content)}. Must be string or dictionary.")
             return False
-        
-        # Allow alphanumeric characters for various barcode formats (Code 128, Code 39, etc.)
-        if not barcode.replace('-', '').replace('_', '').isalnum():
-            logger.error(f"Invalid barcode format: {barcode}. Must contain only alphanumeric characters, hyphens, or underscores.")
-            return False
+
+        # Validate barcode if present
+        if barcode:
+            if len(barcode) < 6 or len(barcode) > 20:
+                logger.error(f"Invalid barcode length: {len(barcode)}. Must be 6-20 characters for barcode formats.")
+                return False
+            
+            # Allow alphanumeric characters for various barcode formats (Code 128, Code 39, etc.)
+            if not barcode.replace('-', '').replace('_', '').isalnum():
+                logger.error(f"Invalid barcode format: {barcode}. Must contain only alphanumeric characters, hyphens, or underscores.")
+                return False
 
         # Ensure connection is active
         if not self.client or not self.connected:
@@ -195,18 +222,12 @@ class HubClient:
                 logger.error("Failed to establish connection")
                 return False
 
-        # Create message payload
-        message_data = {
-            "scannedBarcode": barcode,
-            "deviceId": device_id,
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-3] + 'Z'
-        }
-
         # Create message with ID
         message = Message(json.dumps(message_data))
         message.message_id = f"{device_id}-{int(time.time())}"
 
         logger.info(f"Message ID: {message.message_id}")
+        logger.info(f"Message payload: {json.dumps(message_data, indent=2)}")
 
         # Send message with retry logic but maintain connection
         for attempt in range(self.max_retries):
@@ -219,7 +240,11 @@ class HubClient:
                 self.last_message_time = datetime.now(timezone.utc)
                 self.retry_count = 0
 
-                logger.info(f"✅ Message sent successfully! Total: {self.messages_sent} (Connection maintained)")
+                if isinstance(message_content, dict) and message_content.get("messageType") == "quantity_update":
+                    ean = message_content.get("ean")
+                    logger.info(f"✅ EAN {ean} update sent successfully! Total: {self.messages_sent} (Connection maintained)")
+                else:
+                    logger.info(f"✅ Message sent successfully! Total: {self.messages_sent} (Connection maintained)")
                 return True
 
             except ConnectionDroppedError as e:

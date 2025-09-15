@@ -180,7 +180,7 @@ def find_hid_scanner_device():
     return None
 
 def extract_barcode_from_hid_buffer(data_bytes):
-    """Extract barcode characters from HID buffer data - optimized for this scanner"""
+    """Extract barcode characters from HID buffer data - Fixed for proper EAN scanning"""
     barcode_chars = []
 
     # Debug: Log the raw data
@@ -202,29 +202,60 @@ def extract_barcode_from_hid_buffer(data_bytes):
             logger.debug(f"Termination code detected: {code}")
             break
 
-        # Only process numeric and basic alphanumeric characters for barcodes
-        # Skip letters and special characters that are unlikely in barcodes
-        if 30 <= code <= 39:  # Numbers 0-9 on main keyboard
-            num = str((code - 29) % 10)  # 30=1, 31=2, ..., 39=0
+        # Process numeric characters (main keyboard)
+        if 30 <= code <= 39:  # Numbers 1-9, 0 on main keyboard
+            if code == 39:  # 0
+                num = '0'
+            else:
+                num = str(code - 29)  # 30=1, 31=2, ..., 38=9
             barcode_chars.append(num)
-            logger.debug(f"Numeric code {code} -> '{num}'")
-        elif 98 <= code <= 107:  # Keypad numbers 1-0
-            num = str((code - 98 + 1) % 10)  # 98=1, 99=2, ..., 107=0
+            logger.debug(f"Main keyboard code {code} -> '{num}'")
+        
+        # Process keypad numbers
+        elif 98 <= code <= 107:  # Keypad numbers 1-9, 0
+            if code == 98:  # KP_1
+                num = '1'
+            elif code == 99:  # KP_2
+                num = '2'
+            elif code == 100:  # KP_3
+                num = '3'
+            elif code == 101:  # KP_4
+                num = '4'
+            elif code == 102:  # KP_5
+                num = '5'
+            elif code == 103:  # KP_6
+                num = '6'
+            elif code == 104:  # KP_7
+                num = '7'
+            elif code == 105:  # KP_8
+                num = '8'
+            elif code == 106:  # KP_9
+                num = '9'
+            elif code == 107:  # KP_0
+                num = '0'
+            else:
+                continue
             barcode_chars.append(num)
             logger.debug(f"Keypad code {code} -> '{num}'")
+        
+        # Process alphanumeric characters for Code 128/Code 39 support
+        elif code in hid_key_map:
+            char = hid_key_map[code]
+            if char.isalnum():  # Only alphanumeric
+                barcode_chars.append(char)
+                logger.debug(f"Alpha code {code} -> '{char}'")
 
     result = ''.join(barcode_chars)
     logger.debug(f"Extracted barcode: '{result}' (length: {len(result)})")
 
-    # Validate barcode - should be numeric and reasonable length
+    # Validate barcode length for EAN-8, EAN-13, Code 128, etc.
     if len(result) < 6 or len(result) > 20:
         logger.debug(f"Invalid barcode length: {len(result)} (must be 6-20)")
         return ""
 
-    # Check if it's mostly numeric (barcodes should be)
-    numeric_count = sum(1 for c in result if c.isdigit())
-    if numeric_count / len(result) < 0.8:  # Less than 80% numeric
-        logger.debug(f"Barcode not mostly numeric: {result}")
+    # Accept both numeric and alphanumeric barcodes
+    if not result.strip():
+        logger.debug("Empty barcode result")
         return ""
 
     return result
@@ -3668,7 +3699,7 @@ def start_barcode_daemon():
             time.sleep(5)  # Wait before retry
 
 def process_barcode_scan_auto(barcode):
-    """Process barcode scan automatically without UI interaction"""
+    """Process barcode scan automatically without UI interaction - Fixed for proper EAN updates"""
     try:
         # Initialize status variables
         api_success = False
@@ -3680,18 +3711,32 @@ def process_barcode_scan_auto(barcode):
             # Try to auto-register if not already done
             mac_address = get_local_mac_address()
             if mac_address:
-                device_id = f"pi-{mac_address.replace(':', '')[-8:]}"
+                device_id = f"scanner-{mac_address.replace(':', '')[-8:]}"
                 local_db.save_device_id(device_id)
                 logger.info(f"✅ Auto-registered device: {device_id}")
+                
+                # Register device with IoT Hub
+                try:
+                    registration_service = get_dynamic_registration_service()
+                    registration_service.register_device_with_azure(device_id)
+                    logger.info(f"✅ Device {device_id} registered with Azure IoT Hub")
+                except Exception as reg_error:
+                    logger.error(f"❌ IoT Hub registration failed: {reg_error}")
             else:
                 return "❌ No device ID available - registration failed"
         
-        # Validate barcode
+        # Validate and clean barcode
         try:
             validated_barcode = validate_ean(barcode)
-        except BarcodeValidationError:
-            # Accept non-EAN barcodes for flexibility
-            validated_barcode = barcode
+            logger.info(f"📦 Processing EAN barcode: {validated_barcode}")
+        except BarcodeValidationError as e:
+            # Accept alphanumeric barcodes for Code 128/Code 39
+            if len(barcode) >= 6 and len(barcode) <= 20:
+                validated_barcode = barcode.strip()
+                logger.info(f"📦 Processing alphanumeric barcode: {validated_barcode}")
+            else:
+                logger.error(f"❌ Invalid barcode: {e}")
+                return f"❌ Invalid barcode: {str(e)}"
         
         # Save scan locally first
         try:
@@ -3711,42 +3756,66 @@ def process_barcode_scan_auto(barcode):
         except Exception as e:
             logger.error(f"❌ API send error: {e}")
         
-        # Send to IoT Hub
+        # Send to IoT Hub with proper EAN message format
         try:
-            # Get IoT Hub connection string for this device
-            config = load_config()
-            devices = config.get("iot_hub", {}).get("devices", {})
+            # Use dynamic registration service to get device connection string
+            registration_service = get_dynamic_registration_service()
+            device_connection_string = registration_service.get_device_connection_string(device_id)
             
-            if device_id in devices:
-                connection_string = devices[device_id].get("connection_string")
+            if device_connection_string and "YOUR_DEVICE" not in device_connection_string:
+                # Create proper EAN update message
+                ean_message = {
+                    "messageType": "quantity_update",
+                    "deviceId": device_id,
+                    "ean": validated_barcode,
+                    "quantity": 1,
+                    "action": "scan",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
                 
-                if connection_string and "YOUR_DEVICE_SPECIFIC_KEY_HERE" not in connection_string:
-                    # Send to IoT Hub
-                    hub_client = HubClient(connection_string, device_id)
-                    if hub_client.connect():
-                        success = hub_client.send_message(validated_barcode, device_id)
+                # Send to IoT Hub
+                hub_client = HubClient(device_connection_string)
+                success = hub_client.send_message(ean_message, device_id)
+                if success:
+                    iot_success = True
+                    logger.info(f"✅ EAN {validated_barcode} sent to IoT Hub successfully")
+                else:
+                    logger.error("❌ Failed to send EAN to IoT Hub")
+            else:
+                logger.warning("⚠️ Invalid or missing IoT Hub connection string - using fallback registration")
+                # Try to register device and get connection string
+                try:
+                    registration_service.register_device_with_azure(device_id)
+                    device_connection_string = registration_service.get_device_connection_string(device_id)
+                    if device_connection_string:
+                        ean_message = {
+                            "messageType": "quantity_update",
+                            "deviceId": device_id,
+                            "ean": validated_barcode,
+                            "quantity": 1,
+                            "action": "scan",
+                            "timestamp": datetime.now(timezone.utc).isoformat()
+                        }
+                        hub_client = HubClient(device_connection_string)
+                        success = hub_client.send_message(ean_message, device_id)
                         if success:
                             iot_success = True
-                            logger.info("✅ Sent to IoT Hub successfully")
-                        else:
-                            logger.error("❌ Failed to send to IoT Hub")
-                    else:
-                        logger.error("❌ Failed to connect to IoT Hub")
-                else:
-                    logger.warning("⚠️ Invalid or missing IoT Hub connection string")
-            else:
-                logger.warning(f"⚠️ Device {device_id} not found in IoT Hub config")
+                            logger.info(f"✅ EAN {validated_barcode} sent to IoT Hub after registration")
+                except Exception as fallback_error:
+                    logger.error(f"❌ Fallback registration failed: {fallback_error}")
                 
         except Exception as e:
             logger.error(f"❌ IoT Hub send error: {e}")
         
         # Return status based on success
         if api_success and iot_success:
-            return f"✅ Barcode {validated_barcode} sent to both API and IoT Hub"
-        elif api_success or iot_success:
-            return f"⚠️ Barcode {validated_barcode} sent partially (check logs)"
+            return f"✅ EAN {validated_barcode} sent to both API and IoT Hub successfully"
+        elif iot_success:
+            return f"✅ EAN {validated_barcode} sent to IoT Hub successfully (API failed)"
+        elif api_success:
+            return f"⚠️ EAN {validated_barcode} sent to API only (IoT Hub failed)"
         else:
-            return f"⚠️ Barcode {validated_barcode} saved locally (will retry when online)"
+            return f"⚠️ EAN {validated_barcode} saved locally (will retry when online)"
             
     except Exception as e:
         logger.error(f"❌ Barcode processing error: {e}")
