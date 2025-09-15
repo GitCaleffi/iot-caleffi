@@ -277,40 +277,62 @@ class ApiClient:
     def send_barcode_scan(self, device_id: str, barcode: str, quantity: int = 1) -> Dict[str, Any]:
         """
         Send a barcode scan to the API.
-        
+
         Args:
             device_id (str): The device ID
             barcode (str): The scanned barcode
             quantity (int): The quantity scanned
-            
+
         Returns:
             dict: Result with success flag and message
         """
         try:
-            url = f"{self.base_url}/raspberry/barcodeScan"
+            # Try multiple possible endpoints
+            endpoints = [
+                f"{self.base_url}/raspberry/barcodeScan",
+                f"{self.base_url}/raspberry/saveBarcodeScan",
+                f"{self.base_url}/barcode/scan",
+                f"{self.base_url}/scan"
+            ]
+
             payload = {
                 "deviceId": device_id,
                 "scannedBarcode": barcode,
                 "quantity": quantity
             }
-            
-            response = self.session.post(
-                url, 
-                json=payload, 
-                timeout=self.timeout
-            )
-            
-            if response.status_code == 200:
-                return {
-                    "success": True,
-                    "message": "Barcode scan sent successfully"
-                }
-            else:
-                return {
-                    "success": False,
-                    "message": f"HTTP {response.status_code}: {response.text}"
-                }
-                
+
+            last_error = None
+
+            for url in endpoints:
+                try:
+                    logger.debug(f"Trying API endpoint: {url}")
+                    response = self.session.post(
+                        url,
+                        json=payload,
+                        timeout=self.timeout
+                    )
+
+                    if response.status_code == 200:
+                        return {
+                            "success": True,
+                            "message": f"Barcode scan sent successfully to {url}"
+                        }
+                    else:
+                        last_error = f"HTTP {response.status_code}: {response.text[:100]}"
+                        logger.debug(f"Endpoint {url} failed: {last_error}")
+                        continue
+
+                except Exception as e:
+                    last_error = str(e)
+                    logger.debug(f"Endpoint {url} error: {last_error}")
+                    continue
+
+            # If all endpoints failed, return the last error
+            return {
+                "success": False,
+                "message": f"All API endpoints failed. Last error: {last_error}"
+            }
+
         except Exception as e:
             logger.error(f"Error sending barcode scan: {e}")
             return {

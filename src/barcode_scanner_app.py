@@ -64,24 +64,48 @@ try:
     # First check if we're on a Raspberry Pi before importing
     import platform
     import os
-    
+
     # Check multiple indicators for Raspberry Pi
-    is_pi = (
-        os.path.exists('/proc/device-tree/model') and 
-        'raspberry pi' in open('/proc/device-tree/model', 'r').read().lower()
-    ) or (
-        'arm' in platform.machine().lower() and 
-        os.path.exists('/sys/firmware/devicetree/base/model')
-    )
-    
+    is_pi = False
+
+    # Method 1: Check /proc/device-tree/model
+    try:
+        if os.path.exists('/proc/device-tree/model'):
+            with open('/proc/device-tree/model', 'r') as f:
+                model_content = f.read().lower()
+                if 'raspberry pi' in model_content:
+                    is_pi = True
+    except:
+        pass
+
+    # Method 2: Check /sys/firmware/devicetree/base/model
+    try:
+        if not is_pi and os.path.exists('/sys/firmware/devicetree/base/model'):
+            with open('/sys/firmware/devicetree/base/model', 'r') as f:
+                model_content = f.read().lower()
+                if 'raspberry pi' in model_content:
+                    is_pi = True
+    except:
+        pass
+
+    # Method 3: Check CPU info for BCM chip (more reliable)
+    try:
+        if not is_pi and os.path.exists('/proc/cpuinfo'):
+            with open('/proc/cpuinfo', 'r') as f:
+                cpuinfo = f.read().lower()
+                if 'bcm' in cpuinfo and ('2708' in cpuinfo or '2709' in cpuinfo or '2710' in cpuinfo or '2711' in cpuinfo):
+                    is_pi = True
+    except:
+        pass
+
     if is_pi:
         import RPi.GPIO as GPIO
         GPIO_AVAILABLE = True
         print("✅ RPi.GPIO loaded successfully - LED functionality enabled")
     else:
         print("ℹ️ Not running on Raspberry Pi - LED functionality will use simulation mode")
-        
-except (ImportError, RuntimeError, FileNotFoundError) as e:
+
+except (ImportError, RuntimeError, FileNotFoundError, OSError) as e:
     GPIO_AVAILABLE = False
     print(f"ℹ️ RPi.GPIO not available: {e} - LED functionality will use simulation mode")
 
@@ -155,12 +179,90 @@ def find_hid_scanner_device():
     logger.warning("❌ No HID scanner device found")
     return None
 
+def extract_barcode_from_hid_buffer(data_bytes):
+    """Extract barcode characters from HID buffer data - optimized for this scanner"""
+    barcode_chars = []
+
+    # Debug: Log the raw data
+    logger.debug(f"Raw HID buffer: {[hex(b) for b in data_bytes]}")
+
+    # Process each byte in the buffer
+    for b in data_bytes:
+        code = b if isinstance(b, int) else ord(b)
+
+        if code == 0:
+            continue
+
+        # Skip modifier keys
+        if code in [1, 2, 3, 225, 226, 227]:  # CTRL, SHIFT, ALT, LCTRL, LSHIFT, LALT
+            continue
+
+        # Handle termination codes
+        if code in [40, 88, 13, 10, 42]:  # ENTER, KP_ENTER, CR, LF, BACKSPACE
+            logger.debug(f"Termination code detected: {code}")
+            break
+
+        # Only process numeric and basic alphanumeric characters for barcodes
+        # Skip letters and special characters that are unlikely in barcodes
+        if 30 <= code <= 39:  # Numbers 0-9 on main keyboard
+            num = str((code - 29) % 10)  # 30=1, 31=2, ..., 39=0
+            barcode_chars.append(num)
+            logger.debug(f"Numeric code {code} -> '{num}'")
+        elif 98 <= code <= 107:  # Keypad numbers 1-0
+            num = str((code - 98 + 1) % 10)  # 98=1, 99=2, ..., 107=0
+            barcode_chars.append(num)
+            logger.debug(f"Keypad code {code} -> '{num}'")
+
+    result = ''.join(barcode_chars)
+    logger.debug(f"Extracted barcode: '{result}' (length: {len(result)})")
+
+    # Validate barcode - should be numeric and reasonable length
+    if len(result) < 6 or len(result) > 20:
+        logger.debug(f"Invalid barcode length: {len(result)} (must be 6-20)")
+        return ""
+
+    # Check if it's mostly numeric (barcodes should be)
+    numeric_count = sum(1 for c in result if c.isdigit())
+    if numeric_count / len(result) < 0.8:  # Less than 80% numeric
+        logger.debug(f"Barcode not mostly numeric: {result}")
+        return ""
+
+    return result
+
+def is_barcode_complete(data_bytes, current_barcode, time_since_last_data):
+    """Determine if a barcode scan is complete based on various patterns"""
+
+    # Method 1: ENTER key detected
+    if 40 in data_bytes:
+        return True
+
+    # Method 2: Timeout after no data (500ms)
+    if time_since_last_data > 0.5 and current_barcode.strip():
+        return True
+
+    # Method 3: Specific termination patterns
+    # Check for repeated bytes (some scanners do this)
+    non_zero_bytes = [b for b in data_bytes if b > 0]
+    if len(non_zero_bytes) > 0:
+        # If all non-zero bytes are the same and it's a termination code
+        unique_bytes = set(non_zero_bytes)
+        if len(unique_bytes) == 1:
+            code = list(unique_bytes)[0]
+            if code in [10, 13, 40]:  # LF, CR, ENTER
+                return True
+
+    # Method 4: Very few non-zero bytes after having data
+    if len(non_zero_bytes) <= 1 and current_barcode.strip() and time_since_last_data > 0.2:
+        return True
+
+    return False
+
 def hid_scanner_worker():
-    """HID scanner monitoring worker thread"""
+    """HID scanner monitoring worker thread - Enhanced for multiple scanner types"""
     global USB_SCANNER_RUNNING, scanned_barcodes_count
-    
+
     logger.info("🔌 Starting HID scanner detection...")
-    
+
     while USB_SCANNER_RUNNING:
         try:
             device_path = find_hid_scanner_device()
@@ -168,54 +270,71 @@ def hid_scanner_worker():
                 logger.info("📱 No HID scanner found, retrying in 5 seconds...")
                 time.sleep(5)
                 continue
-            
+
             logger.info(f"📱 Reading from HID device: {device_path}")
             print(f"📱 HID Scanner ready: {device_path}")
             print("🔍 Scan a barcode now...")
-            
+
             with open(device_path, 'rb') as fp:
                 barcode = ''
-                shift = False
-                
+                last_data_time = time.time()
+
                 while USB_SCANNER_RUNNING:
                     try:
                         buffer = fp.read(8)
                         if not buffer:
                             continue
-                            
-                        for b in buffer:
-                            code = b if isinstance(b, int) else ord(b)
-                            
-                            if code == 0:
-                                continue
-                            
-                            if code == 40:  # ENTER key - end of barcode
+
+                        current_time = time.time()
+                        data_bytes = [b if isinstance(b, int) else ord(b) for b in buffer]
+
+                        # Check if we have actual data (non-zero bytes)
+                        has_data = any(b > 0 for b in data_bytes)
+
+                        if has_data:
+                            # Extract characters from this buffer
+                            chars = extract_barcode_from_hid_buffer(data_bytes)
+                            barcode += chars
+                            last_data_time = current_time
+
+                            # Check if barcode is complete
+                            time_since_last_data = current_time - last_data_time
+                            if is_barcode_complete(data_bytes, barcode, time_since_last_data):
                                 if barcode.strip():
                                     scanned_barcodes_count += 1
                                     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                    
+
                                     logger.info(f"📱 HID Scan #{scanned_barcodes_count}: {barcode}")
                                     print("=" * 50)
                                     print(f"📦 Scanned Barcode: {barcode}")
                                     print(f"🕒 Time: {timestamp}")
                                     print("=" * 50)
-                                    
+
                                     # Add to queue for processing
-                                    barcode_queue.put(barcode)
+                                    barcode_queue.put(barcode.strip())
                                     barcode = ''
-                            elif code == 2:  # SHIFT key
-                                shift = True
-                            else:
-                                if shift:
-                                    barcode += hid_shift_map.get(code, '')
-                                    shift = False
-                                else:
-                                    barcode += hid_key_map.get(code, '')
-                                    
+                        else:
+                            # No data in this buffer, check timeout
+                            time_since_last_data = current_time - last_data_time
+                            if time_since_last_data > 1.0 and barcode.strip():
+                                # Timeout - consider barcode complete
+                                scanned_barcodes_count += 1
+                                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+                                logger.info(f"📱 HID Scan #{scanned_barcodes_count}: {barcode}")
+                                print("=" * 50)
+                                print(f"📦 Scanned Barcode: {barcode}")
+                                print(f"🕒 Time: {timestamp}")
+                                print("=" * 50)
+
+                                # Add to queue for processing
+                                barcode_queue.put(barcode.strip())
+                                barcode = ''
+
                     except Exception as e:
                         logger.error(f"Error reading HID data: {e}")
                         break
-                        
+
         except PermissionError:
             logger.error(f"❌ Permission denied for {device_path}. Try running with sudo.")
             print(f"❌ Permission denied for {device_path}. Try running with sudo.")
@@ -460,6 +579,11 @@ logger = logging.getLogger(__name__)
 current_dir = Path(__file__).resolve().parent
 src_dir = current_dir / 'src'
 sys.path.append(str(src_dir))
+
+# Fix import paths for utils modules
+current_dir = Path(__file__).resolve().parent
+utils_dir = current_dir / 'utils'
+sys.path.insert(0, str(utils_dir))
 
 from utils.config import load_config, save_config
 from iot.hub_client import HubClient

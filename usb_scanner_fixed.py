@@ -108,45 +108,65 @@ def detect_barcode_type(barcode):
     else:
         return "Unknown format"
 
+def test_device_permissions():
+    """Test HID device permissions and find working device"""
+    hid_devices = ['/dev/hidraw0', '/dev/hidraw1', '/dev/hidraw2', '/dev/hidraw3']
+
+    for device_path in hid_devices:
+        if os.path.exists(device_path):
+            try:
+                # Test if we can open the device
+                with open(device_path, 'rb') as test_fp:
+                    print(f"✅ Found accessible HID device: {device_path}")
+                    return device_path
+            except PermissionError:
+                print(f"⚠️ Permission denied for {device_path}")
+                continue
+            except Exception as e:
+                print(f"⚠️ Cannot access {device_path}: {e}")
+                continue
+
+    return None
+
 def main():
     """Main function"""
     print("🚀 USB Barcode Scanner Test (Fixed Version)")
     print("=" * 50)
-    
+
     # Check if running as root
     if os.geteuid() != 0:
         print("⚠️ Not running as root - you may need sudo for HID device access")
-    
+
     # Find and test HID devices
     device = test_device_permissions()
-    
+
     if not device:
         print("\n❌ No accessible HID devices found")
         print("💡 Try running with: sudo python3 usb_scanner_fixed.py")
         print("💡 Make sure your USB barcode scanner is connected")
         return False
-    
+
     print(f"\n✅ Using device: {device}")
-    
+
     try:
         scan_count = 0
         while True:
             print(f"\n🔍 Waiting for barcode scan #{scan_count + 1}...")
             barcode = barcode_reader(device)
-            
+
             if barcode:
                 scan_count += 1
                 display_barcode_info(barcode)
             else:
                 print("⚠️ No barcode data received")
-                
+
     except KeyboardInterrupt:
         print(f"\n\n👋 Stopped after {scan_count} successful scans")
         print("✅ Test completed")
     except Exception as e:
         print(f"\n❌ Error: {e}")
         return False
-    
+
     return True
 
 if __name__ == '__main__':
