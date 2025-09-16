@@ -8,10 +8,10 @@ import time
 import threading
 from datetime import datetime
 
-# Add src directory to path
-sys.path.append('/var/www/html/abhimanyu/barcode_scanner_clean/src')
+# Add deployment_package/src directory to path
+sys.path.append('/var/www/html/abhimanyu/barcode_scanner_clean/deployment_package/src')
 
-from barcode_scanner_app import process_barcode_scan_auto
+from barcode_scanner_app import process_barcode_scan
 
 # HID key mapping for barcode scanners
 HID_KEY_MAP = {
@@ -78,7 +78,7 @@ def read_barcode_from_hid(device_path):
                                     
                                     # Process the barcode
                                     try:
-                                        result = process_barcode_scan_auto(barcode.strip())
+                                        result = process_barcode_scan(barcode.strip(), "bddbc9d1cdf2")
                                         if result:
                                             print("✅ Barcode sent to IoT Hub successfully!")
                                         else:
