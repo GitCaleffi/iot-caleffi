@@ -197,9 +197,15 @@ class HubClient:
             
             barcode = barcode.strip()
             
+            # Import validation function at the top level
+            try:
+                from utils.barcode_validator import validate_ean, BarcodeValidationError
+            except ImportError:
+                logger.error("barcode_validator module not found, cannot validate barcode")
+                return False
+            
             # Strict EAN validation
             try:
-                from barcode_validator import validate_ean, BarcodeValidationError
                 validate_ean(barcode)
                 logger.info(f"Barcode {barcode} passed EAN validation")
                 
@@ -216,9 +222,6 @@ class HubClient:
                 
             except BarcodeValidationError as e:
                 logger.error(f"Invalid EAN barcode format: {e}")
-                return False
-            except ImportError:
-                logger.error("barcode_validator module not found, cannot validate barcode")
                 return False
 
         logger.info(f"Message to send: {json.dumps(message_data, indent=2)}")

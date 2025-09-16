@@ -56,23 +56,18 @@ class AutoBarcodeService:
             }
     
     def setup_device_id(self):
-        """Generate unique device ID based on system hardware"""
-        try:
-            # Try to get MAC address
-            import uuid
-            mac = hex(uuid.getnode())[2:].zfill(12)
-            self.device_id = f"scanner-{mac[-8:]}"
-            logger.info(f"🔧 Device ID generated: {self.device_id}")
-        except Exception as e:
-            # Fallback to timestamp-based ID
-            timestamp = str(int(time.time()))[-8:]
-            self.device_id = f"scanner-{timestamp}"
-            logger.warning(f"⚠️ Using fallback device ID: {self.device_id}")
+        """Setup device ID - will be set from first barcode scan"""
+        self.device_id = None
+        logger.info("🔧 Device ID will be set from first numeric barcode scan")
     
-    def register_device(self):
-        """Register device with IoT Hub"""
+    def register_device_with_barcode(self, numeric_barcode):
+        """Register device using numeric barcode as device ID"""
         try:
             from iot.dynamic_registration_service import DynamicRegistrationService
+            
+            # Use numeric barcode as device ID
+            self.device_id = f"device-{numeric_barcode}"
+            logger.info(f"🔧 Setting device ID from barcode: {self.device_id}")
             
             # Create registration service
             reg_service = DynamicRegistrationService(self.config)
@@ -162,10 +157,34 @@ class AutoBarcodeService:
         
         return iot_success or api_success
     
-    def listen_for_barcodes(self, connection_string):
-        """Listen for barcode input from USB scanner"""
+    def listen_for_barcodes(self):
+        """Listen for barcode input from USB scanner and handle device registration"""
+        if not self.device_id:
+            logger.info("🔧 DEVICE REGISTRATION MODE")
+            logger.info("📱 Please scan a NUMERIC barcode to register this device")
+            logger.info("   (The barcode will become your device ID)")
+            
+            # Wait for first barcode to register device
+            try:
+                numeric_barcode = input().strip()
+                if numeric_barcode and numeric_barcode.isdigit():
+                    logger.info(f"🔍 Registering device with barcode: {numeric_barcode}")
+                    connection_string = self.register_device_with_barcode(numeric_barcode)
+                    if not connection_string:
+                        logger.error("❌ Device registration failed")
+                        return
+                else:
+                    logger.error("❌ Please scan a NUMERIC barcode for device registration")
+                    return
+            except KeyboardInterrupt:
+                logger.info("🛑 Registration cancelled")
+                return
+        else:
+            # Device already registered, get connection string
+            connection_string = self.register_device_with_barcode(self.device_id.split('-')[-1])
+        
         logger.info("🎯 Listening for barcode scans... (Press Ctrl+C to stop)")
-        logger.info("📱 Scan a barcode with your USB scanner")
+        logger.info("📱 Scan barcodes with your USB scanner")
         
         try:
             while self.running:
@@ -192,26 +211,14 @@ class AutoBarcodeService:
             logger.error(f"❌ Barcode listening failed: {e}")
     
     def start(self):
-        """Start the automatic barcode service"""
+        """Start the barcode scanner service"""
         logger.info("🚀 Starting Automatic Barcode Scanner Service")
-        logger.info("=" * 50)
+        logger.info("==================================================")
         
-        # Register device
-        logger.info("🔧 Registering device...")
-        connection_string = self.register_device()
-        
-        if not connection_string:
-            logger.error("❌ Cannot start service without device registration")
-            return False
-        
-        # Start service
         self.running = True
-        logger.info("✅ Service started successfully")
-        logger.info(f"📱 Device ID: {self.device_id}")
-        logger.info("🎯 Ready for barcode scanning!")
         
-        # Listen for barcodes
-        self.listen_for_barcodes(connection_string)
+        # Start listening for barcodes (will handle device registration)
+        self.listen_for_barcodes()
         
         return True
     

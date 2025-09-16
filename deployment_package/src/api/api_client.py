@@ -357,11 +357,9 @@ class ApiClient:
                 }
         
         try:
-            # Try multiple API endpoints since the correct one is unclear
+            # Use only the working API endpoint with correct payload format
             endpoints_to_try = [
-                ("raspberry/barcodeScan", {"deviceId": device_id, "scannedBarcode": barcode, "quantity": quantity}),
-                ("raspberry/saveDeviceId", {"scannedBarcode": barcode, "deviceId": device_id, "quantity": quantity}),
-                ("raspberry/saveDeviceId", {"scannedBarcode": barcode}),
+                ("raspberry/saveDeviceId", {"deviceId": barcode}),  # API expects deviceId field with barcode value
             ]
             
             last_error = None
