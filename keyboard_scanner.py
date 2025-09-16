@@ -3,8 +3,19 @@ import sys
 import json
 import os
 import time
-sys.path.append('/var/www/html/abhimanyu/barcode_scanner_clean/deployment_package/src')
-from barcode_scanner_app import process_barcode_scan
+from pathlib import Path
+
+# Dynamically find the deployment package path
+current_dir = Path(__file__).resolve().parent
+deployment_src = current_dir / 'deployment_package' / 'src'
+sys.path.append(str(deployment_src))
+
+try:
+    from barcode_scanner_app import process_barcode_scan, register_device_id, confirm_registration
+except ImportError as e:
+    print(f"❌ Error importing from barcode_scanner_app: {e}")
+    print("💡 Make sure you're running from the correct directory")
+    sys.exit(1)
 
 # GPIO LED control
 try:
@@ -46,7 +57,8 @@ except (ImportError, RuntimeError):
     def led_red(): pass
     GPIO_AVAILABLE = False
 
-DEVICE_CONFIG_FILE = '/var/www/html/abhimanyu/barcode_scanner_clean/device_config.json'
+# Dynamically find the device config file path
+DEVICE_CONFIG_FILE = current_dir / 'device_config.json'
 
 def load_device_id():
     """Load device ID from config file"""
@@ -68,8 +80,6 @@ def save_device_id(device_id):
 def register_device_with_iot(device_id):
     """Use exact same registration flow as barcode_scanner_app.py"""
     try:
-        from barcode_scanner_app import register_device_id, confirm_registration
-
         print("📡 Step 1: Scanning test barcode for registration...")
         # First, scan the test barcode (required step)
         test_result = register_device_id("817994ccfe14")
