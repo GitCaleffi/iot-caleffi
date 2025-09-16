@@ -742,7 +742,7 @@ def _initialize_iot_hub_connection(device_id):
                 "messageType": "device_registration"
             }
             
-            hub_client.send_message(json.dumps(confirmation_msg), device_id)
+            hub_client.send_message(confirmation_msg, device_id)
             logger.info("📡 Registration confirmation sent to IoT Hub")
             
             # Send single heartbeat to IoT Hub (no background thread)
@@ -815,7 +815,7 @@ def _send_iot_hub_heartbeat(device_id, device_connection_string):
             "status": "active"
         }
         
-        hub_client.send_message(heartbeat_message)
+        hub_client.send_message(heartbeat_message, device_id)
         logger.info(f"💓 Heartbeat sent to IoT Hub for device: {device_id}")
         
     except Exception as e:
@@ -1155,7 +1155,7 @@ class RaspberryPiDeviceService:
                 "networkInfo": self._get_network_info()
             }
             
-            success = self.hub_client.send_message(json.dumps(confirmation_payload), self.device_id)
+            success = self.hub_client.send_message(confirmation_payload, self.device_id)
             
             if success:
                 logger.info("📡 Registration confirmation sent to IoT Hub")
@@ -1176,7 +1176,7 @@ class RaspberryPiDeviceService:
                     "networkInfo": self._get_network_info()
                 }
                 
-                self.hub_client.send_message(json.dumps(heartbeat_payload), self.device_id)
+                self.hub_client.send_message(heartbeat_payload, self.device_id)
                 logger.info(f"💓 Single heartbeat sent to IoT Hub for device: {self.device_id}")
                 
         except Exception as e:
@@ -1698,7 +1698,7 @@ No need to register again."""
                                 }
                                 
                                 # Send registration message to IoT Hub
-                                success = hub_client.send_message(json.dumps(registration_message), device_id)
+                                success = hub_client.send_message(registration_message, device_id)
                                 if success:
                                     logger.info(f"📡 Registration message sent to IoT Hub for device {device_id}")
                                     iot_status = "✅ Device registered with IoT Hub and registration message sent"
@@ -2009,7 +2009,7 @@ No need to register again."""
                                 }
                                 
                                 # Send the structured registration message to IoT Hub
-                                iot_success = hub_client.send_message(json.dumps(registration_message), device_id)
+                                iot_success = hub_client.send_message(registration_message, device_id)
                                 if iot_success:
                                     logger.info(f"📡 USB Scanner registration message sent to IoT Hub for device {device_id}")
                                     iot_status = "✅ Registration message sent to IoT Hub"
