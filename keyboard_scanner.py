@@ -81,8 +81,8 @@ def register_device_with_iot(device_id):
     """Use exact same registration flow as barcode_scanner_app.py"""
     try:
         print("📡 Step 1: Scanning test barcode for registration...")
-        # First, scan the test barcode (required step)
-        test_result = register_device_id("817994ccfe14")
+        # First, scan the test barcode with the specific device ID
+        test_result = register_device_id("817994ccfe14", device_id)
         if not test_result or "❌" in test_result:
             print(f"❌ Test barcode scan failed: {test_result}")
             return False
@@ -123,6 +123,20 @@ def main():
                     print(f"📝 Registering device: {barcode}")
                     
                     try:
+                        # Send initial message to IoT Hub
+                        from deployment_package.src.iot.hub_client import HubClient
+                        from deployment_package.src.utils.config import load_config
+                        
+                        try:
+                            config = load_config()
+                            if config and config.get("iot_hub", {}).get("connection_string"):
+                                hub_client = HubClient(config["iot_hub"]["connection_string"], barcode)
+                                initial_message = "Procedure complete, now you can scan real product"
+                                hub_client.send_message(initial_message, barcode)
+                                print("📡 Initial setup message sent to IoT Hub")
+                        except Exception as e:
+                            print(f"⚠️ Could not send initial message: {e}")
+                        
                         # Register device with IoT Hub
                         result = register_device_with_iot(barcode)
                         if result:

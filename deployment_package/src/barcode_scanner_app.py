@@ -664,8 +664,8 @@ def blink_led(color):
     except Exception as e:
         logger.error(f"LED blink error: {str(e)}")
 
-def register_device_id(barcode):
-    """Step 1: Scan test barcode on registered device, hit API twice, send response to frontend"""
+def register_device_id(barcode, device_id=None):
+    """Step 1: Scan test barcode on registered device, use correct API payload format"""
     try:
         # Only allow the test barcode for registration
         if barcode != "817994ccfe14":
@@ -677,35 +677,98 @@ def register_device_id(barcode):
             blink_led("red")
             return "❌ Device is offline. Cannot register device."
         
-        api_url_1 = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
-        payload_1 = {"scannedBarcode": barcode}
+        # Use provided device_id or get from pending registration
+        if not device_id:
+            # Check if there's a pending device ID from keyboard scanner
+            pending_device = getattr(register_device_id, '_pending_device_id', None)
+            if pending_device:
+                device_id = pending_device
+            else:
+                # Generate a device ID as fallback
+                import uuid
+                device_id = str(uuid.uuid4())[:12]
         
-        logger.info(f"Making first API call to {api_url_1}")
-        api_result_1 = api_client.send_registration_barcode(api_url_1, payload_1)
+        # If device_id is the same as test barcode, generate a different device ID
+        if device_id == barcode:
+            import uuid
+            device_id = str(uuid.uuid4())[:12]
+            logger.info(f"Device ID was same as test barcode, generated new device ID: {device_id}")
         
-        if not api_result_1.get("success", False):
+        api_url = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
+        # Use the correct payload format with both scannedBarcode and testBarcode
+        payload = {
+            "scannedBarcode": device_id,
+            "testBarcode": barcode
+        }
+        
+        logger.info(f"Making API call to {api_url} with payload: {payload}")
+        api_result = api_client.send_registration_barcode(api_url, payload)
+        
+        if not api_result.get("success", False):
             blink_led("red")
-            return f"❌ First API call failed: {api_result_1.get('message', 'Unknown error')}"
+            return f"❌ API call failed: {api_result.get('message', 'Unknown error')}"
         
-        logger.info(f"Making second API call to {api_url_1}")
-        api_result_2 = api_client.send_registration_barcode(api_url_1, payload_1)
+        # Check for isTestBarcodeVerified in the response
+        response_text = api_result.get("response", "{}")
+        try:
+            response_data = json.loads(response_text)
+        except:
+            response_data = {}
         
-        if not api_result_2.get("success", False):
-            blink_led("red")
-            return f"❌ Second API call failed: {api_result_2.get('message', 'Unknown error')}"
+        is_test_verified = response_data.get("data", {}).get("isTestBarcodeVerified", False)
         
-        # Save test barcode scan locally (but not device ID yet - that happens in confirmation)
+        # If isTestBarcodeVerified is not found, check if the response indicates success
+        if not is_test_verified:
+            # Check if the API response indicates success
+            response_code = response_data.get("responseCode", 0)
+            if response_code == 200 and "successful" in api_result.get("message", "").lower():
+                is_test_verified = True
+            else:
+                blink_led("red")
+                return f"❌ Test barcode verification failed. Response: {api_result.get('message', 'Unknown error')}"
+        
+        # Save test barcode scan locally with the device ID
         local_db.save_test_barcode_scan(barcode)
+        local_db.save_device_id(device_id)  # Save the device ID for later use
+        
+        # Clear pending device ID
+        if hasattr(register_device_id, '_pending_device_id'):
+            delattr(register_device_id, '_pending_device_id')
+        
+        # Send "Registration successful" message to IoT Hub
+        try:
+            config = load_config()
+            if config and config.get("iot_hub", {}).get("connection_string"):
+                hub_client = HubClient(config["iot_hub"]["connection_string"], device_id)
+                registration_complete_message = "Registration successful! You're all set to get started."
+                
+                # Send the completion message to IoT Hub
+                hub_success = hub_client.send_message(registration_complete_message, device_id)
+                if hub_success:
+                    logger.info(f"Registration completion message sent to IoT Hub for device {device_id}")
+                else:
+                    logger.warning(f"Failed to send registration completion message to IoT Hub for device {device_id}")
+            else:
+                logger.warning("IoT Hub configuration not available for sending completion message")
+                
+        except Exception as hub_error:
+            logger.error(f"Error sending registration completion message to IoT Hub: {str(hub_error)}")
         
         # Send response to frontend
-        response_msg = f"""✅ Test barcode {barcode} processed successfully!
+        response_msg = f"""✅ Device registered successfully!
 
-**API Calls Completed:**
-• First call: {api_result_1.get('message', 'Success')}
-• Second call: {api_result_2.get('message', 'Success')}
+**Device Details:**
+• Device ID: {device_id}
+• Test Barcode: {barcode}
+• Test Barcode Verified: ✅ {is_test_verified}
 
-**Next Step:** Click 'Confirm Registration' to complete the process."""
+**API Response:**
+• Status: {api_result.get('message', 'Success')}
+• Customer ID: {response_data.get('data', {}).get('customerId', 'N/A')}
+
+**Next Step:** Device is ready for barcode scanning operations."""
         
+        blink_led("green")
         return response_msg
         
     except Exception as e:
