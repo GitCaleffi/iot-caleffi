@@ -190,116 +190,6 @@ def read_input_smart():
         # Restore terminal settings
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
-def read_barcode_automatically():
-    """Read barcode input character by character and auto-process when complete"""
-    barcode_buffer = ""
-    last_char_time = time.time()
-    
-    # Set terminal to raw mode and disable echo completely
-    old_settings = termios.tcgetattr(sys.stdin)
-    try:
-        # Set raw mode with no echo
-        new_settings = termios.tcgetattr(sys.stdin)
-        new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ICANON)
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, new_settings)
-        
-        while True:
-            # Check if input is available
-            if select.select([sys.stdin], [], [], 0.1)[0]:
-                char = sys.stdin.read(1)
-                current_time = time.time()
-                
-                # Handle Enter key (barcode scanners typically send Enter/Return)
-                if ord(char) == 13 or ord(char) == 10:  # Enter or Line Feed
-                    if barcode_buffer.strip():
-                        print(f"📝 Detected: {barcode_buffer.strip()}")
-                        return barcode_buffer.strip()
-                    barcode_buffer = ""
-                    continue
-                
-                # Handle regular characters (no echo, completely silent)
-                if char.isprintable():
-                    barcode_buffer += char
-                    last_char_time = current_time
-
-                # Clear buffer if too much time passed (2 seconds)
-                elif current_time - last_char_time > 2.0:
-                    barcode_buffer = ""
-            
-            # Auto-process if buffer is complete and timeout reached
-            current_time = time.time()
-            if len(barcode_buffer) >= 8 and current_time - last_char_time > 0.5:
-                if barcode_buffer.strip():
-                    print(f"📝 Detected: {barcode_buffer.strip()}")
-                    return barcode_buffer.strip()
-                barcode_buffer = ""
-                
-    except KeyboardInterrupt:
-        return None
-    finally:
-        # Restore terminal settings
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-
-def read_input_smart():
-    """Smart input reader that handles both automatic barcodes and manual commands"""
-    barcode_buffer = ""
-    last_char_time = time.time()
-    
-    # Set terminal to raw mode and disable echo completely
-    old_settings = termios.tcgetattr(sys.stdin)
-    try:
-        # Set raw mode with no echo
-        new_settings = termios.tcgetattr(sys.stdin)
-        new_settings[3] = new_settings[3] & ~(termios.ECHO | termios.ICANON)
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, new_settings)
-        
-        while True:
-            # Check if input is available
-            if select.select([sys.stdin], [], [], 0.1)[0]:
-                char = sys.stdin.read(1)
-                current_time = time.time()
-                
-                # Handle Enter key (barcode scanners typically send Enter/Return)
-                if ord(char) == 13 or ord(char) == 10:  # Enter or Line Feed
-                    if barcode_buffer.strip():
-                        result = barcode_buffer.strip()
-                        # Check if it's a command or barcode
-                        if result.lower() in ['register', 'reregister', 'status', 'info']:
-                            print(f"💬 Command: {result}")
-                        else:
-                            print(f"📝 Detected: {result}")
-                        return result
-                    barcode_buffer = ""
-                    continue
-                
-                # Handle regular characters (show them for commands, hide for barcodes)
-                if char.isprintable():
-                    barcode_buffer += char
-                    last_char_time = current_time
-                    
-                    # Show characters if it looks like a command being typed
-                    if len(barcode_buffer) <= 10 and barcode_buffer.lower() in 'register status info'[:len(barcode_buffer)]:
-                        print(char, end='', flush=True)
-
-                # Clear buffer if too much time passed (3 seconds for commands)
-                elif current_time - last_char_time > 3.0:
-                    if barcode_buffer:
-                        print()  # New line
-                    barcode_buffer = ""
-            
-            # Auto-process if buffer looks like complete barcode and timeout reached
-            current_time = time.time()
-            if len(barcode_buffer) >= 8 and current_time - last_char_time > 0.5:
-                if barcode_buffer.strip() and not barcode_buffer.lower() in ['register', 'reregister', 'status', 'info']:
-                    print(f"📝 Detected: {barcode_buffer.strip()}")
-                    return barcode_buffer.strip()
-                
-    except KeyboardInterrupt:
-        return None
-    finally:
-        # Restore terminal settings
-        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
-
 def register_device_with_iot(device_id):
     """Use exact same registration flow as barcode_scanner_app.py"""
     try:
@@ -327,61 +217,6 @@ def register_device_with_iot(device_id):
         print(f"❌ Registration error: {e}")
         return False
 
-def process_barcode_with_device(barcode, device_id):
-    """Process barcode scan with the specified device ID"""
-    try:
-        from database.local_storage import LocalStorage
-        from iot.hub_client import HubClient
-        from utils.config import load_config
-        from api.api_client import ApiClient
-        from utils.barcode_validator import validate_ean, BarcodeValidationError
-
-        local_db = LocalStorage()
-        api_client = ApiClient()
-
-        # ✅ Differentiate device IDs from product barcodes
-        if barcode == device_id:
-            # Device ID -> no EAN validation
-            validated_barcode = barcode
-        else:
-            # Product barcode -> must be numeric EAN
-            try:
-                validated_barcode = validate_ean(barcode)
-            except BarcodeValidationError as e:
-                return f"❌ Barcode validation error: {str(e)}"
-
-        # Save scan to local database with correct device ID
-        timestamp = local_db.save_scan(device_id, validated_barcode)
-
-        # Check if we're online
-        is_online = api_client.is_online()
-        if not is_online:
-            return f"📥 Device appears to be offline. Message saved locally for device '{device_id}'."
-
-        # Send to API
-        api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
-        api_success = api_result.get("success", False)
-        if not api_success:
-            return f"⚠️ API call failed. Barcode saved locally for device '{device_id}'."
-
-        # Send to IoT Hub
-        config = load_config()
-        if config and config.get("iot_hub", {}).get("devices", {}).get(device_id, {}).get("connection_string"):
-            connection_string = config["iot_hub"]["devices"][device_id]["connection_string"]
-            hub_client = HubClient(connection_string)
-            iot_success = hub_client.send_message(validated_barcode, device_id)
-
-            if iot_success:
-                local_db.mark_sent_to_hub(device_id, validated_barcode, timestamp)
-                return f"✅ Barcode {validated_barcode} sent to IoT Hub from device '{device_id}'!"
-            else:
-                return f"⚠️ Barcode sent to API but failed to send to IoT Hub from device '{device_id}'."
-        else:
-            return f"⚠️ Barcode sent to API but no IoT Hub connection string found for device '{device_id}'."
-
-    except Exception as e:
-        return f"❌ Error processing barcode: {str(e)}"
-
 def main():
     led_off()
     device_id = load_device_id()
@@ -404,9 +239,6 @@ def main():
                     return
                 barcode = barcode.strip()
                 if barcode and len(barcode) >= 8 and barcode.replace('-', '').replace('_', '').isalnum():
-                    # Remove extra character if present (7079fa7ab32e7 -> 7079fa7ab32e)
-                    if len(barcode) > 12:
-                        barcode = barcode[:12]
                     print(f"📝 Registering device: {barcode}")
                     
                     try:
@@ -426,9 +258,9 @@ def main():
                                 
                                 if device_connection_string:
                                     hub_client = HubClient(device_connection_string)
-                                    initial_message = "Procedure complete, now you can scan real product"
-                                    hub_client.send_message(initial_message)
-                                    print("📡 Initial setup message sent to IoT Hub")
+                                initial_message = "Procedure complete, now you can scan real product"
+                                hub_client.send_message(initial_message, barcode)
+                                print("📡 Initial setup message sent to IoT Hub")
                         except Exception as e:
                             print(f"⚠️ Could not send initial message: {e}")
                         
@@ -573,25 +405,85 @@ def main():
             print("=" * 40)
             
             try:
-                # Process the barcode with the registered device ID
-                result = process_barcode_with_device(barcode, device_id)
-                print(result)
-                
+                # Always use the registered device ID for barcode scanning
+                from database.local_storage import LocalStorage
+                local_db = LocalStorage()
+
+                # Ensure the correct device ID is saved to local database
+                local_db.save_device_id(device_id)
+
+                # Create a custom barcode processing function that uses the correct device ID
+                def process_barcode_with_device(barcode, device_id=device_id):
+                    """Process barcode scan with the specified device ID"""
+                    try:
+                        from iot.hub_client import HubClient
+                        from utils.config import load_config
+                        from api.api_client import ApiClient
+                        from utils.barcode_validator import validate_ean, BarcodeValidationError
+
+                        api_client = ApiClient()
+
+                        # Validate barcode format
+                        try:
+                            validated_barcode = validate_ean(barcode)
+                        except BarcodeValidationError as e:
+                            return f"❌ Barcode validation error: {str(e)}"
+
+                        # Save scan to local database with correct device ID
+                        timestamp = local_db.save_scan(device_id, validated_barcode)
+
+                        # Check if we're online
+                        is_online = api_client.is_online()
+                        if not is_online:
+                            return f"📥 Device appears to be offline. Message saved locally for device '{device_id}'."
+
+                        # Send to API
+                        api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
+                        api_success = api_result.get("success", False)
+                        if not api_success:
+                            return f"⚠️ API call failed. Barcode saved locally for device '{device_id}'."
+
+                        # Send to IoT Hub
+                        config = load_config()
+                        if config and config.get("iot_hub", {}).get("devices", {}).get(device_id, {}).get("connection_string"):
+                            connection_string = config["iot_hub"]["devices"][device_id]["connection_string"]
+                            hub_client = HubClient(connection_string)
+                            iot_success = hub_client.send_message(validated_barcode, device_id)
+
+                            if iot_success:
+                                local_db.mark_sent_to_hub(device_id, validated_barcode, timestamp)
+                                return f"✅ Barcode {validated_barcode} sent to IoT Hub from device '{device_id}'!"
+                            else:
+                                return f"⚠️ Barcode sent to API but failed to send to IoT Hub from device '{device_id}'."
+                        else:
+                            return f"⚠️ Barcode sent to API but no IoT Hub connection string found for device '{device_id}'."
+
+                    except Exception as e:
+                        return f"❌ Error processing barcode: {str(e)}"
+
+                result = process_barcode_with_device(barcode)
                 if "✅" in result:
+                    print("✅ Quantity updated - sent to IoT Hub!")
+                    print("💾 Saved to local database")
                     led_green()
                     time.sleep(1)
                     led_off()
                 else:
-                    led_red()
+                    print(result)
+                    if "❌" in result:
+                        led_red()
+                    else:
+                        led_yellow()
                     time.sleep(1)
                     led_off()
-                    
             except Exception as e:
-                print(f"❌ Error processing barcode: {e}")
+                print(f"❌ Error: {e}")
                 led_red()
                 time.sleep(1)
                 led_off()
                 
+            print("\n🔍 Ready for next barcode...")
+            
     except KeyboardInterrupt:
         print("\n🛑 Scanner stopped")
         led_off()

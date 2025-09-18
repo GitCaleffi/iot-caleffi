@@ -41,6 +41,14 @@
       "a8a2658c7d4b": {
         "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=a8a2658c7d4b;SharedAccessKey=cz9vAzK7dc/n6jPSmurQTcbajFi6mEQaYXYDTPyaCJI=",
         "deviceId": "a8a2658c7d4b"
+      },
+      "7079fa7ab32e": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=7079fa7ab32e;SharedAccessKey=HleZv0LRJFqKNMFUW54hey/D3LemS8iXOVk3H5d+n08=",
+        "deviceId": "7079fa7ab32e"
+      },
+      "9b7384471e93": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=9b7384471e93;SharedAccessKey=FbGMJtOux6YZ/yXW2d+GtZzmH8AMxHNcXafKXhuLSaI=",
+        "deviceId": "9b7384471e93"
       }
     }
   },
