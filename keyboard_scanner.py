@@ -305,12 +305,12 @@ def register_device_with_iot(device_id):
     try:
         print("📡 Step 1: Scanning test barcode for registration...")
         # First, scan the test barcode with the specific device ID
-        test_result = register_device_id("817994ccfe14", device_id)
-        if not test_result or "❌" in test_result:
-            print(f"❌ Test barcode scan failed: {test_result}")
-            return False
+        # test_result = register_device_id("817994ccfe14", device_id)
+        # if not test_result or "❌" in test_result:
+        #     print(f"❌ Test barcode scan failed: {test_result}")
+        #     return False
 
-        print("✅ Test barcode scanned successfully")
+        # print("✅ Test barcode scanned successfully")
 
         print("📡 Step 2: Confirming device registration...")
         # Then confirm registration with the provided device ID
@@ -327,6 +327,67 @@ def register_device_with_iot(device_id):
         print(f"❌ Registration error: {e}")
         return False
 
+def is_device_registration_verified():
+    """Check if device registration is verified with test barcode"""
+    if os.path.exists(DEVICE_CONFIG_FILE):
+        try:
+            with open(DEVICE_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+            return config.get('test_barcode_verified', False)
+        except:
+            pass
+    return False
+
+def mark_registration_verified():
+    """Mark device registration as verified"""
+    config = {}
+    if os.path.exists(DEVICE_CONFIG_FILE):
+        try:
+            with open(DEVICE_CONFIG_FILE, 'r') as f:
+                config = json.load(f)
+        except:
+            pass
+    
+    config['test_barcode_verified'] = True
+    config['first_scan_done'] = True
+    
+    with open(DEVICE_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=2)
+
+def verify_test_barcode_with_api(device_id, barcode):
+    """Verify test barcode with API"""
+    try:
+        from api.api_client import ApiClient
+        api_client = ApiClient()
+        
+        # Call API to verify test barcode
+        url = "https://api2.caleffionline.it/api/v1/raspberry/saveDeviceId"
+        payload = {
+            "scannedBarcode": device_id,
+            "testBarcode": barcode
+        }
+        
+        result = api_client.send_registration_barcode(url, payload)
+        if result.get("success") and "response" in result:
+            try:
+                response_data = json.loads(result["response"])
+                is_verified = response_data.get("data", {}).get("isTestBarcodeVerified", False)
+                
+                # Show detailed response for debugging
+                if not is_verified:
+                    response_msg = response_data.get("responseMessage", "Unknown error")
+                    print(f"🔍 API Response: {response_msg}")
+                
+                return {"success": True, "isTestBarcodeVerified": is_verified, "response": response_data}
+            except Exception as e:
+                print(f"🔍 API Response parsing error: {str(e)}")
+                return {"success": False, "isTestBarcodeVerified": False}
+        
+        return {"success": False, "isTestBarcodeVerified": False}
+    except Exception as e:
+        print(f"🔍 API call error: {str(e)}")
+        return {"success": False, "error": str(e)}
+
 def process_barcode_with_device(barcode, device_id):
     """Process barcode scan with the specified device ID"""
     try:
@@ -338,19 +399,37 @@ def process_barcode_with_device(barcode, device_id):
 
         local_db = LocalStorage()
         api_client = ApiClient()
+        validated_barcode = barcode.strip()
 
+        # Check if device registration is verified
+        if not is_device_registration_verified():
+            # For test barcode verification, always use the known test barcode
+            test_barcode = "817994ccfe14"
+            print(f"🔧 Using system test barcode: {test_barcode}")
+            
+            result = verify_test_barcode_with_api(device_id, test_barcode)
+            if result.get('success') and result.get('isTestBarcodeVerified'):
+                mark_registration_verified()
+                return f"✅ Test barcode verified! Device ready for quantity updates: {test_barcode}"
+            else:
+                response_data = result.get('response', {})
+                if response_data:
+                    msg = response_data.get('responseMessage', 'Invalid test barcode')
+                    return f"❌ {msg}. Test barcode: {test_barcode}"
+                else:
+                    return f"❌ Test barcode verification failed: {test_barcode}"
+
+        # Device is verified, process as quantity update
         # ✅ Differentiate device IDs from product barcodes
         if barcode == device_id:
-            # Device ID -> no EAN validation
             validated_barcode = barcode
         else:
-            # Product barcode -> must be numeric EAN
             try:
                 validated_barcode = validate_ean(barcode)
             except BarcodeValidationError as e:
                 return f"❌ Barcode validation error: {str(e)}"
 
-        # Save scan to local database with correct device ID
+        # Save scan to local database
         timestamp = local_db.save_scan(device_id, validated_barcode)
 
         # Check if we're online
@@ -472,7 +551,10 @@ def main():
     
     print(f"\n🎯 BARCODE SCANNER READY")
     print(f"📱 Device ID: {device_id}")
-    print("🔍 Mode: Quantity Update")
+    if is_device_registration_verified():
+        print("🔍 Mode: Quantity Update")
+    else:
+        print("🧪 Mode: Test Barcode Verification Required")
     print("📊 Scan barcodes to update quantities...")
     print("💡 Commands:")
     print("   • Scan barcode or type 'process <barcode>'")
@@ -550,7 +632,10 @@ def main():
             elif user_input.lower() == 'status' or user_input.lower() == 'info':
                 print(f"\n📋 DEVICE STATUS")
                 print(f"📱 Current Device ID: {device_id}")
-                print(f"🔍 Mode: Quantity Update")
+                if is_device_registration_verified():
+                    print(f"🔍 Mode: Quantity Update")
+                else:
+                    print(f"🧪 Mode: Test Barcode Verification Required")
                 print("💡 Commands: 'register' (new device), 'status' (info), or scan barcode")
                 print("=" * 50)
                 continue
@@ -569,8 +654,13 @@ def main():
                     led_off()
                 continue
                 
-            print(f"\n📦 QUANTITY UPDATE - BARCODE: {barcode}")
-            print("=" * 40)
+            # Check if device is verified before showing quantity update
+            if not is_device_registration_verified():
+                print(f"\n🧪 TEST BARCODE VERIFICATION - BARCODE: {barcode}")
+                print("=" * 40)
+            else:
+                print(f"\n📦 QUANTITY UPDATE - BARCODE: {barcode}")
+                print("=" * 40)
             
             try:
                 # Process the barcode with the registered device ID
