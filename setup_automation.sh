@@ -16,16 +16,30 @@ echo "🔧 Service Name: $SERVICE_NAME"
 echo ""
 
 # Make launcher script executable
-echo "📝 Making launcher.sh executable..."
-chmod +x "$PROJECT_DIR/launcher.sh"
+if [ -f "$PROJECT_DIR/launcher.sh" ]; then
+    echo "📝 Making launcher.sh executable..."
+    chmod +x "$PROJECT_DIR/launcher.sh"
+else
+    echo "⚠️ launcher.sh not found in $PROJECT_DIR"
+fi
 
 # Make the Python script executable
-echo "📝 Making keyboard_scanner.py executable..."
-chmod +x "$PROJECT_DIR/keyboard_scanner.py"
+if [ -f "$PROJECT_DIR/keyboard_scanner.py" ]; then
+    echo "📝 Making keyboard_scanner.py executable..."
+    chmod +x "$PROJECT_DIR/keyboard_scanner.py"
+else
+    echo "⚠️ keyboard_scanner.py not found in $PROJECT_DIR"
+fi
 
 # Create logs directory if it doesn't exist
 echo "📁 Creating logs directory..."
 mkdir -p "$LOG_DIR"
+
+# Replace placeholders in launcher.sh dynamically
+if [ -f "$PROJECT_DIR/launcher.sh" ]; then
+    sed -i "s|{{PROJECT_DIR}}|$PROJECT_DIR|g" "$PROJECT_DIR/launcher.sh"
+    sed -i "s|{{LOG_DIR}}|$LOG_DIR|g" "$PROJECT_DIR/launcher.sh"
+fi
 
 # Create systemd service file
 echo "📋 Creating systemd service..."
@@ -82,7 +96,7 @@ echo "• View logs:        sudo journalctl -u $SERVICE_NAME -f"
 echo ""
 echo "📊 Monitoring:"
 echo "• Service logs:     sudo journalctl -u $SERVICE_NAME"
-echo "• Scanner logs:     tail -f $PROJECT_DIR/scanner.log"
+echo "• Scanner logs:     tail -f $LOG_DIR/scanner.log"
 echo "• Process status:   ps aux | grep keyboard_scanner"
 echo ""
 echo "🚀 To start the service now:"
