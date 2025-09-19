@@ -8,7 +8,7 @@ This is a completely automated barcode scanner service that runs without any use
 
 ```bash
 ssh pi@10.0.1.68
-cd /var/www/html/abhimanyu/barcode_scanner_clean
+cd path_of_directory
 sudo ./setup_automation.sh
 sudo reboot
 ```

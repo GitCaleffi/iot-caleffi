@@ -2,10 +2,11 @@
 # setup_automation.sh - Black Box Barcode Scanner Service Setup
 # Configures the barcode scanner to run automatically as a background service
 
-# Define project variables
-PROJECT_DIR="/var/www/html/abhimanyu/barcode_scanner_clean"
+# Detect project directory dynamically (where this script lives)
+PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 USER=$(whoami)
 SERVICE_NAME="barcode-scanner"
+LOG_DIR="$HOME/logs"
 
 echo "🔧 Setting up Black Box Barcode Scanner Service"
 echo "=============================================="
@@ -16,17 +17,17 @@ echo ""
 
 # Make launcher script executable
 echo "📝 Making launcher.sh executable..."
-chmod 755 $PROJECT_DIR/launcher.sh
+chmod +x "$PROJECT_DIR/launcher.sh"
 
 # Make the Python script executable
 echo "📝 Making keyboard_scanner.py executable..."
-chmod +x $PROJECT_DIR/keyboard_scanner.py
+chmod +x "$PROJECT_DIR/keyboard_scanner.py"
 
 # Create logs directory if it doesn't exist
 echo "📁 Creating logs directory..."
-mkdir -p /home/pi/logs
+mkdir -p "$LOG_DIR"
 
-# Create systemd service file for better service management
+# Create systemd service file
 echo "📋 Creating systemd service..."
 sudo tee /etc/systemd/system/$SERVICE_NAME.service > /dev/null <<EOF
 [Unit]
@@ -55,7 +56,7 @@ echo "🔄 Enabling systemd service..."
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME.service
 
-# Also add cron job as backup method
+# Add cron job as backup
 echo "📅 Adding cron job as backup..."
 (crontab -l 2>/dev/null | grep -v "barcode_scanner"; echo "@reboot sleep 30 && $PROJECT_DIR/launcher.sh") | crontab -
 
