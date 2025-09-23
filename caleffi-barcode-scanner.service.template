@@ -1,0 +1,30 @@
+[Unit]
+Description=Caleffi Barcode Scanner Service
+Documentation=https://github.com/caleffi/barcode-scanner
+After=network.target
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{USER}}
+Group={{GROUP}}
+WorkingDirectory={{PROJECT_DIR}}
+ExecStart={{PROJECT_DIR}}/start_scanner_service.sh
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+Environment=HOME={{HOME_DIR}}
+Environment=PYTHONPATH={{PROJECT_DIR}}/src:{{PROJECT_DIR}}/deployment_package/src
+Environment=PYTHONUNBUFFERED=1
+
+# Security settings
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths={{PROJECT_DIR}}
+ReadWritePaths=/tmp
+
+[Install]
+WantedBy=multi-user.target
