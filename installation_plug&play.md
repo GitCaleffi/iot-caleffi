@@ -337,3 +337,17 @@ If you encounter issues:
 ---
 
 **🎉 Your Caleffi Barcode Scanner system is now ready for production use!**
+
+
+
+# Install packages in the virtual environment (no --user flag needed)
+pip install gradio
+pip install evdev  
+pip install azure-iot-device
+pip install requests
+
+# After installation, restart the service
+sudo systemctl restart caleffi-barcode-scanner
+
+# Check status
+sudo systemctl status caleffi-barcode-scanner

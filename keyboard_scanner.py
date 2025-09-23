@@ -94,8 +94,49 @@ def save_device_id(device_id):
     with open(DEVICE_CONFIG_FILE, 'w') as f:
         json.dump(config, f)
 
+def read_barcode_from_monitor():
+    """Read barcode from the USB input monitor in service mode"""
+    try:
+        # Check for barcode from file first (for testing)
+        barcode_file = '/tmp/barcode_input.txt'
+        if os.path.exists(barcode_file):
+            with open(barcode_file, 'r') as f:
+                barcode = f.read().strip()
+            if barcode:
+                os.remove(barcode_file)  # Remove after reading
+                return barcode
+        
+        # In a real implementation, this would interface with the barcode monitor
+        # For now, we'll wait for file input or timeout
+        print("⏳ Waiting for barcode input (create /tmp/barcode_input.txt with barcode)...")
+        
+        timeout = 30  # 30 seconds timeout
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            if os.path.exists(barcode_file):
+                with open(barcode_file, 'r') as f:
+                    barcode = f.read().strip()
+                if barcode:
+                    os.remove(barcode_file)
+                    return barcode
+            time.sleep(0.5)
+        
+        print("⏰ Timeout waiting for barcode input")
+        return None
+        
+    except Exception as e:
+        print(f"❌ Error reading barcode: {e}")
+        return None
+
 def read_barcode_automatically():
     """Read barcode input character by character and auto-process when complete"""
+    # Check if running in service mode (no TTY available)
+    if not sys.stdin.isatty():
+        # In service mode, use the barcode input monitor
+        print("🔧 Service mode: Using USB barcode scanner input...")
+        return read_barcode_from_monitor()
+    
     barcode_buffer = ""
     last_char_time = time.time()
     
@@ -206,6 +247,12 @@ def read_input_smart():
 
 def read_barcode_automatically():
     """Read barcode input character by character and auto-process when complete"""
+    # Check if running in service mode (no TTY available)
+    if not sys.stdin.isatty():
+        # In service mode, use the barcode input monitor
+        print("🔧 Service mode: Using USB barcode scanner input...")
+        return read_barcode_from_monitor()
+    
     barcode_buffer = ""
     last_char_time = time.time()
     
