@@ -11,13 +11,27 @@ from pathlib import Path
 # Dynamically find the deployment package path
 current_dir = Path(__file__).resolve().parent
 deployment_src = current_dir / 'deployment_package' / 'src'
+src_dir = current_dir / 'src'
 sys.path.append(str(deployment_src))
+sys.path.append(str(src_dir))
+
+utils_dir = src_dir / 'utils'
 
 try:
+    # Import from deployment package
+    sys.path.insert(0, str(deployment_src))
     from barcode_scanner_app import process_barcode_scan, register_device_id, confirm_registration
+    
+    # Import directly from utils directory
+    sys.path.insert(0, str(utils_dir))
+    from usb_hid_forwarder import get_hid_forwarder, start_hid_service
+    from auto_updater import start_auto_update_service
+    from barcode_input_monitor import create_barcode_monitor
 except ImportError as e:
-    print(f"❌ Error importing from barcode_scanner_app: {e}")
-    print("💡 Make sure you're running from the correct directory")
+    print(f"❌ Error importing modules: {e}")
+    print(f"💡 Deployment src: {deployment_src}")
+    print(f"💡 Src dir: {src_dir}")
+    print(f"💡 Utils dir: {utils_dir}")
     sys.exit(1)
 
 # GPIO LED control
@@ -400,6 +414,11 @@ def process_barcode_with_device(barcode, device_id):
         local_db = LocalStorage()
         api_client = ApiClient()
         validated_barcode = barcode.strip()
+        
+        # Forward barcode to POS system immediately after validation
+        hid_forwarder = get_hid_forwarder()
+        pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
+        pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
 
         # Check if device registration is verified
         if not is_device_registration_verified():
@@ -435,13 +454,13 @@ def process_barcode_with_device(barcode, device_id):
         # Check if we're online
         is_online = api_client.is_online()
         if not is_online:
-            return f"📥 Device appears to be offline. Message saved locally for device '{device_id}'."
+            return f"📥 Device appears to be offline. Message saved locally for device '{device_id}'. {pos_status}"
 
         # Send to API
         api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
         api_success = api_result.get("success", False)
         if not api_success:
-            return f"⚠️ API call failed. Barcode saved locally for device '{device_id}'."
+            return f"⚠️ API call failed. Barcode saved locally for device '{device_id}'. {pos_status}"
 
         # Send to IoT Hub
         config = load_config()
@@ -452,17 +471,42 @@ def process_barcode_with_device(barcode, device_id):
 
             if iot_success:
                 local_db.mark_sent_to_hub(device_id, validated_barcode, timestamp)
-                return f"✅ Barcode {validated_barcode} sent to IoT Hub from device '{device_id}'!"
+                return f"✅ Barcode {validated_barcode} sent to IoT Hub from device '{device_id}'! {pos_status}"
             else:
-                return f"⚠️ Barcode sent to API but failed to send to IoT Hub from device '{device_id}'."
+                return f"⚠️ Barcode sent to API but failed to send to IoT Hub from device '{device_id}'. {pos_status}"
         else:
-            return f"⚠️ Barcode sent to API but no IoT Hub connection string found for device '{device_id}'."
+            return f"⚠️ Barcode sent to API but no IoT Hub connection string found for device '{device_id}'. {pos_status}"
 
     except Exception as e:
         return f"❌ Error processing barcode: {str(e)}"
 
 def main():
+    # Check for service mode argument, USB mode, or if running without TTY
+    service_mode = '--service' in sys.argv or '--usb' in sys.argv or not sys.stdin.isatty()
+    
+    if '--usb' in sys.argv:
+        print("🔌 USB HID mode enabled - will process barcode scanner input automatically")
+    
     led_off()
+    
+    # Start HID forwarding service
+    print("🚀 Starting USB HID forwarding service...")
+    try:
+        start_hid_service()
+        print("✅ HID service started - barcodes will be forwarded to POS")
+    except Exception as e:
+        print(f"⚠️ HID service failed to start: {e}")
+        print("💡 Barcodes will still be processed but not forwarded to POS")
+    
+    # Start auto-update service
+    print("🔄 Starting auto-update service...")
+    try:
+        start_auto_update_service()
+        print("✅ Auto-update service started - will check for updates automatically")
+    except Exception as e:
+        print(f"⚠️ Auto-update service failed to start: {e}")
+        print("💡 Manual updates will still be possible")
+    
     device_id = load_device_id()
     
     if not device_id:
@@ -556,6 +600,56 @@ def main():
     else:
         print("🧪 Mode: Test Barcode Verification Required")
     print("📊 Scan barcodes to update quantities...")
+    
+    if service_mode:
+        print("🔧 Running in service mode - waiting for USB barcode scanner input...")
+        print("💡 USB HID forwarder will handle barcode processing automatically")
+        print("💡 Background barcode monitor will capture scanner input")
+        print("=" * 50)
+        
+        # Create barcode processing callback for service mode
+        def service_barcode_callback(barcode):
+            """Process barcodes detected in service mode"""
+            try:
+                print(f"\n📦 QUANTITY UPDATE - BARCODE: {barcode}")
+                print("=" * 40)
+                
+                # Process the barcode with the registered device ID
+                result = process_barcode_with_device(barcode, device_id)
+                print(result)
+                
+                if "✅" in result:
+                    led_green()
+                    time.sleep(1)
+                    led_off()
+                else:
+                    led_red()
+                    time.sleep(1)
+                    led_off()
+                    
+            except Exception as e:
+                print(f"❌ Error processing barcode: {e}")
+                led_red()
+                time.sleep(1)
+                led_off()
+        
+        # Start background barcode monitor
+        barcode_monitor = create_barcode_monitor(service_barcode_callback)
+        if barcode_monitor.start():
+            print("✅ Background barcode monitor started")
+        else:
+            print("⚠️ Background barcode monitor failed to start, using fallback mode")
+        
+        # In service mode, keep the process alive while monitoring for barcodes
+        try:
+            while True:
+                time.sleep(10)  # Sleep for shorter intervals to be more responsive
+        except KeyboardInterrupt:
+            print("\n🛑 Service mode stopped")
+            if barcode_monitor:
+                barcode_monitor.stop()
+            return
+    
     print("💡 Commands:")
     print("   • Scan barcode or type 'process <barcode>'")
     print("   • 'register' or 'reregister' - Register new device")
