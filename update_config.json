@@ -1,0 +1,9 @@
+{
+  "auto_update_enabled": true,
+  "check_interval": 3600,
+  "update_branch": "main",
+  "backup_before_update": true,
+  "restart_service_after_update": true,
+  "service_name": "caleffi-barcode-scanner",
+  "project_path": "/var/www/html/abhimanyu/barcode_scanner_clean"
+}
