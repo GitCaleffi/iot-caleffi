@@ -735,24 +735,9 @@ def register_device_id(barcode, device_id=None):
         if hasattr(register_device_id, '_pending_device_id'):
             delattr(register_device_id, '_pending_device_id')
         
-        # Send "Registration successful" message to IoT Hub
-        try:
-            config = load_config()
-            if config and config.get("iot_hub", {}).get("connection_string"):
-                hub_client = HubClient(config["iot_hub"]["connection_string"], device_id)
-                registration_complete_message = "Registration successful! You're all set to get started."
-                
-                # Send the completion message to IoT Hub
-                hub_success = hub_client.send_message(registration_complete_message, device_id)
-                if hub_success:
-                    logger.info(f"Registration completion message sent to IoT Hub for device {device_id}")
-                else:
-                    logger.warning(f"Failed to send registration completion message to IoT Hub for device {device_id}")
-            else:
-                logger.warning("IoT Hub configuration not available for sending completion message")
-                
-        except Exception as hub_error:
-            logger.error(f"Error sending registration completion message to IoT Hub: {str(hub_error)}")
+        # IoT Hub registration is handled by register_device_with_iot_hub() above
+        # No need to send additional messages during registration
+        logger.info(f"Device {device_id} registration completed - IoT Hub messaging handled by registration process")
         
         # Send response to frontend
         response_msg = f"""✅ Device registered successfully!
