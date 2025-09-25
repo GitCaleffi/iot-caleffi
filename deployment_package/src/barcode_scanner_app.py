@@ -996,14 +996,14 @@ def process_barcode_scan(barcode, device_id=None):
                 iot_status = f"⚠️ IoT Hub error: {str(e)}"
                 logger.error(f"Error sending to IoT Hub: {e}")
             
-            # 3. Forward to POS system (for immediate POS integration)
+            # 3. POS forwarding TEMPORARILY DISABLED to prevent feedback loop
             try:
-                # Import POS forwarder (similar to keyboard_scanner.py)
-                from utils.usb_hid_forwarder import get_hid_forwarder
-                hid_forwarder = get_hid_forwarder()
-                pos_forwarded = hid_forwarder.forward_barcode(barcode)
-                pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
-                logger.info(f"POS forwarding result for {barcode}: {pos_status}")
+                # DISABLED: Import POS forwarder (similar to keyboard_scanner.py)
+                # from utils.usb_hid_forwarder import get_hid_forwarder
+                # hid_forwarder = get_hid_forwarder()
+                # pos_forwarded = hid_forwarder.forward_barcode(barcode)
+                pos_status = "⚠️ POS forwarding disabled (preventing feedback loop)"
+                logger.info(f"POS forwarding disabled for {barcode}: {pos_status}")
             except Exception as e:
                 pos_status = f"⚠️ POS error: {str(e)}"
                 logger.error(f"Error forwarding to POS: {e}")

@@ -53,6 +53,10 @@
       "74bb0b4bfc9d": {
         "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=74bb0b4bfc9d;SharedAccessKey=vEVzcym+RBhbQ505RzXQiMEIWxtxC1g/Yxl5gjzNJl4=",
         "deviceId": "74bb0b4bfc9d"
+      },
+      "36928f67f397": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=36928f67f397;SharedAccessKey=YXXD/NT5MDkvSk7V9lDoq2cZl6iqISBs+7rVKVuNtNI=",
+        "deviceId": "36928f67f397"
       }
     }
   },

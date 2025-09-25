@@ -98,9 +98,9 @@ class USBHIDForwarder:
         if self._command_exists('xclip') or self._command_exists('xsel'):
             methods.append('CLIPBOARD')
         
-        # Check for keyboard simulation tools
-        if self._command_exists('xdotool'):
-            methods.append('KEYBOARD_SIM')
+        # KEYBOARD_SIM disabled to prevent feedback loop
+        # if self._command_exists('xdotool'):
+        #     methods.append('KEYBOARD_SIM')
         
         return methods
     
@@ -117,11 +117,11 @@ class USBHIDForwarder:
         logger.info(f"🚀 Attempting to forward barcode: {barcode}")
         
         # Try methods in order of preference
+        # CRITICAL: KEYBOARD_SIM removed to prevent feedback loop
         methods_to_try = [
             ('USB_HID', self._forward_via_usb_hid),
             ('SERIAL', self._forward_via_serial),
             ('NETWORK', self._forward_via_network),
-            ('KEYBOARD_SIM', self._forward_via_keyboard_sim),
             ('CLIPBOARD', self._forward_via_clipboard),
             ('FILE', self._forward_via_file)
         ]
