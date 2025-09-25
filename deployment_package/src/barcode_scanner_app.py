@@ -941,7 +941,26 @@ def process_barcode_scan(barcode, device_id=None):
             timestamp = local_db.save_scan(current_device_id, barcode)
             logger.info(f"Saved scan to local database: {current_device_id}, {barcode}, {timestamp}")
             
-            # Send quantity update to IoT Hub (only for barcode scans, not registration)
+            # Initialize status tracking
+            iot_status = "❌ Not sent"
+            api_status = "❌ Not sent"
+            pos_status = "❌ Not sent"
+            
+            # 1. Send quantity update to Frontend API (for client-side updates)
+            try:
+                logger.info(f"Sending quantity update to API for barcode: {barcode}")
+                api_result = api_client.send_barcode_scan(current_device_id, barcode, 1)
+                if api_result.get("success"):
+                    api_status = "✅ Sent to API"
+                    logger.info(f"Successfully sent quantity update to API: {barcode}")
+                else:
+                    api_status = "⚠️ API failed"
+                    logger.warning(f"Failed to send quantity update to API: {api_result.get('message', 'Unknown error')}")
+            except Exception as e:
+                api_status = f"⚠️ API error: {str(e)}"
+                logger.error(f"Error sending quantity update to API: {e}")
+            
+            # 2. Send quantity update to IoT Hub (for cloud processing)
             try:
                 config = load_config()
                 if config:
@@ -956,22 +975,52 @@ def process_barcode_scan(barcode, device_id=None):
                             logger.info(f"Device {current_device_id} registered for barcode scanning")
                         else:
                             logger.error(f"Failed to register device {current_device_id}: {registration_result.get('error')}")
-                            return f"⚠️ Barcode {barcode} scanned and saved locally, but failed to register device with IoT Hub."
+                            iot_status = f"⚠️ Registration failed"
                         
                     if device_connection_string:
                         hub_client = HubClient(device_connection_string)
                         success = hub_client.send_message(barcode, current_device_id)
                         if success:
-                            return f"✅ Barcode {barcode} scanned and sent to IoT Hub successfully!"
+                            iot_status = "✅ Sent to IoT Hub"
+                            logger.info(f"Successfully sent quantity update to IoT Hub: {barcode}")
                         else:
-                            return f"⚠️ Barcode {barcode} scanned and saved locally, but failed to send to IoT Hub."
+                            iot_status = "⚠️ IoT Hub failed"
+                            logger.warning(f"Failed to send quantity update to IoT Hub: {barcode}")
                     else:
-                        return f"⚠️ Barcode {barcode} scanned and saved locally, but no device connection string available."
+                        iot_status = "⚠️ No connection string"
+                        logger.warning(f"No device connection string available for IoT Hub")
                 else:
-                    return f"⚠️ Barcode {barcode} scanned and saved locally, but configuration not loaded."
+                    iot_status = "⚠️ Config not loaded"
+                    logger.warning(f"Configuration not loaded for IoT Hub")
             except Exception as e:
+                iot_status = f"⚠️ IoT Hub error: {str(e)}"
                 logger.error(f"Error sending to IoT Hub: {e}")
-                return f"⚠️ Barcode {barcode} scanned and saved locally, but error sending to IoT Hub: {str(e)}"
+            
+            # 3. Forward to POS system (for immediate POS integration)
+            try:
+                # Import POS forwarder (similar to keyboard_scanner.py)
+                from utils.usb_hid_forwarder import get_hid_forwarder
+                hid_forwarder = get_hid_forwarder()
+                pos_forwarded = hid_forwarder.forward_barcode(barcode)
+                pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
+                logger.info(f"POS forwarding result for {barcode}: {pos_status}")
+            except Exception as e:
+                pos_status = f"⚠️ POS error: {str(e)}"
+                logger.error(f"Error forwarding to POS: {e}")
+            
+            # Return comprehensive status
+            return f"""📦 QUANTITY UPDATE - BARCODE: {barcode}
+
+**Actions Completed:**
+• ✅ Saved to local database
+• {api_status}
+• {iot_status}  
+• {pos_status}
+
+**Device ID:** {current_device_id}
+**Timestamp:** {timestamp}
+
+**Status:** Barcode scan processed through all channels!"""
         
         # If no device ID is registered yet, check if this barcode is a valid device ID
         if not current_device_id:
