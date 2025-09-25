@@ -226,15 +226,33 @@ class USBHIDForwarder:
     def _forward_via_keyboard_sim(self, barcode: str) -> bool:
         """Forward barcode via keyboard simulation"""
         try:
-            # Use xdotool to simulate keyboard input
+            # Get active window info for better debugging
+            try:
+                result = subprocess.run(['xdotool', 'getactivewindow', 'getwindowname'], 
+                                      capture_output=True, text=True, timeout=2)
+                if result.returncode == 0:
+                    window_name = result.stdout.strip()
+                    logger.info(f"🎯 Active window: {window_name}")
+            except:
+                pass
+            
+            # Use xdotool to simulate keyboard input with delay for reliability
+            logger.info(f"⌨️  Typing barcode: {barcode}")
             cmd = ['xdotool', 'type', '--delay', '50', barcode]
-            result = subprocess.run(cmd, timeout=5, capture_output=True)
+            result = subprocess.run(cmd, timeout=10, capture_output=True)
             
             if result.returncode == 0:
-                # Also send Enter key
-                subprocess.run(['xdotool', 'key', 'Return'], timeout=2)
+                # Wait a moment then send Enter key
+                time.sleep(0.2)
+                subprocess.run(['xdotool', 'key', 'Return'], timeout=5)
+                logger.info("✅ Barcode typed successfully")
                 return True
+            else:
+                logger.warning(f"xdotool type failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
             
+            return False
+        except subprocess.TimeoutExpired:
+            logger.error("❌ Keyboard simulation timed out")
             return False
         except Exception as e:
             logger.error(f"Keyboard simulation failed: {e}")
