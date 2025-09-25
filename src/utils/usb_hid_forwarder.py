@@ -11,10 +11,24 @@ import time
 import logging
 import subprocess
 import socket
-import serial
 import glob
 from pathlib import Path
 from typing import Optional, List, Dict
+
+# Optional imports with fallbacks
+try:
+    import serial
+    SERIAL_AVAILABLE = True
+except ImportError:
+    SERIAL_AVAILABLE = False
+    serial = None
+
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    REQUESTS_AVAILABLE = False
+    requests = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -71,10 +85,11 @@ class USBHIDForwarder:
         if os.path.exists('/sys/kernel/config/usb_gadget') or os.path.exists(self.hid_device):
             methods.append('USB_HID')
         
-        # Check for serial ports
-        serial_ports = glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyS*')
-        if serial_ports:
-            methods.append('SERIAL')
+        # Check for serial ports (only if serial module is available)
+        if SERIAL_AVAILABLE:
+            serial_ports = glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*') + glob.glob('/dev/ttyS*')
+            if serial_ports:
+                methods.append('SERIAL')
         
         # Network is always available
         methods.append('NETWORK')
@@ -147,9 +162,17 @@ class USBHIDForwarder:
     
     def _forward_via_serial(self, barcode: str) -> bool:
         """Forward barcode via serial port"""
+        if not SERIAL_AVAILABLE:
+            logger.warning("Serial module not available - install with: pip install pyserial")
+            return False
+            
         try:
             # Find available serial ports
             serial_ports = glob.glob('/dev/ttyUSB*') + glob.glob('/dev/ttyACM*')
+            
+            if not serial_ports:
+                logger.warning("No serial ports found")
+                return False
             
             for port in serial_ports:
                 try:
@@ -170,10 +193,11 @@ class USBHIDForwarder:
     
     def _forward_via_network(self, barcode: str) -> bool:
         """Forward barcode via network to POS system"""
-        try:
-            # Try to send to local POS server
-            import requests
+        if not REQUESTS_AVAILABLE:
+            logger.warning("Requests module not available - install with: pip install requests")
+            return False
             
+        try:
             # Common POS server ports and endpoints
             endpoints = [
                 'http://localhost:8080/api/barcode',
