@@ -1,17 +1,51 @@
 #!/usr/bin/env python3
 """
-Manual Barcode Input Test - For testing IoT Hub integration without physical scanner
+Manual barcode test script for Caleffi Barcode Scanner
 """
+
 import sys
 import os
-sys.path.append('/var/www/html/abhimanyu/barcode_scanner_clean/src')
 
-from barcode_scanner_app import process_barcode_scan_auto
-import logging
+# Add the src directory to Python path
+sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from keyboard_scanner import process_barcode_with_device
+from utils.usb_hid_forwarder import get_hid_forwarder
+
+def test_pos_forwarding():
+    """Test POS forwarding directly"""
+    device_id = "56d19958e6e7"  # Updated device ID
+    test_barcode = "8053734093444"  # Your test barcode
+    
+    print(f"🧪 Testing POS forwarding for barcode: {test_barcode}")
+    print(f"📱 Device ID: {device_id}")
+    
+    # Test HID forwarder directly
+    forwarder = get_hid_forwarder()
+    success = forwarder.forward_barcode(test_barcode)
+    
+    if success:
+        print(f"✅ POS forwarding successful!")
+        
+        # Check if file was created
+        if os.path.exists('/tmp/pos_barcode.txt'):
+            with open('/tmp/pos_barcode.txt', 'r') as f:
+                content = f.read().strip()
+            print(f"📄 Barcode written to file: {content}")
+        
+        return True
+    else:
+        print(f"❌ POS forwarding failed!")
+        return False
+
+def test_full_barcode_processing():
+    """Test full barcode processing pipeline"""
+    device_id = "56d19958e6e7"
+    test_barcode = "8053734093444"
+    
+    print(f"\n🔄 Testing full barcode processing...")
+    result = process_barcode_with_device(test_barcode, device_id)
+    print(f"📋 Processing result: {result}")
 
 def manual_barcode_input():
     """Allow manual barcode input for testing"""
