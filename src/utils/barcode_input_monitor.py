@@ -195,11 +195,25 @@ class BarcodeInputMonitor:
             evdev.ecodes.KEY_F: 'F'
         }
         
+        # Barcode scanner letter-to-number mapping for some scanners
+        letter_to_number_map = {
+            'A': '0', 'B': '1', 'C': '2', 'D': '3', 'E': '4',
+            'F': '5', 'G': '6', 'H': '7', 'I': '8', 'J': '9'
+        }
+        
         if key_code == evdev.ecodes.KEY_ENTER:
             if self.barcode_buffer and len(self.barcode_buffer) >= 4:
-                logger.info(f"Barcode detected from {device_name}: {self.barcode_buffer}")
+                # Convert letters to numbers if needed
+                converted_barcode = ""
+                for char in self.barcode_buffer:
+                    if char in letter_to_number_map:
+                        converted_barcode += letter_to_number_map[char]
+                    else:
+                        converted_barcode += char
+                
+                logger.info(f"Barcode detected from {device_name}: {self.barcode_buffer} -> {converted_barcode}")
                 if self.callback:
-                    self.callback(self.barcode_buffer)
+                    self.callback(converted_barcode)
             self.barcode_buffer = ""
             self.last_input_time = current_time
         elif key_code in key_map:
