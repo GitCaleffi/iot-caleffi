@@ -469,21 +469,57 @@ def process_barcode_with_device(barcode, device_id):
 
         # Check if device registration is verified
         if not is_device_registration_verified():
-            # For test barcode verification, always use the known test barcode
-            test_barcode = "817994ccfe14"
-            print(f"🔧 Using system test barcode: {test_barcode}")
+            # Check if the scanned barcode contains the expected test barcode
+            expected_test_barcode = "817994ccfe14"
             
-            result = verify_test_barcode_with_api(device_id, test_barcode)
-            if result.get('success') and result.get('isTestBarcodeVerified'):
-                mark_registration_verified()
-                return f"✅ Test barcode verified! Device ready for quantity updates: {test_barcode}"
-            else:
-                response_data = result.get('response', {})
-                if response_data:
-                    msg = response_data.get('responseMessage', 'Invalid test barcode')
-                    return f"❌ {msg}. Test barcode: {test_barcode}"
+            # Clean the barcode - remove common prefixes and extra characters
+            cleaned_barcode = barcode.replace("process ", "").replace("process", "").strip()
+            
+            # Check if the cleaned barcode matches or contains the test barcode (with at least 10 matching characters)
+            if (cleaned_barcode == expected_test_barcode or 
+                expected_test_barcode in cleaned_barcode or
+                (len(cleaned_barcode) >= 10 and cleaned_barcode in expected_test_barcode and len(cleaned_barcode) >= 10)):
+                
+                print(f"🔧 Test barcode detected: {cleaned_barcode} (from: {barcode})")
+                
+                # Use the expected test barcode for API verification
+                result = verify_test_barcode_with_api(device_id, expected_test_barcode)
+                if result.get('success') and result.get('isTestBarcodeVerified'):
+                    mark_registration_verified()
+                    return f"✅ Test barcode verified! Device ready for quantity updates: {expected_test_barcode}"
                 else:
-                    return f"❌ Test barcode verification failed: {test_barcode}"
+                    response_data = result.get('response', {})
+                    if response_data:
+                        msg = response_data.get('responseMessage', 'Invalid test barcode')
+                        return f"❌ {msg}. Test barcode: {expected_test_barcode}"
+                    else:
+                        return f"❌ Test barcode verification failed: {expected_test_barcode}"
+            else:
+                # Check if it's a partial match (at least 10 characters matching)
+                matching_chars = 0
+                for i, char in enumerate(cleaned_barcode):
+                    if i < len(expected_test_barcode) and char == expected_test_barcode[i]:
+                        matching_chars += 1
+                    elif i < len(expected_test_barcode):
+                        break
+                
+                if matching_chars >= 10:
+                    print(f"🔧 Partial test barcode detected ({matching_chars} chars match): {cleaned_barcode}")
+                    
+                    # Use the expected test barcode for API verification
+                    result = verify_test_barcode_with_api(device_id, expected_test_barcode)
+                    if result.get('success') and result.get('isTestBarcodeVerified'):
+                        mark_registration_verified()
+                        return f"✅ Test barcode verified! Device ready for quantity updates: {expected_test_barcode}"
+                    else:
+                        response_data = result.get('response', {})
+                        if response_data:
+                            msg = response_data.get('responseMessage', 'Invalid test barcode')
+                            return f"❌ {msg}. Test barcode: {expected_test_barcode}"
+                        else:
+                            return f"❌ Test barcode verification failed: {expected_test_barcode}"
+                else:
+                    return f"❌ Device not verified. Please scan the test barcode {expected_test_barcode} first to verify the device."
 
         # Device is verified, process as quantity update
         # ✅ Differentiate device IDs from product barcodes
@@ -597,7 +633,7 @@ def main():
                                 if device_connection_string:
                                     hub_client = HubClient(device_connection_string)
                                     initial_message = "Procedure complete, now you can scan real product"
-                                    hub_client.send_message(initial_message)
+                                    hub_client.send_message(initial_message, barcode)
                                     print("📡 Initial setup message sent to IoT Hub")
                         except Exception as e:
                             print(f"⚠️ Could not send initial message: {e}")
