@@ -30,17 +30,7 @@ class USBHIDForwarder:
     def forward_barcode(self, barcode):
         """Forward barcode to POS system via USB HID"""
         try:
-            if not self.is_raspberry_pi:
-                # For non-Pi systems, try alternative POS forwarding methods
-                success = self._forward_via_clipboard(barcode)
-                if success:
-                    logger.info(f"✅ Forwarded barcode {barcode} to POS via clipboard")
-                    return True
-                else:
-                    logger.info(f"Non-Pi system: Simulated POS forwarding for barcode {barcode}")
-                    return True
-                
-            # On Raspberry Pi, write to HID gadget device
+            # Check if HID device exists (for Raspberry Pi)
             if os.path.exists(self.hid_device):
                 with open(self.hid_device, 'wb') as hid:
                     # Convert barcode to HID keyboard codes
@@ -49,27 +39,67 @@ class USBHIDForwarder:
                 logger.info(f"✅ Forwarded barcode {barcode} to POS via USB HID")
                 return True
             else:
-                logger.warning(f"HID device {self.hid_device} not found")
+                # Try alternative methods for POS forwarding
+                logger.warning(f"HID device {self.hid_device} not found, trying alternatives...")
+                
+                # Method 1: Try keyboard simulation via uinput
+                success = self._forward_via_uinput(barcode)
+                if success:
+                    logger.info(f"✅ Forwarded barcode {barcode} to POS via uinput")
+                    return True
+                
+                # Method 2: Try clipboard forwarding
+                success = self._forward_via_clipboard(barcode)
+                if success:
+                    logger.info(f"✅ Forwarded barcode {barcode} to POS via clipboard")
+                    return True
+                
+                # Method 3: Write to file for manual testing
+                success = self._forward_via_file(barcode)
+                if success:
+                    logger.info(f"✅ Forwarded barcode {barcode} to POS via file")
+                    return True
+                
+                logger.error(f"❌ All POS forwarding methods failed for barcode {barcode}")
                 return False
                 
         except Exception as e:
             logger.error(f"Failed to forward barcode via USB HID: {e}")
             return False
     
-    def _forward_via_clipboard(self, barcode):
-        """Forward barcode via clipboard on non-Pi systems"""
+    def _forward_via_uinput(self, barcode):
+        """Forward barcode via uinput keyboard simulation"""
         try:
-            # Try to copy barcode to clipboard for POS systems that can read from clipboard
+            import subprocess
+            # Use xdotool to simulate keyboard input
+            cmd = ['xdotool', 'type', barcode]
+            result = subprocess.run(cmd, timeout=5, capture_output=True)
+            return result.returncode == 0
+        except:
+            return False
+    
+    def _forward_via_clipboard(self, barcode):
+        """Forward barcode via clipboard"""
+        try:
             import subprocess
             subprocess.run(['xclip', '-selection', 'clipboard'], input=barcode.encode(), timeout=2)
             return True
         except:
             try:
-                # Alternative clipboard method
                 subprocess.run(['xsel', '--clipboard', '--input'], input=barcode.encode(), timeout=2)
                 return True
             except:
                 return False
+    
+    def _forward_via_file(self, barcode):
+        """Forward barcode via file for manual testing"""
+        try:
+            with open('/tmp/pos_barcode.txt', 'w') as f:
+                f.write(f"{barcode}\n")
+            logger.info(f"Barcode written to /tmp/pos_barcode.txt for manual testing")
+            return True
+        except:
+            return False
     
     def _barcode_to_hid(self, barcode):
         """Convert barcode string to USB HID keyboard data"""
