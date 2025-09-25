@@ -1,0 +1,90 @@
+{
+  "iot_hub": {
+    "connection_string": "HostName=CaleffiIoT.azure-devices.net;SharedAccessKeyName=iothubowner;SharedAccessKey=YOUR_SHARED_ACCESS_KEY_HERE",
+    "deviceId": "auto-generated-from-barcode",
+    "dps_id_scope": "0ne00A300C1",
+    "device_registry_url": "https://CaleffiIoT.azure-devices.net",
+    "api_key": "YOUR_API_KEY_HERE",
+    "devices": {
+      "DEVICE_ID_PLACEHOLDER": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=DEVICE_ID_PLACEHOLDER;SharedAccessKey=DEVICE_KEY_HERE",
+        "deviceId": "DEVICE_ID_PLACEHOLDER"
+      }
+    }
+  },
+  "barcode_scanner": {
+    "scanner_type": "Handreader",
+    "scan_timeout": 5000
+  },
+  "api": {
+    "base_url": "https://api2.caleffionline.it/api/v1",
+    "timeout": 30
+  },
+  "web_server": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false
+  },
+  "database": {
+    "path": "barcode_scans.db"
+  },
+  "deployment": {
+    "mode": "commercial",
+    "auto_device_registration": true,
+    "device_prefix": "scanner"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "barcode_scanner.log"
+  },
+  "raspberry_pi": {
+    "dynamic_discovery": true,
+    "remote_connectivity_monitoring": true,
+    "auto_registration": true,
+    "server_urls": [
+      "https://iot.caleffionline.it"
+    ],
+    "auto_detected_ip": "AUTO_DETECTED",
+    "last_detection": "AUTO_GENERATED",
+    "status": "connected",
+    "force_detection": false,
+    "scan_ips": [
+      "192.168.1.18",
+      "192.168.1.100",
+      "192.168.1.101",
+      "10.198.0.18"
+    ],
+    "connectivity_methods": {
+      "tcp": {
+        "ports": {
+          "22": true,
+          "5000": false,
+          "80": true
+        },
+        "any_port_open": true
+      },
+      "ping": {
+        "reachable": true,
+        "output": "AUTO_GENERATED"
+      },
+      "http": {
+        "accessible": true,
+        "services": {
+          "http://AUTO_DETECTED_IP:5000": {
+            "accessible": false,
+            "error": "AUTO_GENERATED"
+          },
+          "http://AUTO_DETECTED_IP:80": {
+            "accessible": true,
+            "status_code": 200
+          }
+        }
+      },
+      "ssh": {
+        "accessible": true,
+        "port": 22
+      }
+    },
+    "last_disconnect": "AUTO_GENERATED"
+  }
+}

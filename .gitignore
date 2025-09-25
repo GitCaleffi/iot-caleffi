@@ -112,3 +112,15 @@ src/iot_hub.log
 backup/
 update_temp/
 credentials.json
+
+# Configuration files with secrets
+deployment_package/config.json
+config.json
+*.config.json
+*connection_string*
+device_config.json
+
+# Service logs
+barcode_service.log
+auto_barcode_service.log
+*.pid

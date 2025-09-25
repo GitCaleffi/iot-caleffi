@@ -95,34 +95,93 @@ def save_device_id(device_id):
         json.dump(config, f)
 
 def read_barcode_from_monitor():
-    """Read barcode from the USB input monitor in service mode"""
+    """Read barcode from USB input devices in service mode"""
     try:
-        # Check for barcode from file first (for testing)
-        barcode_file = '/tmp/barcode_input.txt'
-        if os.path.exists(barcode_file):
-            with open(barcode_file, 'r') as f:
-                barcode = f.read().strip()
-            if barcode:
-                os.remove(barcode_file)  # Remove after reading
-                return barcode
+        import select
+        import glob
         
-        # In a real implementation, this would interface with the barcode monitor
-        # For now, we'll wait for file input or timeout
-        print("⏳ Waiting for barcode input (create /tmp/barcode_input.txt with barcode)...")
+        print("🔍 Monitoring USB input devices for barcode scanner...")
         
-        timeout = 30  # 30 seconds timeout
-        start_time = time.time()
+        # Find USB input devices (keyboards, scanners)
+        input_devices = []
+        device_patterns = [
+            '/dev/input/event*',
+            '/dev/input/by-id/*kbd*',
+            '/dev/input/by-id/*keyboard*'
+        ]
         
-        while time.time() - start_time < timeout:
-            if os.path.exists(barcode_file):
-                with open(barcode_file, 'r') as f:
-                    barcode = f.read().strip()
-                if barcode:
-                    os.remove(barcode_file)
-                    return barcode
-            time.sleep(0.5)
+        for pattern in device_patterns:
+            input_devices.extend(glob.glob(pattern))
         
-        print("⏰ Timeout waiting for barcode input")
+        if not input_devices:
+            print("⚠️ No USB input devices found, falling back to file monitoring...")
+            # Fallback to file monitoring
+            barcode_file = '/tmp/barcode_input.txt'
+            timeout = 10
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                if os.path.exists(barcode_file):
+                    with open(barcode_file, 'r') as f:
+                        barcode = f.read().strip()
+                    if barcode:
+                        os.remove(barcode_file)
+                        return barcode
+                time.sleep(0.5)
+            return None
+        
+        print(f"📱 Found {len(input_devices)} input devices")
+        
+        # Try to read from input devices using evdev if available
+        try:
+            import evdev
+            devices = [evdev.InputDevice(path) for path in input_devices if os.access(path, os.R_OK)]
+            
+            if not devices:
+                print("⚠️ No accessible input devices found")
+                return None
+            
+            print(f"🎯 Monitoring {len(devices)} accessible devices...")
+            
+            # Monitor devices for input
+            timeout = 30
+            start_time = time.time()
+            barcode_buffer = ""
+            
+            while time.time() - start_time < timeout:
+                # Check all devices for input
+                for device in devices:
+                    try:
+                        # Non-blocking read
+                        events = device.read()
+                        for event in events:
+                            if event.type == evdev.ecodes.EV_KEY and event.value == 1:  # Key press
+                                key = evdev.ecodes.KEY[event.code]
+                                if key.startswith('KEY_'):
+                                    char = key[4:]  # Remove 'KEY_' prefix
+                                    if char.isdigit():
+                                        barcode_buffer += char
+                                    elif char == 'ENTER':
+                                        if len(barcode_buffer) >= 8:
+                                            print(f"📝 Barcode detected: {barcode_buffer}")
+                                            return barcode_buffer
+                                        barcode_buffer = ""
+                    except BlockingIOError:
+                        continue
+                    except Exception as e:
+                        continue
+                
+                time.sleep(0.1)
+            
+            print("⏰ Timeout waiting for barcode input")
+            return None
+            
+        except ImportError:
+            print("⚠️ evdev not available, install with: pip install evdev")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error in barcode monitor: {e}")
         return None
         
     except Exception as e:
@@ -449,6 +508,30 @@ def verify_test_barcode_with_api(device_id, barcode):
         print(f"🔍 API call error: {str(e)}")
         return {"success": False, "error": str(e)}
 
+def extract_valid_barcode(raw_barcode):
+    """Extract valid EAN barcode from potentially concatenated string"""
+    # If it's already a valid length, return as-is
+    if 8 <= len(raw_barcode) <= 13:
+        return raw_barcode
+    
+    # For concatenated strings, look for valid EAN patterns
+    if len(raw_barcode) > 13:
+        # Look for 13-digit EAN patterns
+        import re
+        ean13_pattern = r'(\d{13})'
+        matches = re.findall(ean13_pattern, raw_barcode)
+        if matches:
+            return matches[0]  # Return first valid 13-digit EAN
+        
+        # Look for 8-digit EAN patterns
+        ean8_pattern = r'(\d{8})'
+        matches = re.findall(ean8_pattern, raw_barcode)
+        if matches:
+            return matches[-1]  # Return last valid 8-digit EAN (likely the product)
+    
+    # If no valid pattern found, return original
+    return raw_barcode
+
 def process_barcode_with_device(barcode, device_id):
     """Process barcode scan with the specified device ID"""
     try:
@@ -460,12 +543,22 @@ def process_barcode_with_device(barcode, device_id):
 
         local_db = LocalStorage()
         api_client = ApiClient()
-        validated_barcode = barcode.strip()
         
-        # TEMPORARILY DISABLE POS forwarding to eliminate feedback loop
-        # hid_forwarder = get_hid_forwarder()
-        # pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
-        pos_status = "⚠️ POS forwarding disabled (preventing feedback loop)"
+        # Handle concatenated barcodes - extract valid EAN from long strings
+        raw_barcode = barcode.strip()
+        validated_barcode = extract_valid_barcode(raw_barcode)
+        
+        # POS forwarding enabled with smart filtering to prevent feedback loops
+        try:
+            hid_forwarder = get_hid_forwarder()
+            # Only forward actual product barcodes, not test/device barcodes
+            if len(validated_barcode) >= 8 and validated_barcode not in ["817994ccfe14", "36928f67f397"]:
+                pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
+                pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
+            else:
+                pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
+        except Exception as e:
+            pos_status = f"⚠️ POS error: {str(e)}"
 
         # Check if device registration is verified
         if not is_device_registration_verified():
