@@ -30,24 +30,19 @@ def validate_ean(barcode):
     # Convert to string and strip whitespace
     barcode = str(barcode).strip()
     
-    # Check if barcode contains only numeric characters
-    if not barcode.isdigit():
-        raise BarcodeValidationError("EAN must be numeric")
+    # Check if barcode contains valid characters (alphanumeric for Code 128, Code 39, etc.)
+    if not barcode.replace('-', '').replace('_', '').isalnum():
+        raise BarcodeValidationError("Barcode contains invalid characters")
     
-    # Check length requirements
+    # Check length requirements - support various barcode formats
     length = len(barcode)
     
-    # Valid lengths: EAN-8 (8), UPC-A (12), EAN-13/ISBN-13 (13), GTIN-14 (14)
-    valid_lengths = [8, 12, 13, 14]
-    
-    if length not in valid_lengths:
+    # Valid lengths: Support various barcode formats (6-20 characters)
+    # EAN-8 (8), UPC-A (12), EAN-13/ISBN-13 (13), GTIN-14 (14), Code 128/Code 39 (6-20)
+    if length < 6 or length > 20:
         raise BarcodeValidationError(
-            f"Invalid EAN format. Must be one of: EAN-8 (8), UPC-A (12), EAN-13/ISBN-13 (13), GTIN-14 (14 digits). Got {length} digits."
+            f"Invalid barcode length. Must be between 6-20 characters. Got {length} characters."
         )
-    
-    # Maximum 13 digits check (but allow 14 for GTIN-14)
-    if length > 14:
-        raise BarcodeValidationError(f"EAN too long: {length} digits. Maximum 14 digits allowed.")
     
     # Return the validated barcode
     return barcode
