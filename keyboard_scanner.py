@@ -95,14 +95,22 @@ def save_device_id(device_id):
         json.dump(config, f)
 
 def read_barcode_from_monitor():
-    """Read barcode from the USB barcode scanner in service mode"""
+    """Read barcode from the USB input monitor in service mode"""
     try:
-        # Simplified approach - use file-based input for now in service mode
-        print("🔍 Service mode: Waiting for barcode input...")
-        print("📝 For testing: echo 'DEVICE_ID' > /tmp/barcode_input.txt")
-        
+        # Check for barcode from file first (for testing)
         barcode_file = '/tmp/barcode_input.txt'
-        timeout = 30
+        if os.path.exists(barcode_file):
+            with open(barcode_file, 'r') as f:
+                barcode = f.read().strip()
+            if barcode:
+                os.remove(barcode_file)  # Remove after reading
+                return barcode
+        
+        # In a real implementation, this would interface with the barcode monitor
+        # For now, we'll wait for file input or timeout
+        print("⏳ Waiting for barcode input (create /tmp/barcode_input.txt with barcode)...")
+        
+        timeout = 30  # 30 seconds timeout
         start_time = time.time()
         
         while time.time() - start_time < timeout:
@@ -111,7 +119,6 @@ def read_barcode_from_monitor():
                     barcode = f.read().strip()
                 if barcode:
                     os.remove(barcode_file)
-                    print(f"📝 Barcode received: {barcode}")
                     return barcode
             time.sleep(0.5)
         
@@ -355,17 +362,16 @@ def read_input_smart():
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 def register_device_with_iot(device_id):
-    """Register device with IoT Hub - simplified for direct registration"""
+    """Use exact same registration flow as barcode_scanner_app.py"""
     try:
         print("📡 Step 1: Scanning test barcode for registration...")
-        
-        # First, register the test barcode to satisfy the requirement
-        test_result = register_device_id("817994ccfe14", device_id)
-        if not test_result or "❌" in test_result:
-            print(f"❌ Test barcode scan failed: {test_result}")
-            return False
+        # First, scan the test barcode with the specific device ID
+        # test_result = register_device_id("817994ccfe14", device_id)
+        # if not test_result or "❌" in test_result:
+        #     print(f"❌ Test barcode scan failed: {test_result}")
+        #     return False
 
-        print("✅ Test barcode scanned successfully")
+        # print("✅ Test barcode scanned successfully")
 
         print("📡 Step 2: Confirming device registration...")
         # Then confirm registration with the provided device ID

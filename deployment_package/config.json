@@ -4,7 +4,57 @@
     "deviceId": "auto-generated-from-barcode",
     "dps_id_scope": "0ne00A300C1",
     "device_registry_url": "https://CaleffiIoT.azure-devices.net",
-    "api_key": "5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ="
+    "api_key": "5wAebNkJEH3qI3WQ8MIXMp3Yj70z68l9vAIoTMDkEyQ=",
+    "devices": {
+      "bddbc9d1cdf2": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=bddbc9d1cdf2;SharedAccessKey=xWHZreQkrEYg4jsOoLNXbM+h0ppnAXm7iX+GEVRZZkM=",
+        "deviceId": "bddbc9d1cdf2"
+      },
+      "4bc29732926c": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=4bc29732926c;SharedAccessKey=NjFtR6wuhLDf7HfoWbch4HwUoVgWS8m+uwr30t83UPA=",
+        "deviceId": "4bc29732926c"
+      },
+      "3990eca74e6b": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=3990eca74e6b;SharedAccessKey=/7epDFbrBxx6SPTH+B0MtfcibmNZqwIx5cMWPfBTE6g=",
+        "deviceId": "3990eca74e6b"
+      },
+      "a5944658fdf7": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=a5944658fdf7;SharedAccessKey=EwhsFCKyvjTzTS15hO+1KBtbST2BM9GajfmufT3IhGc=",
+        "deviceId": "a5944658fdf7"
+      },
+      "8902968190392": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=8902968190392;SharedAccessKey=NW62/SkIMA2mT60mk4V3jdzj4U9b2KvbA8dVs5fPYZw=",
+        "deviceId": "8902968190392"
+      },
+      "448c5444b686": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=448c5444b686;SharedAccessKey=lqp9+LM5iGhRBNfZTi6b/6m9BW6cLnnP2AX04hcyo24=",
+        "deviceId": "448c5444b686"
+      },
+      "149f33d4a830": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=149f33d4a830;SharedAccessKey=Xf/eBFpwsQ3NCm9JjEq4SwTxpor9cR6g0fi4+95x3j4=",
+        "deviceId": "149f33d4a830"
+      },
+      "56d19958e6e7": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=56d19958e6e7;SharedAccessKey=iSsugYR4URE1kmPVGqw9qt5aXiT2iLPDTmFLU+gYn18=",
+        "deviceId": "56d19958e6e7"
+      },
+      "a8a2658c7d4b": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=a8a2658c7d4b;SharedAccessKey=cz9vAzK7dc/n6jPSmurQTcbajFi6mEQaYXYDTPyaCJI=",
+        "deviceId": "a8a2658c7d4b"
+      },
+      "7079fa7ab32e": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=7079fa7ab32e;SharedAccessKey=HleZv0LRJFqKNMFUW54hey/D3LemS8iXOVk3H5d+n08=",
+        "deviceId": "7079fa7ab32e"
+      },
+      "9b7384471e93": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=9b7384471e93;SharedAccessKey=FbGMJtOux6YZ/yXW2d+GtZzmH8AMxHNcXafKXhuLSaI=",
+        "deviceId": "9b7384471e93"
+      },
+      "74bb0b4bfc9d": {
+        "connection_string": "HostName=CaleffiIoT.azure-devices.net;DeviceId=74bb0b4bfc9d;SharedAccessKey=vEVzcym+RBhbQ505RzXQiMEIWxtxC1g/Yxl5gjzNJl4=",
+        "deviceId": "74bb0b4bfc9d"
+      }
+    }
   },
   "barcode_scanner": {
     "scanner_type": "Handreader",
