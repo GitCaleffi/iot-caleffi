@@ -998,17 +998,47 @@ def process_barcode_scan(barcode, device_id=None):
             
             # 3. POS forwarding enabled with smart filtering to prevent feedback loops
             try:
-                from utils.usb_hid_forwarder import get_hid_forwarder
-                hid_forwarder = get_hid_forwarder()
-                
-                # Only forward actual product barcodes, not test/device barcodes
-                if len(barcode) >= 8 and barcode not in ["817994ccfe14", "36928f67f397"]:
-                    pos_forwarded = hid_forwarder.forward_barcode(barcode)
-                    pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
-                    logger.info(f"POS forwarding result for {barcode}: {pos_status}")
-                else:
-                    pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
-                    logger.info(f"POS forwarding skipped for {barcode}: {pos_status}")
+                # Try enhanced POS forwarder first (for attached devices)
+                try:
+                    sys.path.insert(0, str(Path(__file__).parent.parent))
+                    from enhanced_pos_forwarder import EnhancedPOSForwarder
+                    enhanced_forwarder = EnhancedPOSForwarder()
+                    
+                    # Only forward actual product barcodes, not test/device barcodes
+                    if len(barcode) >= 8 and barcode not in ["817994ccfe14", "36928f67f397"]:
+                        pos_results = enhanced_forwarder.forward_to_attached_devices(barcode)
+                        successful_methods = [k for k, v in pos_results.items() if v]
+                        
+                        if successful_methods:
+                            pos_status = f"✅ Sent to POS via: {', '.join(successful_methods)}"
+                            logger.info(f"Enhanced POS forwarding successful for {barcode}: {successful_methods}")
+                        else:
+                            pos_status = "⚠️ Enhanced POS forward failed - trying fallback"
+                            logger.warning(f"Enhanced POS forwarding failed for {barcode}")
+                            
+                            # Fallback to original forwarder
+                            from utils.usb_hid_forwarder import get_hid_forwarder
+                            hid_forwarder = get_hid_forwarder()
+                            pos_forwarded = hid_forwarder.forward_barcode(barcode)
+                            pos_status = "✅ Sent to POS (fallback)" if pos_forwarded else "⚠️ All POS methods failed"
+                    else:
+                        pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
+                        logger.info(f"POS forwarding skipped for {barcode}: {pos_status}")
+                        
+                except ImportError:
+                    # Fallback to original forwarder if enhanced not available
+                    logger.info("Enhanced POS forwarder not available, using standard forwarder")
+                    from utils.usb_hid_forwarder import get_hid_forwarder
+                    hid_forwarder = get_hid_forwarder()
+                    
+                    if len(barcode) >= 8 and barcode not in ["817994ccfe14", "36928f67f397"]:
+                        pos_forwarded = hid_forwarder.forward_barcode(barcode)
+                        pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
+                        logger.info(f"Standard POS forwarding result for {barcode}: {pos_status}")
+                    else:
+                        pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
+                        logger.info(f"POS forwarding skipped for {barcode}: {pos_status}")
+                        
             except Exception as e:
                 pos_status = f"⚠️ POS error: {str(e)}"
                 logger.error(f"Error forwarding to POS: {e}")

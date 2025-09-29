@@ -49,10 +49,37 @@ def validate_connection_string(connection_string):
         return False
 
 def get_config_path():
-    """Get the path to the config.json file"""
+    """Get the path to the config.json file with multiple fallback locations"""
     current_dir = Path(__file__).resolve()
-    project_root = current_dir.parent.parent.parent
-    return project_root / 'config.json'
+    
+    # Try multiple possible locations for config.json
+    possible_paths = [
+        # 1. Same directory as deployment_package (current structure)
+        current_dir.parent.parent.parent / 'config.json',
+        
+        # 2. In deployment_package directory (client-side structure)
+        current_dir.parent.parent.parent / 'deployment_package' / 'config.json',
+        
+        # 3. In current working directory
+        Path.cwd() / 'config.json',
+        
+        # 4. In deployment_package subdirectory of current working directory
+        Path.cwd() / 'deployment_package' / 'config.json',
+        
+        # 5. Relative to the script location (for client-side deployment)
+        current_dir.parent.parent / 'config.json',
+        
+        # 6. In parent directory of deployment_package
+        current_dir.parent.parent.parent.parent / 'config.json'
+    ]
+    
+    # Return the first existing config file
+    for path in possible_paths:
+        if path.exists():
+            return path
+    
+    # If no config file found, return the default location (first option)
+    return possible_paths[0]
 
 def save_config(config):
     """Save configuration to config.json file"""
@@ -97,6 +124,22 @@ def load_config():
         config_path = get_config_path()
 
         print(f"Looking for config file at: {config_path}")
+        print(f"Config file exists: {config_path.exists()}")
+        
+        # Debug: Show all possible paths that were checked
+        current_dir = Path(__file__).resolve()
+        possible_paths = [
+            current_dir.parent.parent.parent / 'config.json',
+            current_dir.parent.parent.parent / 'deployment_package' / 'config.json',
+            Path.cwd() / 'config.json',
+            Path.cwd() / 'deployment_package' / 'config.json',
+            current_dir.parent.parent / 'config.json',
+            current_dir.parent.parent.parent.parent / 'config.json'
+        ]
+        print("🔍 Checked config paths:")
+        for i, path in enumerate(possible_paths, 1):
+            exists = "✅" if path.exists() else "❌"
+            print(f"  {i}. {exists} {path}")
         
         # Load from config file first
         if config_path.exists():
