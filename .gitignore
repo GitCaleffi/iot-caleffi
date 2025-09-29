@@ -126,6 +126,12 @@ config.json
 *connection_string*
 device_config.json
 *.backup
+*.bak
+*config*.backup
+*config*.bak
+*secret*
+*key*
+*token*
 
 # Service logs
 barcode_service.log
