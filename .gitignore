@@ -124,3 +124,4 @@ device_config.json
 barcode_service.log
 auto_barcode_service.log
 *.pid
+config.json
