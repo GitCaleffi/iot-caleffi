@@ -88,6 +88,10 @@ ENV/
 .spyderproject
 .spyproject
 
+# Configuration files with secrets
+deployment_package/config.json
+config.json
+
 # Rope project settings
 .ropeproject
 
