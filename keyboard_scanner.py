@@ -548,17 +548,49 @@ def process_barcode_with_device(barcode, device_id):
         raw_barcode = barcode.strip()
         validated_barcode = extract_valid_barcode(raw_barcode)
         
-        # POS forwarding enabled with smart filtering to prevent feedback loops
+        # Enhanced POS forwarding with multiple methods for attached devices
         try:
-            hid_forwarder = get_hid_forwarder()
-            # Only forward actual product barcodes, not test/device barcodes
-            if len(validated_barcode) >= 8 and validated_barcode not in ["817994ccfe14", "36928f67f397"]:
-                pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
-                pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
-            else:
-                pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
+            # Try optimized POS forwarder first (for attached devices)
+            try:
+                from optimized_pos_forwarder import OptimizedPOSForwarder
+                optimized_forwarder = OptimizedPOSForwarder()
+                
+                # Only forward actual product barcodes, not test/device barcodes
+                if len(validated_barcode) >= 8 and validated_barcode not in ["817994ccfe14", "36928f67f397"]:
+                    pos_results = optimized_forwarder.forward_to_working_devices(validated_barcode)
+                    successful_methods = [k for k, v in pos_results.items() if v]
+                    
+                    if successful_methods:
+                        pos_status = f"✅ Sent to POS via: {', '.join(successful_methods)}"
+                        print(f"Optimized POS forwarding successful for {validated_barcode}: {successful_methods}")
+                    else:
+                        pos_status = "⚠️ Optimized POS forward failed - trying fallback"
+                        print(f"Optimized POS forwarding failed for {validated_barcode}")
+                        
+                        # Fallback to original forwarder
+                        hid_forwarder = get_hid_forwarder()
+                        pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
+                        pos_status = "✅ Sent to POS (fallback)" if pos_forwarded else "⚠️ All POS methods failed"
+                else:
+                    pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
+                    print(f"POS forwarding skipped for {validated_barcode}: test/device barcode")
+                    
+            except ImportError:
+                # Fallback to original forwarder if enhanced not available
+                print("Enhanced POS forwarder not available, using standard forwarder")
+                hid_forwarder = get_hid_forwarder()
+                
+                if len(validated_barcode) >= 8 and validated_barcode not in ["817994ccfe14", "36928f67f397"]:
+                    pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
+                    pos_status = "✅ Sent to POS" if pos_forwarded else "⚠️ POS forward failed"
+                    print(f"Standard POS forwarding result for {validated_barcode}: {pos_status}")
+                else:
+                    pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
+                    print(f"POS forwarding skipped for {validated_barcode}: test/device barcode")
+                    
         except Exception as e:
             pos_status = f"⚠️ POS error: {str(e)}"
+            print(f"Error forwarding to POS: {e}")
 
         # Check if device registration is verified
         if not is_device_registration_verified():

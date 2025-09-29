@@ -672,6 +672,23 @@ def register_device_id(barcode, device_id=None):
             blink_led("red")
             return "❌ Only the test barcode (817994ccfe14) can be used for registration."
         
+        # CRITICAL: Ensure device_id is NOT a test barcode or corrupted version
+        if device_id:
+            # Import validation function
+            import sys
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            try:
+                from device_id_validator import is_valid_device_id
+                if not is_valid_device_id(device_id):
+                    blink_led("red")
+                    return f"❌ Invalid device ID: '{device_id}' appears to be a test barcode or corrupted version. Please use a proper device ID."
+            except ImportError:
+                # Fallback validation if validator not available
+                test_barcodes = ["817994ccfe14", "17994ccfe14", "7994ccfe14", "17994ccfe141", "17994ccfe143", "36928f67f397"]
+                if device_id in test_barcodes or any(tb in device_id for tb in test_barcodes):
+                    blink_led("red")
+                    return f"❌ Invalid device ID: '{device_id}' cannot be a test barcode. Please use a proper device ID."
+        
         is_online = api_client.is_online()
         if not is_online:
             blink_led("red")
@@ -775,10 +792,28 @@ def confirm_registration(barcode, device_id):
             blink_led("red")
             return "❌ Device is offline. Cannot confirm registration."
         
-        # Use the device_id provided or get from test scan
+        # Use the device_id provided or generate a proper one
         if not device_id or not device_id.strip():
-            # If no device ID provided, use the test barcode as device ID
-            device_id = test_scan['barcode']
+            # CRITICAL FIX: Never use test barcode as device ID
+            # Generate a proper device ID instead
+            import uuid
+            device_id = f"device-{str(uuid.uuid4())[:8]}"
+            logger.info(f"Generated proper device ID: {device_id} (avoiding test barcode as device ID)")
+        
+        # CRITICAL: Validate device_id is NOT a test barcode or corrupted version
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        try:
+            from device_id_validator import is_valid_device_id
+            if not is_valid_device_id(device_id):
+                blink_led("red")
+                return f"❌ Invalid device ID: '{device_id}' appears to be a test barcode or corrupted version. Please use a proper device ID."
+        except ImportError:
+            # Fallback validation if validator not available
+            test_barcodes = ["817994ccfe14", "17994ccfe14", "7994ccfe14", "17994ccfe141", "17994ccfe143", "36928f67f397"]
+            if device_id in test_barcodes or any(tb in device_id for tb in test_barcodes):
+                blink_led("red")
+                return f"❌ Invalid device ID: '{device_id}' cannot be a test barcode. Please use a proper device ID."
         
         # Log the device ID being used for registration
         logger.info(f"Using device ID for registration: {device_id}")
