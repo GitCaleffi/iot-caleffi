@@ -93,16 +93,40 @@ class OptimizedPOSForwarder:
             logger.info("✅ USB HID gadget already configured")
             return True
         
-        # Check if we're on Raspberry Pi
-        try:
-            with open('/proc/cpuinfo', 'r') as f:
-                if 'Raspberry Pi' not in f.read():
-                    logger.warning("⚠️ Not on Raspberry Pi - USB HID gadget not available")
-                    return False
-        except:
-            return False
+        # Check Pi model and USB gadget support
+        pi_model = self._detect_pi_model()
         
-        return False  # Skip setup for now
+        if "Pi 5" in pi_model:
+            logger.warning("⚠️ Raspberry Pi 5 detected - USB gadget mode not supported yet")
+            logger.info("💡 Pi 5 uses PCIe USB controller without gadget support in current kernel")
+            logger.info("💡 Consider using Pi 4/Zero 2W or external USB-HID adapter for POS integration")
+            return False
+        elif "Pi 4" in pi_model or "Pi Zero" in pi_model or "CM4" in pi_model:
+            logger.info(f"✅ {pi_model} supports USB gadget mode")
+            # Could implement gadget setup here for Pi 4/Zero
+            return False  # Skip actual setup for now
+        else:
+            logger.warning("⚠️ Unknown Pi model - USB HID gadget availability uncertain")
+            return False
+    
+    def _detect_pi_model(self) -> str:
+        """Detect specific Raspberry Pi model"""
+        try:
+            # Check device tree model first
+            if os.path.exists('/proc/device-tree/model'):
+                with open('/proc/device-tree/model', 'r') as f:
+                    model = f.read().strip('\x00')
+                    return model
+            
+            # Fallback to cpuinfo
+            with open('/proc/cpuinfo', 'r') as f:
+                for line in f:
+                    if line.startswith('Model'):
+                        return line.split(':', 1)[1].strip()
+            
+            return "Unknown Pi Model"
+        except:
+            return "Not a Raspberry Pi"
     
     def forward_to_working_devices(self, barcode: str) -> Dict[str, bool]:
         """Forward barcode only to pre-tested working devices"""
@@ -121,6 +145,16 @@ class OptimizedPOSForwarder:
         # 3. Only forward to working HID devices
         for hid_dev in self.working_devices['hid_devices']:
             results[f'HID_{hid_dev}'] = self._forward_via_hid_device(barcode, hid_dev)
+        
+        # 4. Pi 5 alternative methods (since USB gadget not available)
+        pi_model = self._detect_pi_model()
+        if "Pi 5" in pi_model:
+            # Add file-based forwarding as fallback for Pi 5
+            results['FILE_FALLBACK'] = self._forward_via_file(barcode)
+            
+            # Add clipboard forwarding if available
+            if self._command_exists('xclip') or self._command_exists('xsel'):
+                results['CLIPBOARD'] = self._forward_via_clipboard(barcode)
         
         # Summary
         successful = [k for k, v in results.items() if v]
@@ -213,6 +247,76 @@ class OptimizedPOSForwarder:
         hid_data.extend([0, 0, 0, 0, 0, 0, 0, 0])   # Enter release
         
         return bytes(hid_data)
+    
+    def _command_exists(self, command: str) -> bool:
+        """Check if a command exists in PATH"""
+        try:
+            subprocess.run(['which', command], capture_output=True, check=True)
+            return True
+        except:
+            return False
+    
+    def _forward_via_file(self, barcode: str) -> bool:
+        """Forward barcode via file for POS integration"""
+        try:
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Write to multiple locations for POS system integration
+            file_locations = [
+                '/tmp/pos_barcode.txt',
+                '/tmp/latest_barcode.txt',
+                '/var/log/pos_barcodes.log',
+                '/home/pi/pos_barcodes.txt'  # Pi 5 specific location
+            ]
+            
+            for file_path in file_locations:
+                try:
+                    with open(file_path, 'a') as f:
+                        f.write(f"{timestamp}: {barcode}\n")
+                except:
+                    continue
+            
+            # Create current barcode file for POS polling
+            with open('/tmp/current_barcode.txt', 'w') as f:
+                f.write(barcode)
+            
+            logger.info(f"📄 Barcode {barcode} written to file locations for POS integration")
+            return True
+        except Exception as e:
+            logger.error(f"File forwarding failed: {e}")
+            return False
+    
+    def _forward_via_clipboard(self, barcode: str) -> bool:
+        """Forward barcode via clipboard"""
+        try:
+            # Try xclip first
+            result = subprocess.run(
+                ['xclip', '-selection', 'clipboard'], 
+                input=barcode.encode(), 
+                timeout=2,
+                capture_output=True
+            )
+            if result.returncode == 0:
+                logger.info("📋 Barcode copied to clipboard (xclip)")
+                return True
+        except:
+            pass
+        
+        try:
+            # Try xsel as fallback
+            result = subprocess.run(
+                ['xsel', '--clipboard', '--input'], 
+                input=barcode.encode(), 
+                timeout=2,
+                capture_output=True
+            )
+            if result.returncode == 0:
+                logger.info("📋 Barcode copied to clipboard (xsel)")
+                return True
+        except:
+            pass
+        
+        return False
 
 # Global instance
 _optimized_forwarder = None

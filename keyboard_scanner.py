@@ -548,29 +548,34 @@ def process_barcode_with_device(barcode, device_id):
         raw_barcode = barcode.strip()
         validated_barcode = extract_valid_barcode(raw_barcode)
         
-        # Enhanced POS forwarding with multiple methods for attached devices
+        # Enhanced Serial POS communication for Pi 5
         try:
-            # Try optimized POS forwarder first (for attached devices)
+            # Try enhanced serial POS communication first (Pi 5 optimized)
             try:
-                from optimized_pos_forwarder import OptimizedPOSForwarder
-                optimized_forwarder = OptimizedPOSForwarder()
+                from enhanced_serial_pos import get_serial_pos
+                serial_pos = get_serial_pos()
                 
                 # Only forward actual product barcodes, not test/device barcodes
                 if len(validated_barcode) >= 8 and validated_barcode not in ["817994ccfe14", "36928f67f397"]:
-                    pos_results = optimized_forwarder.forward_to_working_devices(validated_barcode)
-                    successful_methods = [k for k, v in pos_results.items() if v]
+                    # Use optimized sending for best performance
+                    pos_success = serial_pos.send_barcode_optimized(validated_barcode)
                     
-                    if successful_methods:
-                        pos_status = f"✅ Sent to POS via: {', '.join(successful_methods)}"
-                        print(f"Optimized POS forwarding successful for {validated_barcode}: {successful_methods}")
+                    if pos_success:
+                        pos_status = f"✅ Sent to POS via Serial Communication"
+                        print(f"Enhanced Serial POS communication successful for {validated_barcode}")
                     else:
-                        pos_status = "⚠️ Optimized POS forward failed - trying fallback"
-                        print(f"Optimized POS forwarding failed for {validated_barcode}")
+                        pos_status = "⚠️ Serial POS failed - trying fallback methods"
+                        print(f"Enhanced Serial POS communication failed for {validated_barcode}")
                         
-                        # Fallback to original forwarder
-                        hid_forwarder = get_hid_forwarder()
-                        pos_forwarded = hid_forwarder.forward_barcode(validated_barcode)
-                        pos_status = "✅ Sent to POS (fallback)" if pos_forwarded else "⚠️ All POS methods failed"
+                        # Fallback to optimized forwarder
+                        try:
+                            from optimized_pos_forwarder import OptimizedPOSForwarder
+                            optimized_forwarder = OptimizedPOSForwarder()
+                            pos_results = optimized_forwarder.forward_to_working_devices(validated_barcode)
+                            successful_methods = [k for k, v in pos_results.items() if v]
+                            pos_status = f"✅ Sent to POS via: {', '.join(successful_methods)}" if successful_methods else "⚠️ All POS methods failed"
+                        except:
+                            pos_status = "⚠️ All POS methods failed"
                 else:
                     pos_status = "⚠️ POS forwarding skipped (test/device barcode)"
                     print(f"POS forwarding skipped for {validated_barcode}: test/device barcode")
