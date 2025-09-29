@@ -119,10 +119,13 @@ credentials.json
 
 # Configuration files with secrets
 deployment_package/config.json
+deployment_package/config.json.backup
+deployment_package/config.json.bak
 config.json
 *.config.json
 *connection_string*
 device_config.json
+*.backup
 
 # Service logs
 barcode_service.log

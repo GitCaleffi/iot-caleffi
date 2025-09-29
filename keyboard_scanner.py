@@ -548,6 +548,26 @@ def process_barcode_with_device(barcode, device_id):
         raw_barcode = barcode.strip()
         validated_barcode = extract_valid_barcode(raw_barcode)
         
+        # USB POS Integration - Send to configured USB device
+        usb_pos_status = "❌ Not sent"
+        try:
+            from usb_pos_forwarder import send_barcode_to_usb_pos
+            if len(validated_barcode) >= 8 and validated_barcode not in ["817994ccfe14", "36928f67f397"]:
+                usb_success = send_barcode_to_usb_pos(validated_barcode)
+                if usb_success:
+                    usb_pos_status = "✅ Sent to USB POS"
+                    print(f"✅ USB POS: {validated_barcode}")
+                else:
+                    usb_pos_status = "⚠️ USB POS failed"
+                    print(f"⚠️ USB POS failed: {validated_barcode}")
+            else:
+                usb_pos_status = "⚠️ USB POS skipped (test barcode)"
+        except ImportError:
+            usb_pos_status = "⚠️ USB POS not available"
+        except Exception as e:
+            usb_pos_status = f"⚠️ USB POS error: {str(e)}"
+            print(f"USB POS error: {e}")
+
         # Enhanced Serial POS communication for Pi 5
         try:
             # Try enhanced serial POS communication first (Pi 5 optimized)
@@ -683,13 +703,13 @@ def process_barcode_with_device(barcode, device_id):
         # Check if we're online
         is_online = api_client.is_online()
         if not is_online:
-            return f"📥 Device appears to be offline. Message saved locally for device '{device_id}'. {pos_status}"
+            return f"📥 Device appears to be offline. Message saved locally for device '{device_id}'. {usb_pos_status} {pos_status}"
 
         # Send to API
         api_result = api_client.send_barcode_scan(device_id, validated_barcode, 1)
         api_success = api_result.get("success", False)
         if not api_success:
-            return f"⚠️ API call failed. Barcode saved locally for device '{device_id}'. {pos_status}"
+            return f"⚠️ API call failed. Barcode saved locally for device '{device_id}'. {usb_pos_status} {pos_status}"
 
         # Send to IoT Hub
         config = load_config()
@@ -700,11 +720,11 @@ def process_barcode_with_device(barcode, device_id):
 
             if iot_success:
                 local_db.mark_sent_to_hub(device_id, validated_barcode, timestamp)
-                return f"✅ Barcode {validated_barcode} sent to IoT Hub from device '{device_id}'! {pos_status}"
+                return f"✅ Barcode {validated_barcode} sent to IoT Hub from device '{device_id}'! {usb_pos_status} {pos_status}"
             else:
-                return f"⚠️ Barcode sent to API but failed to send to IoT Hub from device '{device_id}'. {pos_status}"
+                return f"⚠️ Barcode sent to API but failed to send to IoT Hub from device '{device_id}'. {usb_pos_status} {pos_status}"
         else:
-            return f"⚠️ Barcode sent to API but no IoT Hub connection string found for device '{device_id}'. {pos_status}"
+            return f"⚠️ Barcode sent to API but no IoT Hub connection string found for device '{device_id}'. {usb_pos_status} {pos_status}"
 
     except Exception as e:
         return f"❌ Error processing barcode: {str(e)}"

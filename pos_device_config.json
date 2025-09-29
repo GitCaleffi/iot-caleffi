@@ -1,0 +1,16 @@
+{
+  "pos_forwarding": {
+    "enabled": true,
+    "primary_device": {
+      "path": "/dev/hidraw0",
+      "type": "hid",
+      "baud_rate": null
+    },
+    "methods": {
+      "hid": true,
+      "serial": false,
+      "network": false,
+      "file": true
+    }
+  }
+}
